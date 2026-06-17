@@ -1,0 +1,179 @@
+{
+  "pitfalls": [
+    {
+      "id": "domain-normalize-no-display-format",
+      "tags": [
+        "domain",
+        "normalize",
+        "formatQuantity",
+        "display-format",
+        "separator",
+        "NaN",
+        "parseUnits",
+        "decimal.js",
+        "vault",
+        "claim",
+        "withdraw"
+      ],
+      "title": "Domain normalize 误用展示格式化函数,下游 Number()/parseUnits 静默 NaN",
+      "summary": "normalize.ts 把 formatQuantity 等带千位符的展示格式化放进 Domain 输出,导致 Number(value) 返回 NaN、new Decimal(value) 抛错、parseUnits 抛错,UI 按钮静默 disabled、表单校验静默跳过。Domain 只能输出 canonical 数值字符串,展示格式化归 ViewModel/UI",
+      "related_feature": "vault-claim",
+      "severity": "high",
+      "date": "2026-05-14",
+      "path": "pitfalls/domain-normalize-no-display-format.md",
+      "estimatedTokens": 1100,
+      "gate": true,
+      "gate_rule": "domain/normalize.ts 输出余额/数量字段时禁止调用 formatQuantity/formatPrice/formatPercent 等带千位分隔符或 toFixed 的展示格式化函数;canonical 数值字符串(roundDownBalance 等)是唯一允许形态,千位符与展示截位放 ViewModel/UI",
+      "trigger": [
+        "normalize.ts",
+        "toVault",
+        "formatQuantity",
+        "formatPrice",
+        "formatPercent",
+        "Number(",
+        "parseUnits",
+        "withdrawable",
+        "processing",
+        "cooldown",
+        "canClaim",
+        "isEmpty",
+        "Decimal.js",
+        "NaN"
+      ]
+    },
+    {
+      "id": "auth-session-downgrade-isFirstTimeUser",
+      "tags": [
+        "auth",
+        "session",
+        "isFirstTimeUser",
+        "vault",
+        "deposit"
+      ],
+      "title": "auth session 降级后 accountId=null 导致老用户被误判为新用户",
+      "summary": "wallet-session 降级为 wallet-connected 时 accountId=null，与新用户相同，须组合 isAuthenticated 判断",
+      "related_feature": "vault-deposit",
+      "severity": "high",
+      "date": "2026-04-26",
+      "path": "pitfalls/auth-session-downgrade-isFirstTimeUser.md",
+      "estimatedTokens": 935,
+      "gate": true,
+      "gate_rule": "凡用 !accountId 判断新用户时，必须同时检查 isAuthenticated",
+      "trigger": [
+        "isFirstTimeUser",
+        "isNewUser",
+        "accountId",
+        "user.id",
+        "needsEnableTrading",
+        "enable trading",
+        "新用户",
+        "老用户"
+      ]
+    },
+    {
+      "id": "radix-dialog-focusscope-blocks-external-click",
+      "tags": [
+        "radix-ui",
+        "dialog",
+        "modal",
+        "sonner",
+        "toast",
+        "focusscope",
+        "pointer-events"
+      ],
+      "title": "Radix Dialog modal=true 的 FocusScope 会阻止弹窗外元素被点击",
+      "summary": "modal=true 时 FocusScope 在 document 注册 mousedown capture，preventDefault 导致弹窗外 toast/按钮点击无响应；改 modal=false 并手动补背景层解决",
+      "related_feature": "vault",
+      "severity": "high",
+      "date": "2026-04-26",
+      "path": "pitfalls/radix-dialog-focusscope-blocks-external-click.md",
+      "estimatedTokens": 900,
+      "gate": true,
+      "gate_rule": "弹窗内流程中需要同时操作弹窗外元素（toast/通知/悬浮按钮）时，必须检查 FocusScope trap 是否会拦截外部点击",
+      "trigger": [
+        "dialog",
+        "modal",
+        "toast",
+        "弹窗",
+        "通知",
+        "点击无效",
+        "无法点击",
+        "pointer-events"
+      ]
+    },
+    {
+      "id": "event-driven-three-dimensions",
+      "tags": [
+        "event",
+        "eventBus",
+        "polling",
+        "websocket",
+        "state-machine",
+        "race-condition"
+      ],
+      "title": "事件驱动方案三维度审查",
+      "summary": "事件驱动方案（eventBus/轮询/WS/回调）必须审查跨系统干扰、payload 区分度、状态写入互斥三维度",
+      "related_feature": "shared",
+      "severity": "high",
+      "date": "2026-05-09",
+      "path": "pitfalls/event-driven-three-dimensions.md",
+      "estimatedTokens": 945,
+      "gate": true,
+      "gate_rule": "方案依赖事件驱动（eventBus/自定义事件/回调/轮询/WS 推送）变更状态时，必须逐项审查三维度——跨系统干扰、同系统内 payload 区分度、接收端状态写入互斥",
+      "trigger": [
+        "eventBus",
+        "emit",
+        "on(",
+        "事件",
+        "轮询",
+        "polling",
+        "websocket",
+        "ws 推送",
+        "推送",
+        "native_transfer",
+        "NATIVE_TRANSFER_ARRIVED",
+        "callback",
+        "回调"
+      ]
+    },
+    {
+      "id": "track-payload-field-verification-required",
+      "tags": [
+        "tracking",
+        "payload",
+        "sosovalue",
+        "data-contract",
+        "verification",
+        "storage-writer",
+        "global-track"
+      ],
+      "title": "埋点 payload 字段值未被实际验证：walletAddress / walletType 长期为空",
+      "summary": "Batch A 全套 gate 通过后仍线上数据脏：sosovalue.walletAddress 长期为空或残留旧值。根因是用「代码视角」验证「数据契约」项目—代码链路触发不代表 payload 字段值正确。",
+      "related_feature": "global-track",
+      "severity": "high",
+      "date": "2026-05-12",
+      "path": "pitfalls/track-payload-field-verification-required.md",
+      "estimatedTokens": 1652,
+      "gate": true,
+      "gate_rule": "埋点 / 数据契约项目中，新增字段或迁移 sodex-web 字段时，必须解码实际 POST payload 逐字段对照 spec 期望值，不能仅以「代码链路触发」作为验证证据；尤其依赖 localStorage / cookie / store 读取的字段，必须显式确认「写入源」在 sodex-next 是否存在",
+      "trigger": [
+        "tracking",
+        "埋点",
+        "payload",
+        "sosovalue",
+        "propertyPlugin",
+        "sensors",
+        "datasink",
+        "saTrack",
+        "神策",
+        "sa?project",
+        "walletAddress",
+        "walletType",
+        "sodex-web 迁移"
+      ]
+    }
+  ],
+  "meta": {
+    "lastUpdated": "2026-05-13"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "projectName": "sodex-web",
+  "projectRoot": "/Users/soso/Documents/code/sodex-web",
+  "detectedAt": "2026-05-30",
+  "targets": [
+    {
+      "name": "default",
+      "localesDir": "public/locales",
+      "srcDir": "src",
+      "namespaceRoots": ["pages"],
+      "namespaceMap": {
+        "pages/spot": "spot",
+        "pages/vault": "vault",
+        "pages/referrals": "referrals",
+        "pages/portfolio": "portfolio",
+        "pages/stats": "stats",
+        "pages/announcement": "announcement",
+        "pages/explorer": "explorer",
+        "pages/maintenance": "maintenance",
+        "pages/futures": "spot",
+        "pages/order": "spot",
+        "pages/market": "spot",
+        "pages/finance": "common",
+        "pages/account": "common",
+        "pages/activity": "common",
+        "pages/home": "common",
+        "pages/points": "common",
+        "pages/otc": "common",
+        "pages/faucet": "common",
+        "pages/download": "common",
+        "pages/_components/deposit": "spot",
+        "pages/_components/withdraw": "spot",
+        "pages/_components/soso-transfer": "spot",
+        "components": "common",
+        "components_tw": "common"
+      },
+      "fallbackNamespace": "common",
+      "manualNamespaces": ["manual", "notification"]
+    }
+  ]
+}

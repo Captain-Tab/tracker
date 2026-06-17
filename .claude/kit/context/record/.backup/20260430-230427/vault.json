@@ -1,0 +1,9 @@
+{
+  "module": {
+    "id": "vault",
+    "name": "Vault",
+    "emoji": "🏦",
+    "description": "Vault SLP 流动性提供模块：deposit/withdraw/unstake/claim 4 个核心操作及通知/数据刷新基础设施"
+  },
+  "features": {}
+}

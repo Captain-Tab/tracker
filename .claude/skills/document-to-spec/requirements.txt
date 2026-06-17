@@ -1,0 +1,7 @@
+# Document to Spec Converter 依赖
+
+# PDF 解析
+pypdf>=3.0.0
+
+# Word 文档解析
+python-docx>=1.0.0

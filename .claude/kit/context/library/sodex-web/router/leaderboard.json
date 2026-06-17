@@ -1,0 +1,159 @@
+{
+  "module": "leaderboard",
+  "name": "Leaderboard",
+  "description": "交易排行榜与分享功能",
+  "emoji": "🏆",
+
+  "features": {
+    "leaderboard-ranking": {
+      "id": "leaderboard-ranking",
+      "module": "leaderboard",
+      "type": "feature",
+      "title": "Leaderboard 排行榜完整功能",
+      "summary": "交易排行榜页面，支持多维度排序（PnL/ROI/Volume/AccountValue）、多时间范围筛选（24h/7d/30d/All）、地址搜索、后端分页，以及可定制化分享海报生成",
+
+      "quickRef": {
+        "coreLogic": [
+          "useLeaderboardData(params: LeaderboardParams): LeaderboardResult  L1-180  列表 + 当前用户数据并行请求",
+          "formatCurrency(value: number, options?: FormatOptions): string  L50-80  金额格式化（常规）",
+          "FormatLargeNumText(value: number): string  L90-120  大金额缩写（M/B）",
+          "useShareData(timeRange: TimeRange): ShareData  L1-100  分享数据 + 时间切换缓存"
+        ],
+        "keyComponents": [
+          "index.tsx - 入口组件，UI 状态管理",
+          "useLeaderboardData.ts - 列表 + 当前用户数据请求",
+          "LeaderboardTablePC/Mobile.tsx - 响应式表格/卡片",
+          "ShareLeaderboardContent.tsx - 分享弹窗主逻辑",
+          "PosterDom.tsx - 海报 DOM 渲染"
+        ],
+        "keyFiles": [
+          "src/pages/leaderboard/index.tsx",
+          "src/pages/leaderboard/hooks/useLeaderboardData.ts",
+          "src/pages/leaderboard/hooks/useShareData.ts",
+          "src/pages/leaderboard/hooks/useShareText.ts",
+          "src/pages/leaderboard/components/modal/ShareLeaderboardContent.tsx",
+          "src/pages/leaderboard/components/modal/PosterDom.tsx",
+          "src/pages/leaderboard/const/index.tsx"
+        ],
+        "fieldImpact": {
+          "roi": "api.d.ts → types/index.ts → const/index.tsx → SearchBar.tsx → LeaderboardTablePC/Mobile.tsx → ShareLeaderboardContent.tsx → PosterDom.tsx → useShareText.ts → useShareLeaderboard.tsx → useLeaderboardData.ts → useShareData.ts → index.tsx(disclaimer_4)",
+          "accountValue": "api.d.ts → types/index.ts → const/index.tsx → SearchBar.tsx → LeaderboardTablePC/Mobile.tsx → ShareLeaderboardContent.tsx → PosterDom.tsx → useShareText.ts → useShareLeaderboard.tsx → useLeaderboardData.ts → useShareData.ts → index.tsx(disclaimer_3)",
+          "pnl": "api.d.ts → types/index.ts → const/index.tsx → SearchBar.tsx → LeaderboardTablePC/Mobile.tsx → ShareLeaderboardContent.tsx → PosterDom.tsx → useShareText.ts → useShareLeaderboard.tsx → useLeaderboardData.ts → useShareData.ts",
+          "volume": "api.d.ts → types/index.ts → const/index.tsx → SearchBar.tsx → LeaderboardTablePC/Mobile.tsx → ShareLeaderboardContent.tsx → PosterDom.tsx → useShareText.ts → useShareLeaderboard.tsx → useLeaderboardData.ts → useShareData.ts"
+        },
+        "relatedConcepts": ["pagination", "sorting", "responsive", "share-poster", "html-to-image", "context-api"]
+      },
+
+      "discovery_cost": "~5800 tokens",
+      "referencePath": "reference/leaderboard/leaderboard-ranking-guide.md",
+
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "分层架构：入口状态管理 → Hooks 数据层 → UI 组件层，数据流：API → useLeaderboardData → 表格/分享弹窗",
+          "lineRange": [7, 50],
+          "estimatedTokens": 660
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "入口组件状态管理、useLeaderboardData 并行请求、搜索防抖验证、排序逻辑",
+          "lineRange": [51, 228],
+          "estimatedTokens": 2700
+        },
+        {
+          "title": "当前用户栏特殊处理",
+          "summary": "当前用户置顶显示、isCurrentUser 标记、YOU 标签、特殊背景色、排名显示规则（未上榜/100+）、邮箱登录地址显示",
+          "lineRange": [229, 288],
+          "estimatedTokens": 900
+        },
+        {
+          "title": "金额格式化函数",
+          "summary": "formatCurrency/formatPercent 基础格式化、FormatLargeNumText 大金额缩写（M/B）、formatFloorDecimal 带正号、truncateAddress/Email 地址截断",
+          "lineRange": [289, 372],
+          "estimatedTokens": 1260
+        },
+        {
+          "title": "分享弹窗",
+          "summary": "Context 状态管理、useShareData 时间切换缓存、useShareText 文案生成、PosterDom 海报渲染（html-to-image）",
+          "lineRange": [373, 472],
+          "estimatedTokens": 1500
+        },
+        {
+          "title": "响应式设计",
+          "summary": "PC/Mobile 表格切换、时间筛选差异（Tab vs Select）、createResponsiveModal 分享弹窗",
+          "lineRange": [473, 526],
+          "estimatedTokens": 810
+        },
+        {
+          "title": "文件结构",
+          "summary": "页面目录结构：hooks/components/types/const 分层，23 个文件",
+          "lineRange": [527, 566],
+          "estimatedTokens": 600
+        },
+        {
+          "title": "底部说明文案",
+          "summary": "disclaimer_1-4 i18n key 说明，关联 accountValue 和 roi 字段的计算公式说明",
+          "lineRange": [567, 589],
+          "estimatedTokens": 350
+        },
+        {
+          "title": "字段影响范围",
+          "summary": "字段修改影响文件矩阵，按层级分类（类型定义层/数据转换层/UI层/Hooks层），快速检索表",
+          "lineRange": [590, 670],
+          "estimatedTokens": 1200
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "后端分页 vs 前端分页、当前用户数据单独请求、分享弹窗 Context 状态管理、时间切换数据缓存",
+          "lineRange": [671, 702],
+          "estimatedTokens": 480
+        },
+        {
+          "title": "API 接口",
+          "summary": "接口列表、请求参数、响应数据结构、API → 前端数据转换",
+          "lineRange": [703, 774],
+          "estimatedTokens": 1080
+        },
+        {
+          "title": "排名样式规则",
+          "summary": "Top 3 徽章与背景色（PC/Mobile 差异），仅 desc 排序时显示",
+          "lineRange": [775, 799],
+          "estimatedTokens": 375
+        },
+        {
+          "title": "术语表",
+          "summary": "TimeRange/SortType/SortDirection/WindowType/ShareDisplayMode/MemeIconKey/VisibleMetrics",
+          "lineRange": [800, 814],
+          "estimatedTokens": 225
+        },
+        {
+          "title": "更新记录",
+          "summary": "版本迭代记录：2026-03-03 字段影响范围、2026-03-02 限流与错误处理",
+          "lineRange": [815, 831],
+          "estimatedTokens": 250
+        }
+      ],
+
+      "tags": ["leaderboard", "share-poster", "responsive", "pagination", "sorting", "html-to-image"],
+      "created": "2026-03-02",
+      "updated": "2026-03-03"
+    }
+  },
+
+  "history": {
+    "leaderboard-ranking": [
+      {
+        "date": "2026-03-03",
+        "type": "feat",
+        "summary": "临时隐藏 ROI 和 Account Value 数据（含行点击跳转）",
+        "path": "history/leaderboard/2026-03-03-hide-roi-account-value.md"
+      },
+      {
+        "date": "2026-03-02",
+        "type": "feat",
+        "summary": "添加 HTTP 429 错误处理和分页节流",
+        "path": "history/leaderboard/2026-03-02-rate-limit-throttle.md"
+      }
+    ]
+  }
+}

@@ -1,0 +1,260 @@
+{
+  "features": {
+    "vault-unstake": {
+      "featureId": "vault-unstake",
+      "targetArch": "sodex-next-5-layer",
+      "currentStep": "execute",
+      "startedAt": "2026-04-22",
+      "completedSteps": [
+        "spec",
+        "plan",
+        "execute"
+      ],
+      "artifacts": {
+        "spec": ".claude/kit/spec/vault-migration/03-unstake.md",
+        "plan": ".claude/kit/migration/logs/vault/unstake/plan.md",
+        "execute": "(代码落地,见下方文件清单)"
+      },
+      "executeDeliverables": {
+        "domain": [
+          "domain/constants.ts (+UNSTAKE_CALL_FOR_TYPE)",
+          "domain/types.ts (+UnstakeInput/Result, VaultServiceError +UNSTAKE_FAILED/TIMEOUT/TRANSFER_FAILED/EVM_BALANCE_TIMEOUT)",
+          "domain/unstakePermit.ts (buildUnstakeCmd/PermitTypedData/CmdData/CallForPermitRequest/DeadlineSeconds)"
+        ],
+        "infra": [
+          "infra/chain/vaultUnstakeInfra.ts (waitForEvmSmag7Balance,硬编码 decimals=8 规避 boundaries)"
+        ],
+        "services": [
+          "services/vaultUnstakeService.ts (executeUnstakePermit,只做 CallForPermit 链路)"
+        ],
+        "containers": [
+          "containers/unstakeFlowLogic.ts",
+          "containers/useVaultUnstakeForm.ts",
+          "containers/handleUnstakeServiceError.ts",
+          "containers/useSubmitVaultUnstake.ts (两层 mutation 编排:smart-transfer + permit)"
+        ],
+        "components": [
+          "components/dialogs/VaultUnstakeDialog/{index.tsx,VaultUnstakeButton.tsx,VaultUnstakeSkeleton.tsx}"
+        ],
+        "cross_feature": [
+          "trade/index.ts +export useSubmitTransfer"
+        ],
+        "updates": [
+          "containers/dialogs/openers.ts re-export openVaultUnstakeDialog",
+          "containers/useVaultSLPViewModel.ts safeTrigger 调用改无参",
+          "components/VaultStats/mock.ts 同上",
+          "containers/handleClaimServiceError.ts switch 加 unstake kinds fall-through"
+        ]
+      },
+      "executeDeviations": {
+        "plan_vs_actual": [
+          "Spec 里 Service 含 pre-transfer;实际因 boundaries(services 不能跨 feature import services)移到 container 层 useSubmitVaultUnstake 做两层 mutation 编排",
+          "Max 来源:useVaultMag7Balance.valueChain.sMag7(已是 Spot+EVM 合计);判断是否 smart-transfer 用 useEvmBalancesQuery 单取 EVM 子余额",
+          "vaultUnstakeInfra.ts 不 import domain/constants(boundaries 禁),decimals=8 硬编码"
+        ]
+      },
+      "verification": {
+        "tsc": "pass (0 errors)",
+        "lint": "pass (vault 0 errors; 仓库仅剩 1 个 referrals 无关错)"
+      }
+    },
+    "vault-claim": {
+      "featureId": "vault-claim",
+      "targetArch": "sodex-next-5-layer",
+      "currentStep": "verify-auto",
+      "startedAt": "2026-04-22",
+      "completedSteps": [
+        "analyze",
+        "spec",
+        "plan",
+        "execute",
+        "verify-auto"
+      ],
+      "artifacts": {
+        "analyze": "(跳过,与 clarify 合并)",
+        "spec": ".claude/kit/spec/vault-migration/02-claim.md",
+        "plan": ".claude/kit/migration/logs/vault/claim/plan.md",
+        "execute": "(代码落地,见下方文件清单)"
+      },
+      "executeDeliverables": {
+        "domain": [
+          "features/vault/domain/constants.ts (moved from features/vault/constants.ts, +claim 常量)",
+          "features/vault/domain/types.ts (+ClaimInput/ClaimResult/ClaimableInfo/ClaimButtonState/VaultServiceError)",
+          "features/vault/domain/symbols.ts (standardizeMag7Symbol)",
+          "features/vault/domain/claimPermit.ts (ClaimCmd/CallForPermitMessage/CallForPermitTypedData + build* 纯函数)"
+        ],
+        "infra": [
+          "features/vault/infra/abis/CallForPermitAbi.ts",
+          "features/vault/infra/chain/vaultClaimInfra.ts (getClaimNonce/signCallForPermit/waitForClaimReceipt)",
+          "features/vault/infra/api/vaultApi.ts (+postCallForPermit + CallForPermitRequest/Response DTO)",
+          "features/vault/infra/errors.ts (VaultInfraError discriminated union + isVaultInfraError)"
+        ],
+        "services": [
+          "features/vault/services/vaultClaimService.ts (executeClaim 5 步 orchestration)",
+          "features/vault/services/mapInfraError.ts"
+        ],
+        "containers": [
+          "features/vault/containers/claimFlowLogic.ts (deriveClaimButtonState/deriveClaimHelperText/isClaimAmountValid)",
+          "features/vault/containers/useSubmitVaultClaim.ts (React Query mutation + invalidate 3 key)",
+          "features/vault/containers/useVaultClaimForm.ts (受控 state, 无 react-hook-form)",
+          "features/vault/containers/dialogs/openers.ts (re-export openVaultClaimDialog 覆盖 stub)",
+          "features/vault/containers/useVaultSLPViewModel.ts (safeTrigger 改泛型)"
+        ],
+        "components": [
+          "features/vault/components/dialogs/VaultClaimDialog/index.tsx (内容组件 + opener 同文件)",
+          "features/vault/components/dialogs/VaultClaimDialog/VaultClaimButton.tsx (4 态按钮)",
+          "features/vault/components/dialogs/VaultClaimDialog/VaultClaimSkeleton.tsx",
+          "features/vault/components/VaultStats/mock.ts (safeTrigger 泛型修正)"
+        ],
+        "other": [
+          "features/trade/index.ts (+export useEnableTrading)",
+          "features/vault/domain/normalize.ts (清理 VaultNavCurvePoint 重复声明)"
+        ]
+      },
+      "executeDeviations": {
+        "plan_vs_actual": [
+          "Infra 分 chain + api 两部分(plan 原只提 chain)",
+          "useVaultClaimForm 未用 react-hook-form(项目未装),改 useState + claimFlowLogic 组合",
+          "VaultInfraError 最终归属 infra/errors.ts,不是 domain/types.ts(boundaries 规则要求)",
+          "buildXxx 纯函数移到 domain/claimPermit.ts(services 不能 import containers)",
+          "constants.ts 搬到 domain/ 下(eslint boundaries 要求 feature 根目录文件属 elementType 才能被 import)"
+        ]
+      },
+      "verification": {
+        "tsc": "pass (0 errors)",
+        "lint": "pass (vault 模块 0 errors; 仓库内 1 个 referrals 错误与本次无关)",
+        "notes": "代码完成,待 UI 手测 + testnet 签名 tx(进 /k:migration verify 阶段)"
+      },
+      "tokenEstimates": {
+        "analyze": {
+          "filesRead": [],
+          "inputChars": 0,
+          "outputChars": 0,
+          "estimatedTokens": 0
+        },
+        "spec": {
+          "filesRead": [
+            "vault-migration/02-claim.md",
+            "sodex-web/claim/**"
+          ],
+          "inputChars": 8000,
+          "outputChars": 9500,
+          "estimatedTokens": 4375
+        },
+        "plan": {
+          "filesRead": [
+            "02-claim.md",
+            "plan-type-first.md",
+            "sodex-web/claim/**",
+            "features/vault/**"
+          ],
+          "inputChars": 14000,
+          "outputChars": 11000,
+          "estimatedTokens": 6250
+        }
+      }
+    },
+    "vault-deposit": {
+      "featureId": "vault-deposit",
+      "targetArch": "sodex-next-5-layer",
+      "currentStep": "finalize",
+      "startedAt": "2026-04-23",
+      "completedSteps": [
+        "analyze",
+        "spec",
+        "plan",
+        "execute",
+        "verify",
+        "finalize"
+      ],
+      "artifacts": {
+        "analyze": ".claude/kit/migration/logs/vault/deposit/analyze.md",
+        "spec": ".claude/kit/migration/logs/vault/deposit/migration-spec.md",
+        "plan": ".claude/kit/migration/logs/vault/deposit/plan.md",
+        "execute": "(代码落地,见 executeDeliverables)",
+        "verify": ".claude/kit/migration/logs/vault/deposit/acceptance.md",
+        "signing_checklist": ".claude/kit/migration/logs/vault/deposit/signing-checklist.md",
+        "state_machine": ".claude/kit/migration/logs/vault/deposit/state-machine.md",
+        "finalize": ".claude/kit/context/library/sodex-next/history/vault/deposit/2026-04-24-vault-deposit-migration.md",
+        "phase0": [
+          ".claude/kit/migration/logs/vault/deposit/interaction-spec.md",
+          ".claude/kit/migration/logs/vault/deposit/style-diff.md",
+          ".claude/kit/migration/logs/vault/deposit/figma-nodes.json",
+          ".claude/kit/migration/logs/vault/deposit/figma-nodes/base-pc-main.md"
+        ],
+        "phase1": [
+          "src/features/vault/components/dialogs/VaultDepositDialog/{index,Preview,Trading,DepositToSodexStep,CollapsiblePanel,WarningText,BaseAccountInput,VaultPreTradeButton,AccountSelector}.tsx",
+          ".claude/kit/migration/logs/vault/deposit/ui-migration-summary.md"
+        ]
+      },
+      "executeDeliverables": {
+        "domain": [
+          "domain/constants.ts (+DEPOSIT_MIN_AMOUNT, DEPOSIT_SETTLE_*, DEPOSIT_APPROVE_DEADLINE_SEC, DEPOSIT_ENABLE_TRADING_*, DEPOSIT_APPROVE_POST_DELAY_MS, DEPOSIT_TRY_AGAIN_TIMEOUT_MS, BASE_CHAIN_IDENTIFIER, DEPOSIT_TX_CONFIRMATIONS, DEPOSIT_TO_CLOB, TRANSFER_EVM_FUNDING_ACCOUNT_ID, COIN_ID_MAG7/SMAG7)",
+          "domain/types.ts (+DepositInput/Result/Chain/From/TokenRef, VaultServiceError +DEPOSIT_* kinds + ENABLE_TRADING_TIMEOUT)",
+          "domain/depositPermit.ts (new: ERC2612 + CallForPermit(VaultDepositWithPermit2) typed-data builder + isUserRejectedError + isApproveDeadlineValid)",
+          "domain/depositStateMachine.ts (new: 3 纯 reducer + TopState/BaseChainState/ValueChainState/配套 Action + deriveValueChainSteps)"
+        ],
+        "infra": [
+          "infra/chain/vaultDepositInfra.ts (new: 10 个原子 async + 本地 ABI fragments)",
+          "infra/errors.ts (+USER_REJECTED, SIGN_FAILED)",
+          "infra/api/vaultApi.ts (CallForPermitRequest.cmdType +VaultDepositWithPermit2)"
+        ],
+        "services": [
+          "(方案 F 不建 vaultDepositService.ts — 架构决策)"
+        ],
+        "containers": [
+          "containers/handleDepositServiceError.ts (new: 13 kind → i18n notify + shouldShowDepositTryAgain)",
+          "containers/depositFlowLogic.ts (new: decideValueChainConfig / mapBaseChainStepStatus / mapValueChainStepStatus / buildStepList / deriveDepositButtonState / validateDepositAmount)",
+          "containers/useVaultDepositForm.ts (new: 表单 + Max + auto-fill 守卫 + 余额派生)",
+          "containers/deposit/useVaultDepositMachine.ts (new: 3 reducer + effect driver + 防重入 + AbortController + cache refs + 跨 feature callbacks)",
+          "containers/useSubmitVaultDeposit.ts (new: mutation 外层 + notify + invalidate + trade.useSubmitTransfer 接线 + trade.useEnableTrading 接线 + Try Again 3s timeout)"
+        ],
+        "components": [
+          "components/dialogs/VaultDepositDialog/index.tsx 内部新增 VaultDepositDialogContainer 包装(使用 hooks 向 props-driven 视觉组件灌数据)",
+          "openVaultDepositDialog 签名改为 { tokenAddress?: string } 简化输入"
+        ],
+        "cross_feature": [
+          "已连接 trade.useSubmitTransfer(smart-transfer Spot→Funding)",
+          "已连接 trade.useEnableTrading(新用户 enable_trading 分支)",
+          "已连接 trade.useEvmBalancesQuery(smart-transfer 余额判断)"
+        ],
+        "updates": [
+          "containers/dialogs/openers.ts: 删 stub,re-export openVaultDepositDialog"
+        ],
+        "verified": {
+          "tsc": "pass (0 errors)"
+        },
+        "deferred": {
+          "ui_finetune": "Container 内 fees/youReceive/rate/buttonText 暂用占位,待接入真实 NAV/费率派生 + i18n",
+          "token_config_lookup": "token 选择需接入 useTokenConfig / useFundingToken(老项目 useFundingToken 对应的新 hook 待确认),当前 Container 支持外部传入 DepositTokenRef 完整结构",
+          "mobile_figma": "见 pending.md vault-deposit-mobile-trading-figma",
+          "interruption_modal": "见 pending.md vault-deposit-interruption-modal",
+          "i18n_keys": "57 个 i18n key 当前为硬编码英文占位,待对接 useTranslation(下一次 verify 前补)"
+        }
+      },
+      "deferItems": [
+        "vault-deposit-mobile-trading-figma",
+        "vault-deposit-interruption-modal"
+      ],
+      "architectureDecision": "方案 F Workflow Hook Pattern (不建 services/vaultDepositService.ts, 3 纯 reducer + 10 原子 infra + Container workflow hook)",
+      "tokenEstimates": {
+        "analyze": {
+          "filesRead": [
+            "sodex-web/.../vault/vault-deposit-guide.md",
+            "sodex-web/.../history/vault/vault-deposit/*.md (6 份)",
+            ".claude/kit/migration/records/index.md",
+            ".claude/kit/migration/pending.md",
+            "sodex-next/pitfalls/vault-decimal-constants-semantics.md",
+            "sodex-next/pitfalls/slp-decimals-dynamic.md",
+            "logs/vault/deposit/interaction-spec.md (Phase 0 产物)",
+            "logs/vault/deposit/ui-migration-summary.md (Phase 1 产物)"
+          ],
+          "inputChars": 48000,
+          "outputChars": 16000,
+          "estimatedTokens": 16000
+        }
+      },
+      "finalizedAt": "2026-04-24"
+    }
+  }
+}

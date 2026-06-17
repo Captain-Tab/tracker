@@ -1,0 +1,194 @@
+{
+  "meta": {
+    "version": "2.5",
+    "project": "sodex-next",
+    "lastUpdated": "2026-05-26T02:16:45Z",
+    "totalFeatures": 12,
+    "totalModules": 3,
+    "structureType": "module-based",
+    "indexes": {
+      "files": "indexes/files.json",
+      "tags": "indexes/tags.json"
+    }
+  },
+  "modules": [
+    {
+      "id": "global",
+      "name": "Global",
+      "emoji": "🌍",
+      "description": "全局组件与跨页面功能",
+      "router": "router/global.json",
+      "featureCount": 4,
+      "features": [
+        {
+          "id": "global-restrict",
+          "title": "地区限制系统（Region Restrict）",
+          "summary": "基于 IP 检测的地区限制系统，从 sodex-web 完整迁移。涵盖 5 份 spec（a/b/c/d/e）共 18 个生效使用点 + ConnectedDeposit lockedToken/lockedChain 能力扩展。",
+          "type": "feat",
+          "lastUpdated": "2026-04-28"
+        },
+        {
+          "id": "global-maintenance",
+          "title": "全局维护系统（Global Maintenance）",
+          "summary": "两级维护系统（全量 + 链维护）从 sodex-web 完整迁移。5 份 spec + 7 个 PR 实施 + 9 状态跳转矩阵 + 12 状态 Banner 优先级矩阵 + 48 个生效点。",
+          "type": "feat",
+          "lastUpdated": "2026-04-28"
+        },
+        {
+          "id": "global-banner",
+          "title": "全局公告 Banner（Global Banner）",
+          "summary": "对齐老项目 sodex-web 单消费者架构：useGlobalBanner 渲染 type 2/3/4（24h TTL + URL 校验 + isChainMaintenanceOnTrade/isRestricted 守卫），MaintenanceBanner 仅在维护期 + 后端无 type 2 时兜底硬编码英文。包含 18 行场景决策矩阵。",
+          "type": "feat",
+          "lastUpdated": "2026-04-30"
+        },
+        {
+          "id": "global-track",
+          "title": "埋点系统（Tracking / 神策 SDK + saTrack + GA）",
+          "summary": "Batch A 基础设施：神策 SDK autoTrack + saTrack + GA 三路；钱包身份双向链路完整性修复（identityService 写 localStorage 三 key 让 propertyPlugin/datasinkSink 读到非空 + sensors.logout 登出同步重置 distinct_id）。",
+          "type": "feat",
+          "lastUpdated": "2026-05-12"
+        },
+        "global-sentry"
+      ]
+    },
+    {
+      "id": "stake",
+      "name": "Stake",
+      "emoji": "💎",
+      "description": "SOSO 质押页面与 Stake SOSO 弹窗",
+      "router": "router/stake.json",
+      "featureCount": 2,
+      "features": [
+        {
+          "id": "stake-page",
+          "title": "SOSO 质押页面（Staking Page）",
+          "summary": "Staking 页面入口与展示层（Header / StatsRow / Tiers / Utilities / 移动端浮动按钮）。聚合 useStakingBalancesQuery + useTotalStakedQuery，提供 7 档 tier 系统。监听 ?action=stake 自动打开 stake-soso 弹窗。全程 useAuthState().address，邮箱用户兼容。",
+          "type": "feat",
+          "lastUpdated": "2026-04-30"
+        },
+        {
+          "id": "stake-soso",
+          "title": "Stake SOSO 弹窗（StakeSosoDialog）",
+          "summary": "Stake SOSO 质押弹窗，含 4 区块：(1) My Total SSI Value 全局聚合（4 代币 cooldown × wallet+proxy + LP lockDatas + ValueChain SLP×NAV）；(2) Trading Fee Discount 实时档位预览；(3) SSI Boost coefficient floor(stakeUsd/totalSsi×100) clamp[0,1000] 最大 11x；(4) Amount 输入区（4位 ROUND_DOWN + Max + 扣 0.001 gas）。5 档按钮状态机。由 stake-page 触发。2026-05-06 加 spot 余额刷新机制（useSpotRefetchAfterTransfer [2s,5s] retry + useSpotAccountStoreSync WS 桥接）+ toast 三阶段切换。",
+          "type": "feat",
+          "lastUpdated": "2026-05-06"
+        }
+      ]
+    },
+    {
+      "id": "vault",
+      "name": "Vault",
+      "emoji": "🏦",
+      "description": "Vault SLP 流动性提供模块：deposit/withdraw/unstake/claim 4 个核心操作及通知/数据刷新基础设施",
+      "router": "router/vault.json",
+      "featureCount": 5,
+      "features": [
+        {
+          "id": "vault-notification",
+          "title": "Vault 通知与数据刷新（Vault Notification & Data Refresh）",
+          "summary": "Vault 4 个操作（deposit/withdraw/unstake/claim）的统一 toast 通知 + 数据刷新机制。WS 推送驱动（sodex_deposit/sodex_withdraw/sodex_call_for type=1/2）+ DecompressionStream gzip 自动识别 + 17 query key 统一 invalidate（mutation 3/5/9s 兜底 + WS Success 单次刷）+ 4 set dedupe + 业务专有错误码（CALL_FOR_*→CLAIM_*/UNSTAKE_*/WITHDRAW_REDEEM_*）+ 静默 USER_REJECTED + claim success 不带金额（call_for type=2 inAmount=0 设计）。",
+          "type": "feat",
+          "lastUpdated": "2026-04-30"
+        },
+        {
+          "id": "vault-unstake",
+          "title": "Vault Unstake 完整流程",
+          "summary": "Vault SLP 独立 Unstake 入口:用户把 EVM-Funding(或 Spot 兜底)的 sMAG7.ssi 转回 MAG7.ssi 进入 14 天 cooldown。Smart-transfer 在 Container 编排 + Service 走 CallForPermit(callForType=1, toClob=false)+ catch 内 CALL_FOR_*→UNSTAKE_* 转换 + signer 锁 + 4.5s EVM 余额轮询 + onSuccess 不弹 toast(等 WS)。",
+          "type": "feat",
+          "lastUpdated": "2026-04-30"
+        },
+        {
+          "id": "vault-claim",
+          "title": "Vault Claim 完整流程",
+          "summary": "Vault SLP cooldown 期满后兑现入口:用户把 cooldown 中的 sMAG7.ssi 凭证兑现为 MAG7.ssi 直达 Spot 账户。无 smart-transfer + Service 走 CallForPermit(callForType=2,toClob=true,inAmount=0/minOutAmount=parseUnits)+ catch 内 CALL_FOR_*→CLAIM_* 转换 + signer 锁 + onSuccess 不弹 toast(等 WS) + 老用户 Enable Claim。本 feature 的 vaultClaimInfra/claimPermit 是基础模块被 unstake/withdraw 复用。",
+          "type": "feat",
+          "lastUpdated": "2026-04-30"
+        },
+        {
+          "id": "vault-withdraw",
+          "title": "Vault Withdraw 完整流程(sMAG7/MAG7 两路分支)",
+          "summary": "Vault SLP 提取入口,用 sMAG7.SLP 凭证。两路代码分支:sMAG7 单步 redeem(链上即时落账,主动弹 toast),MAG7 串联 redeem+unstake(进 14-day cooldown,等 WS sodex_call_for type=1)。两次签名(SLP ERC20 Permit + outer CallForPermit cmdType=VaultRedeemWithPermit key=4)+ Redeem 事件解析 assetsBigInt + cooldown 二次确认走 Radix Dialog + WithdrawPhase 状态机驱动 Progress View + 7 个 share query 数据源。",
+          "type": "feat",
+          "lastUpdated": "2026-04-30"
+        },
+        {
+          "id": "vault-deposit",
+          "title": "Vault Deposit 完整流程(3 层 reducer + 跨阶段编排)",
+          "summary": "vault module **最复杂 feature**(~5870 行,11 文件)。3 层 reducer 状态机(top/base/value)+ effect driver 防重入 + 不建 Service 的 Container 直接编排 + 跨 feature callback 桥接(trade.useSubmitTransfer / auth.waitForAccountReady+ensureExchangeCapability)+ 3 屏切换(idle/preview/trading)+ 双 ref 防 Auto-fill 误报 + RETRY 缓存复用签名 + isNewUser 快照 + enable_trading 两阶段拆分 + CallForPermit to=SLP_TOKEN_ADDRESS(deposit 唯一与其他不同)。",
+          "type": "feat",
+          "lastUpdated": "2026-04-30"
+        }
+      ]
+    }
+  ],
+  "recentQueue": [
+    {
+      "id": "global-sentry",
+      "module": "global",
+      "date": "2026-05-26",
+      "type": "feat",
+      "summary": "把 sodex-web Sentry 错误监控基础设施迁移到 sodex-next，覆盖钱包签名/链上写操作 12 个 Container"
+    },
+    {
+      "id": "global-track",
+      "module": "global",
+      "type": "fix",
+      "date": "2026-05-12"
+    },
+    {
+      "id": "global-track",
+      "module": "global",
+      "type": "feat",
+      "date": "2026-05-12"
+    },
+    {
+      "featureId": "stake-soso",
+      "module": "stake",
+      "type": "fix",
+      "summary": "transfer 路径 spot 余额刷新修复：useSpotRefetchAfterTransfer [2s,5s] retry + useSpotAccountStoreSync WS 桥接 + toast 三阶段切换",
+      "timestamp": "2026-05-06T00:00:00Z"
+    },
+    {
+      "id": "vault-deposit",
+      "module": "vault",
+      "date": "2026-04-30",
+      "type": "feat",
+      "summary": "Vault Deposit 完整流程入库(最复杂 feature 5870 行 / 3 层 reducer / 防重入 / 双 ref / Phase 1+2 / to=SLP_TOKEN_ADDRESS)"
+    },
+    {
+      "id": "vault-withdraw",
+      "module": "vault",
+      "date": "2026-04-30",
+      "type": "feat",
+      "summary": "Vault Withdraw 完整流程入库(sMAG7 vs MAG7 两路分支 + 两次签名 + Redeem 事件解析 + cooldown 二次确认 Radix Dialog)"
+    },
+    {
+      "id": "vault-claim",
+      "module": "vault",
+      "date": "2026-04-30",
+      "type": "feat",
+      "summary": "Vault Claim 完整流程入库(callForType=2/toClob=true 单层 mutation 无 smart-transfer + claim 是基础设施被 unstake/withdraw 复用)"
+    },
+    {
+      "id": "vault-unstake",
+      "module": "vault",
+      "date": "2026-04-30",
+      "type": "feat",
+      "summary": "Vault SLP 独立 Unstake 入口完整流程入库(smart-transfer + CallForPermit + signer 锁 + 4.5s 轮询 + WS 驱动 toast)"
+    },
+    {
+      "featureId": "vault-notification",
+      "module": "vault",
+      "type": "feat",
+      "summary": "Vault 4 操作通知 + 数据刷新基础设施(WS sodex_deposit/withdraw/call_for + 17 query 统一失效 + 4 set dedupe + 业务专有错误码 + claim 不带金额)",
+      "timestamp": "2026-04-30T23:08:00Z"
+    },
+    {
+      "featureId": "stake-soso",
+      "module": "stake",
+      "type": "feat",
+      "summary": "Stake SOSO 弹窗独立入库：4 区块完整算法（My Total SSI / Boost / Discount / Amount）+ 4 代币 cooldown 聚合 + LP lockDatas + 5 档按钮状态机",
+      "timestamp": "2026-04-30T13:30:00Z"
+    }
+  ]
+}

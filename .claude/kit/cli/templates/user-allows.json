@@ -1,0 +1,68 @@
+{
+  "_meta": {
+    "purpose": "soso-kit 工作流通用 allow 模板，由 sosokit-install 自动 merge 到目标项目 settings.local.json",
+    "merge_strategy": "permissions.allow 数组并集 unique 去重，其他 key 不动",
+    "version": "1.15.0",
+    "doc": "https://docs.claude.com/en/docs/claude-code/settings"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(bash .claude/kit/**:*)",
+      "Bash(source .claude/kit/**:*)",
+      "Bash(bash -n:*)",
+
+      "Bash(sosokit-install:*)",
+      "Bash(sosokit-sync:*)",
+      "Bash(sosokit-clean:*)",
+      "Bash(sosokit-status:*)",
+      "Bash(sosokit-add:*)",
+      "Bash(sosokit-switch:*)",
+      "Bash(sosokit-conversation:*)",
+      "Bash(sosokit-deploy:*)",
+      "Bash(sosokit-setup-allows:*)",
+
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git blame:*)",
+      "Bash(git remote:*)",
+      "Bash(git worktree list:*)",
+      "Bash(git stash:*)",
+      "Bash(git config --get:*)",
+
+      "Bash(jq:*)",
+      "Bash(yq:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(diff:*)",
+      "Bash(tree:*)",
+      "Bash(pwd)",
+      "Bash(echo:*)",
+      "Bash(date:*)",
+      "Bash(basename:*)",
+      "Bash(dirname:*)",
+      "Bash(realpath:*)",
+      "Bash(which:*)",
+      "Bash(type:*)",
+      "Bash(file:*)",
+      "Bash(stat:*)",
+
+      "Bash(pnpm:*)",
+      "Bash(node:*)",
+      "Bash(npx:*)",
+      "Bash(python3:*)"
+    ]
+  }
+}

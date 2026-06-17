@@ -1,0 +1,382 @@
+{
+  "module": {
+    "id": "trade",
+    "name": "Trade",
+    "emoji": "📈",
+    "description": "Trade 页业务：币种信息 tabs（chart/intro/news/opinion/research/announcement/data）+ News 资讯模块（News/Opinion/Research/Announcement）+ 详情弹窗 + 分享 URL 重定向 + 埋点"
+  },
+  "features": {
+    "trade-news": {
+      "id": "trade-news",
+      "module": "trade",
+      "type": "feature",
+      "title": "Trade News 模块（News/Opinion/Research + Announcement + 详情分享 + URL 重定向 + 埋点）",
+      "summary": "Trade 页 News 业务完整实现：单端点 biz/v1/asset/intelligence 拉取 3 资产 × 多子 tab 内容；PostDetailDialog 单文件双内容组件 + isShareView 内嵌分享；shareURLAction DU switch 三道去重接收侧消费；html2canvas 海报截图 + 5 渠道分享；asset_detail_click + feeds_share_click 2 个埋点全覆盖",
+      "quickRef": {
+        "coreLogic": [
+          "useNewsList({seoName, infoType, isOfficial?}) → GET biz/v1/asset/intelligence with cursor (lastSortValues/currentField) [src/features/news/containers/useNewsList.ts:23-72]",
+          "useStockAnnouncement({seoName, announcementType}) → same endpoint with infoType=announcement, pageNum 翻页 [src/features/news/containers/useStockAnnouncement.ts:21-60]",
+          "openPostDetailDialog({post, ticker?, type?}) → isMobileScreen() ? openDrawer : openModal，单文件双内容组件 [src/features/news/components/PostDetailDialog.tsx:439-485]",
+          "useNewsShare(post, posterRef) → {joinUrl, detailRow, shareRail}，6 渠道分发（X/Telegram/Copy Link/Copy Poster/Download Poster/Source）[src/features/news/containers/useNewsShare.ts:39-128]",
+          "useShareURLActionConsumer() → DU + switch，case 'feeds' → fetchNewsPostById + openPostDetailDialog，三道去重 [src/features/shareURLAction/containers/useShareURLActionConsumer.ts:130-147]"
+        ],
+        "keyComponents": [
+          "NewsPanel — PC/Mobile News 入口，4 props 受控（symbolInfo/activeNewsTab/marketType/isOfficial）[features/news/components/index.tsx:22-48]",
+          "NewsTable + NewsTableRow + NewsCard + AnnouncementList — 列表渲染，PC 行 vs Mobile 卡片自动切换 [features/news/components/]",
+          "PostDetailDialog — 详情弹窗 + 内嵌 isShareView，含 MobilePostDetailContent (:57) 和 PcPostDetailContent (:228)",
+          "DetailShareRow + ShareActions — 分享渠道按钮，PC 顶部 3 个 + 分享视图 5 个 [shared/components/features/ShareActions/]",
+          "CoinInfoTabs — 7 项 tab union (chart/intro/news/opinion/research/announcement/data)，按 marketType 决定 data 显示 [features/trade/components/CoinInfoTabs/index.tsx:11-18]"
+        ],
+        "keyFiles": [
+          "src/features/news/infra/api/newsApi.ts",
+          "src/features/news/containers/useNewsList.ts",
+          "src/features/news/containers/useStockAnnouncement.ts",
+          "src/features/news/containers/useNewsShare.ts",
+          "src/features/news/containers/fetchNewsPostById.ts",
+          "src/features/news/containers/useNewsTimeAgo.ts",
+          "src/features/news/components/PostDetailDialog.tsx",
+          "src/features/news/components/index.tsx",
+          "src/features/news/components/NewsTable.tsx",
+          "src/features/news/components/AnnouncementList.tsx",
+          "src/features/news/domain/types.ts",
+          "src/features/news/domain/normalize.ts",
+          "src/features/news/domain/shareText.ts",
+          "src/features/shareURLAction/containers/useShareURLActionConsumer.ts",
+          "src/features/shareURLAction/domain/shareURLActionLogic.ts",
+          "src/features/auth/pages/JoinRedirectPage.tsx",
+          "src/features/trade/components/CoinInfoTabs/index.tsx",
+          "src/features/trade/components/MobileMarketView.tsx",
+          "src/shared/components/features/ShareActions/index.tsx",
+          "src/shared/components/features/ShareDialog/useShareCapture.ts",
+          "src/shared/utils/capturePoster.ts",
+          "src/shared/utils/getAssetCategoryFromSeoName.ts",
+          "src/shared/track/events/tradeNews.ts",
+          "src/shared/queryKeys/index.ts"
+        ],
+        "relatedConcepts": [
+          "infinite-query",
+          "cursor-pagination",
+          "domain-normalize",
+          "modal-shell",
+          "html2canvas",
+          "share-url-redirect",
+          "tracking",
+          "asset-type-derivation"
+        ],
+        "callers": [
+          "features/trade/pages/SpotTradePage",
+          "features/trade/components/MobileMarketView",
+          "features/shareURLAction/containers/useShareURLActionConsumer"
+        ],
+        "sideEffects": {
+          "emits": [
+            "asset_detail_click",
+            "feeds_share_click"
+          ],
+          "invalidates": [],
+          "writes": [
+            "navigator.clipboard",
+            "URL.createObjectURL/blob"
+          ]
+        },
+        "relatedFeatures": [
+          "trade",
+          "shareURLAction",
+          "auth (JoinRedirectPage)"
+        ],
+        "pitfalls": [
+          "PostDetailDialog.tsx:481 PC 宽度数学不一致 (740 vs 720 vs 684)",
+          "useShareURLActionConsumer.ts:50 过期 TODO 注释与实际实现矛盾",
+          "SectorChip / SourceAvatar 死文件（grep 0 引用）",
+          "spot.json 含 8 个旧 NewsShareDialog 时代死 i18n key",
+          "Announcement type 类型 0|1|2 但实测仅 0|1",
+          "裸 <button> 5 处违反 use-shared-ui.md"
+        ]
+      },
+      "referencePath": "reference/trade/trade-news-guide.md",
+      "sections": [
+        {
+          "title": "0a. 全量接口调用表",
+          "summary": "HTTP/SDK/Domain pure 函数总表",
+          "lineRange": [
+            132,
+            183
+          ],
+          "estimatedTokens": 780
+        },
+        {
+          "title": "§1 接口层",
+          "summary": "5 hook + queryKey + normalize + 缓存",
+          "lineRange": [
+            184,
+            296
+          ],
+          "estimatedTokens": 1815
+        },
+        {
+          "title": "§2 UI 主体",
+          "summary": "挂载 + 7 tab union + 列表 + 滚动",
+          "lineRange": [
+            297,
+            354
+          ],
+          "estimatedTokens": 870
+        },
+        {
+          "title": "§3 详情弹窗 + 内嵌分享",
+          "summary": "PostDetailDialog + isShareView + 6 渠道",
+          "lineRange": [
+            355,
+            423
+          ],
+          "estimatedTokens": 1035
+        },
+        {
+          "title": "§4 分享 URL 重定向",
+          "summary": "四象限 URL + 三道去重 + DU switch",
+          "lineRange": [
+            424,
+            495
+          ],
+          "estimatedTokens": 1080
+        },
+        {
+          "title": "§5 埋点",
+          "summary": "asset_detail_click + feeds_share_click",
+          "lineRange": [
+            496,
+            537
+          ],
+          "estimatedTokens": 630
+        },
+        {
+          "title": "§6 海报下载",
+          "summary": "html2canvas + 无图版功能不存在",
+          "lineRange": [
+            538,
+            592
+          ],
+          "estimatedTokens": 825
+        },
+        {
+          "title": "§8 偏差全量",
+          "summary": "22 项分 7 类：bug/死代码/spec 错/用语/红线/增量",
+          "lineRange": [
+            593,
+            677
+          ],
+          "estimatedTokens": 1275
+        }
+      ],
+      "tags": [
+        "trade",
+        "news",
+        "opinion",
+        "research",
+        "announcement",
+        "share",
+        "share-url",
+        "track",
+        "modal",
+        "infinite-query",
+        "cursor-pagination",
+        "html2canvas"
+      ],
+      "created": "2026-05-28",
+      "updated": "2026-05-28",
+      "lastVerified": "2026-05-28"
+    },
+    "null": {
+      "module": {
+        "id": "trade",
+        "name": "Trade",
+        "emoji": "📈",
+        "description": "Trade 页业务：币种信息 tabs（chart/intro/news/opinion/research/announcement/data）+ News 资讯模块（News/Opinion/Research/Announcement）+ 详情弹窗 + 分享 URL 重定向 + 埋点"
+      },
+      "features": {
+        "trade-news": {
+          "id": "trade-news",
+          "module": "trade",
+          "type": "feature",
+          "title": "Trade News 模块（News/Opinion/Research + Announcement + 详情分享 + URL 重定向 + 埋点）",
+          "summary": "Trade 页 News 业务完整实现：单端点 biz/v1/asset/intelligence 拉取 3 资产 × 多子 tab 内容；PostDetailDialog 单文件双内容组件 + isShareView 内嵌分享；shareURLAction DU switch 三道去重接收侧消费；html2canvas 海报截图 + 5 渠道分享；asset_detail_click + feeds_share_click 2 个埋点全覆盖",
+          "quickRef": {
+            "coreLogic": [
+              "useNewsList({seoName, infoType, isOfficial?}) → GET biz/v1/asset/intelligence with cursor (lastSortValues/currentField) [src/features/news/containers/useNewsList.ts:23-72]",
+              "useStockAnnouncement({seoName, announcementType}) → same endpoint with infoType=announcement, pageNum 翻页 [src/features/news/containers/useStockAnnouncement.ts:21-60]",
+              "openPostDetailDialog({post, ticker?, type?}) → isMobileScreen() ? openDrawer : openModal，单文件双内容组件 [src/features/news/components/PostDetailDialog.tsx:439-485]",
+              "useNewsShare(post, posterRef) → {joinUrl, detailRow, shareRail}，6 渠道分发（X/Telegram/Copy Link/Copy Poster/Download Poster/Source）[src/features/news/containers/useNewsShare.ts:39-128]",
+              "useShareURLActionConsumer() → DU + switch，case 'feeds' → fetchNewsPostById + openPostDetailDialog，三道去重 [src/features/shareURLAction/containers/useShareURLActionConsumer.ts:130-147]"
+            ],
+            "keyComponents": [
+              "NewsPanel — PC/Mobile News 入口，4 props 受控（symbolInfo/activeNewsTab/marketType/isOfficial）[features/news/components/index.tsx:22-48]",
+              "NewsTable + NewsTableRow + NewsCard + AnnouncementList — 列表渲染，PC 行 vs Mobile 卡片自动切换 [features/news/components/]",
+              "PostDetailDialog — 详情弹窗 + 内嵌 isShareView，含 MobilePostDetailContent (:57) 和 PcPostDetailContent (:228)",
+              "DetailShareRow + ShareActions — 分享渠道按钮，PC 顶部 3 个 + 分享视图 5 个 [shared/components/features/ShareActions/]",
+              "CoinInfoTabs — 7 项 tab union (chart/intro/news/opinion/research/announcement/data)，按 marketType 决定 data 显示 [features/trade/components/CoinInfoTabs/index.tsx:11-18]"
+            ],
+            "keyFiles": [
+              "src/features/news/infra/api/newsApi.ts",
+              "src/features/news/containers/useNewsList.ts",
+              "src/features/news/containers/useStockAnnouncement.ts",
+              "src/features/news/containers/useNewsShare.ts",
+              "src/features/news/containers/fetchNewsPostById.ts",
+              "src/features/news/containers/useNewsTimeAgo.ts",
+              "src/features/news/components/PostDetailDialog.tsx",
+              "src/features/news/components/index.tsx",
+              "src/features/news/components/NewsTable.tsx",
+              "src/features/news/components/AnnouncementList.tsx",
+              "src/features/news/domain/types.ts",
+              "src/features/news/domain/normalize.ts",
+              "src/features/news/domain/shareText.ts",
+              "src/features/shareURLAction/containers/useShareURLActionConsumer.ts",
+              "src/features/shareURLAction/domain/shareURLActionLogic.ts",
+              "src/features/auth/pages/JoinRedirectPage.tsx",
+              "src/features/trade/components/CoinInfoTabs/index.tsx",
+              "src/features/trade/components/MobileMarketView.tsx",
+              "src/shared/components/features/ShareActions/index.tsx",
+              "src/shared/components/features/ShareDialog/useShareCapture.ts",
+              "src/shared/utils/capturePoster.ts",
+              "src/shared/utils/getAssetCategoryFromSeoName.ts",
+              "src/shared/track/events/tradeNews.ts",
+              "src/shared/queryKeys/index.ts"
+            ],
+            "relatedConcepts": [
+              "infinite-query",
+              "cursor-pagination",
+              "domain-normalize",
+              "modal-shell",
+              "html2canvas",
+              "share-url-redirect",
+              "tracking",
+              "asset-type-derivation"
+            ],
+            "callers": [
+              "features/trade/pages/SpotTradePage",
+              "features/trade/components/MobileMarketView",
+              "features/shareURLAction/containers/useShareURLActionConsumer"
+            ],
+            "sideEffects": {
+              "emits": [
+                "asset_detail_click",
+                "feeds_share_click"
+              ],
+              "invalidates": [],
+              "writes": [
+                "navigator.clipboard",
+                "URL.createObjectURL/blob"
+              ]
+            },
+            "relatedFeatures": [
+              "trade",
+              "shareURLAction",
+              "auth (JoinRedirectPage)"
+            ],
+            "pitfalls": [
+              "PostDetailDialog.tsx:481 PC 宽度数学不一致 (740 vs 720 vs 684)",
+              "useShareURLActionConsumer.ts:50 过期 TODO 注释与实际实现矛盾",
+              "SectorChip / SourceAvatar 死文件（grep 0 引用）",
+              "spot.json 含 8 个旧 NewsShareDialog 时代死 i18n key",
+              "Announcement type 类型 0|1|2 但实测仅 0|1",
+              "裸 <button> 5 处违反 use-shared-ui.md"
+            ]
+          },
+          "referencePath": "reference/trade/trade-news-guide.md",
+          "sections": [
+            {
+              "title": "0a. 全量接口调用表",
+              "summary": "HTTP/SDK/Domain pure 函数总表",
+              "lineRange": [
+                132,
+                183
+              ],
+              "estimatedTokens": 780
+            },
+            {
+              "title": "§1 接口层",
+              "summary": "5 hook + queryKey + normalize + 缓存",
+              "lineRange": [
+                184,
+                296
+              ],
+              "estimatedTokens": 1815
+            },
+            {
+              "title": "§2 UI 主体",
+              "summary": "挂载 + 7 tab union + 列表 + 滚动",
+              "lineRange": [
+                297,
+                354
+              ],
+              "estimatedTokens": 870
+            },
+            {
+              "title": "§3 详情弹窗 + 内嵌分享",
+              "summary": "PostDetailDialog + isShareView + 6 渠道",
+              "lineRange": [
+                355,
+                423
+              ],
+              "estimatedTokens": 1035
+            },
+            {
+              "title": "§4 分享 URL 重定向",
+              "summary": "四象限 URL + 三道去重 + DU switch",
+              "lineRange": [
+                424,
+                495
+              ],
+              "estimatedTokens": 1080
+            },
+            {
+              "title": "§5 埋点",
+              "summary": "asset_detail_click + feeds_share_click",
+              "lineRange": [
+                496,
+                537
+              ],
+              "estimatedTokens": 630
+            },
+            {
+              "title": "§6 海报下载",
+              "summary": "html2canvas + 无图版功能不存在",
+              "lineRange": [
+                538,
+                592
+              ],
+              "estimatedTokens": 825
+            },
+            {
+              "title": "§8 偏差全量",
+              "summary": "22 项分 7 类：bug/死代码/spec 错/用语/红线/增量",
+              "lineRange": [
+                593,
+                677
+              ],
+              "estimatedTokens": 1275
+            }
+          ],
+          "tags": [
+            "trade",
+            "news",
+            "opinion",
+            "research",
+            "announcement",
+            "share",
+            "share-url",
+            "track",
+            "modal",
+            "infinite-query",
+            "cursor-pagination",
+            "html2canvas"
+          ],
+          "created": "2026-05-28",
+          "updated": "2026-05-28",
+          "lastVerified": "2026-05-28"
+        }
+      },
+      "created": "2026-05-28",
+      "updated": "2026-05-28"
+    }
+  }
+}

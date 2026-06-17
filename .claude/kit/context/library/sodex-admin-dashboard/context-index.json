@@ -1,0 +1,21 @@
+{
+  "meta": {
+    "version": "2.5",
+    "project": "sodex-admin-dashboard",
+    "lastUpdated": "2026-04-14T00:00:00Z",
+    "totalFeatures": 0,
+    "totalModules": 5,
+    "structureType": "module-based",
+    "indexes": {
+      "files": "indexes/files.json",
+      "tags": "indexes/tags.json"
+    }
+  },
+  "modules": [
+    { "name": "summary", "docs": ["summary/overview.md", "summary/agent-nav.md"] },
+    { "name": "router", "docs": ["router/routes.md"] },
+    { "name": "reference", "docs": ["reference/http-patterns.md", "reference/auth-flow.md"] },
+    { "name": "reusable", "docs": ["reusable/pro-table-pattern.md", "reusable/pro-form-pattern.md", "reusable/dialog-pattern.md"] }
+  ],
+  "recentQueue": []
+}

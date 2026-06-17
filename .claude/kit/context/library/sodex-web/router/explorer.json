@@ -1,0 +1,183 @@
+{
+  "module": "explorer",
+  "name": "Explorer",
+  "description": "区块浏览器功能",
+  "emoji": "🔍",
+  "features": {
+    "explorer-page": {
+      "id": "explorer-page",
+      "module": "explorer",
+      "type": "feature",
+      "title": "Explorer 区块浏览器页面",
+      "summary": "Value Chain 区块浏览器，展示区块/交易实时数据（WS）和历史查询（HTTP），支持现货/合约双链切换",
+      "discovery_cost": "~26800 tokens",
+      "quickRef": {
+        "coreLogic": [
+          "ExplorerRoutes(): JSX  L18-54  路由入口：6条路由+blocktype强制跳转",
+          "Dashboard(): JSX  L11-151  首页面板：搜索框+实时区块表+实时交易表",
+          "BlocksTable(): JSX  L13-358  WS实时区块表：pako解压+30s心跳+300条缓冲",
+          "TransactionDetailsPage(): JSX  L18-604  交易详情：解析tx_json+action类型映射+PayloadDetails",
+          "PayloadDetails(): JSX  L43-340  Payload通用渲染：枚举映射+orders/cancels数组"
+        ],
+        "keyComponents": [
+          "explorer/index.tsx - 路由入口，BrowserRouter包裹，6条路由",
+          "Dashboard/index.tsx - 首页面板，搜索+实时区块/交易双表",
+          "components/blocksTable/index.tsx - WS实时区块表（pako+心跳+分页）",
+          "components/transactionsTable/index.tsx - WS实时交易表",
+          "components/transactionsTableHttp/index.tsx - HTTP历史交易表（区块/地址双模式）",
+          "TransactionDetailsPage/index.tsx - 交易详情页（605行，最复杂）",
+          "http/explorer/index.ts - API层（6个接口+类型定义）"
+        ],
+        "keyFiles": [
+          "src/pages/explorer/index.tsx",
+          "src/pages/explorer/Dashboard/index.tsx",
+          "src/pages/explorer/BlocksPage/index.tsx",
+          "src/pages/explorer/BlockDetailPage/index.tsx",
+          "src/pages/explorer/BlockDetailPage/type.ts",
+          "src/pages/explorer/TxsPage/index.tsx",
+          "src/pages/explorer/TransactionDetailsPage/index.tsx",
+          "src/pages/explorer/TransactionDetailsPage/PayloadDetails.tsx",
+          "src/pages/explorer/TransactionDetailsPage/types.ts",
+          "src/pages/explorer/AddressTransactionsPage/index.tsx",
+          "src/pages/explorer/AddressTransactionsPage/type.ts",
+          "src/pages/explorer/components/SearchNotFound/index.tsx",
+          "src/pages/explorer/components/blockTypeTab/index.tsx",
+          "src/pages/explorer/components/blocksTable/index.tsx",
+          "src/pages/explorer/components/transactionsTable/index.tsx",
+          "src/pages/explorer/components/transactionsTableHttp/index.tsx",
+          "src/http/explorer/index.ts",
+          "src/hooks/useChainAssetByAddress.ts"
+        ],
+        "relatedConcepts": [
+          "websocket",
+          "blockchain-explorer",
+          "real-time",
+          "gzip"
+        ]
+      },
+      "referencePath": "reference/explorer/explorer-page-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "6条路由、WS/HTTP双通道数据流、搜索路由策略",
+          "lineRange": [
+            3,
+            51
+          ],
+          "estimatedTokens": 735
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "BlocksTable WS实时推送、TransactionsTable、TransactionsTableHttp HTTP查询、TransactionDetailsPage交易详情、PayloadDetails枚举映射",
+          "lineRange": [
+            52,
+            129
+          ],
+          "estimatedTokens": 1170
+        },
+        {
+          "title": "HTTP API 层",
+          "summary": "6个API接口定义、服务器变量、blocktype到type转换",
+          "lineRange": [
+            130,
+            147
+          ],
+          "estimatedTokens": 270
+        },
+        {
+          "title": "useChainAssetByAddress",
+          "summary": "链上资产查询Hook：批量ERC20余额×价格=总资产值",
+          "lineRange": [
+            148,
+            155
+          ],
+          "estimatedTokens": 120
+        },
+        {
+          "title": "文件结构",
+          "summary": "18个文件的目录结构和职责说明",
+          "lineRange": [
+            156,
+            184
+          ],
+          "estimatedTokens": 435
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "WS/HTTP双通道、pako gzip、心跳30s、搜索启发式、批量地址查询、tx_count-1",
+          "lineRange": [
+            185,
+            195
+          ],
+          "estimatedTokens": 165
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "新增字段/action映射/WS频道/链类型等场景入口",
+          "lineRange": [
+            196,
+            208
+          ],
+          "estimatedTokens": 195
+        },
+        {
+          "title": "术语表",
+          "summary": "Value Chain/snapshot_id/tx_json/blocktype/pako等术语",
+          "lineRange": [
+            209,
+            221
+          ],
+          "estimatedTokens": 195
+        },
+        {
+          "title": "更新记录",
+          "summary": "版本历史",
+          "lineRange": [
+            222,
+            226
+          ],
+          "estimatedTokens": 75
+        }
+      ],
+      "tags": [
+        "websocket",
+        "blockchain-explorer",
+        "real-time",
+        "gzip",
+        "responsive",
+        "value-chain"
+      ],
+      "created": "2026-04-10",
+      "updated": "2026-04-10"
+    }
+  },
+  "history": {
+    "explorer-page": [
+      {
+        "date": "2026-04-10",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": [
+          "explorer/index.tsx",
+          "Dashboard/index.tsx",
+          "BlocksPage/index.tsx",
+          "BlockDetailPage/index.tsx",
+          "BlockDetailPage/type.ts",
+          "TxsPage/index.tsx",
+          "TransactionDetailsPage/index.tsx",
+          "PayloadDetails.tsx",
+          "TransactionDetailsPage/types.ts",
+          "AddressTransactionsPage/index.tsx",
+          "AddressTransactionsPage/type.ts",
+          "SearchNotFound/index.tsx",
+          "blockTypeTab/index.tsx",
+          "blocksTable/index.tsx",
+          "transactionsTable/index.tsx",
+          "transactionsTableHttp/index.tsx",
+          "http/explorer/index.ts",
+          "useChainAssetByAddress.ts"
+        ]
+      }
+    ]
+  }
+}

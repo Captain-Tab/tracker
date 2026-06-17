@@ -1,0 +1,237 @@
+{
+  "meta": {
+    "version": "2.5",
+    "project": "sodex-web",
+    "lastUpdated": "2026-04-14T00:00:00Z",
+    "totalFeatures": 35,
+    "totalModules": 12,
+    "structureType": "module-based",
+    "indexes": {
+      "files": "indexes/files.json",
+      "tags": "indexes/tags.json"
+    }
+  },
+  "modules": [
+    {
+      "id": "core",
+      "name": "Core",
+      "description": "核心基础 Hooks 与工具函数",
+      "emoji": "⚙️",
+      "configPath": "router/core.json",
+      "features": [
+        "core-usefundingtoken"
+      ]
+    },
+    {
+      "id": "trade",
+      "name": "Trade",
+      "description": "主站交易相关功能（充值、提现等）",
+      "emoji": "💱",
+      "configPath": "router/trade.json",
+      "features": [
+        "trade-transfer",
+        "trade-deposit",
+        "trade-position",
+        "trade-withdraw",
+        "trade-blacklist",
+        "trade-feerate",
+        "trade-spot-orderform",
+        "trade-futures-orderform",
+        "trade-futures-orderform-mobile",
+        "trade-orderbook",
+        "trade-market-switch",
+        "trade-steprate"
+      ]
+    },
+    {
+      "id": "vault",
+      "name": "Vault",
+      "description": "Vault 充值提现与流动性功能",
+      "emoji": "🏦",
+      "configPath": "router/vault.json",
+      "features": [
+        "vault-deposit",
+        "vault-unstake",
+        "vault-claim",
+        "vault-withdraw",
+        "vault-page"
+      ]
+    },
+    {
+      "id": "stake",
+      "name": "Stake",
+      "description": "质押相关功能",
+      "emoji": "💎",
+      "configPath": "router/stake.json",
+      "features": [
+        "stake-page",
+        "stake-soso"
+      ]
+    },
+    {
+      "id": "network",
+      "name": "Network",
+      "description": "网络切换与多链支持",
+      "emoji": "🌐",
+      "configPath": "router/network.json",
+      "features": []
+    },
+    {
+      "id": "points",
+      "name": "Points",
+      "description": "积分与奖励系统",
+      "emoji": "⭐",
+      "configPath": "router/points.json",
+      "features": [
+        "points-page"
+      ]
+    },
+    {
+      "id": "shared",
+      "name": "Shared",
+      "description": "共享基础设施与通用功能",
+      "emoji": "🔧",
+      "configPath": "router/shared.json",
+      "features": [
+        "transfer-evm-sync",
+        "network-switch",
+        "wallet-mobileApprove"
+      ]
+    },
+    {
+      "id": "leaderboard",
+      "name": "Leaderboard",
+      "description": "交易排行榜与分享功能",
+      "emoji": "🏆",
+      "configPath": "router/leaderboard.json",
+      "features": [
+        "leaderboard-ranking"
+      ]
+    },
+    {
+      "id": "user",
+      "name": "User",
+      "description": "用户鉴权与身份管理",
+      "emoji": "👤",
+      "configPath": "router/user.json",
+      "features": [
+        "user-auth-core",
+        "user-auth-referrals",
+        "user-auth-enable",
+        "user-auth-private-key"
+      ]
+    },
+    {
+      "id": "global",
+      "name": "Global",
+      "description": "全局组件与跨页面功能",
+      "emoji": "🌍",
+      "configPath": "router/global.json",
+      "features": [
+        "global-restrict",
+        "global-banner",
+        "global-sentry",
+        "global-track"
+      ]
+    },
+    {
+      "id": "apikey",
+      "name": "API Key",
+      "description": "API Key 管理功能",
+      "emoji": "🔑",
+      "configPath": "router/apikey.json",
+      "features": [
+        "apikey-page"
+      ]
+    },
+    {
+      "id": "explorer",
+      "name": "Explorer",
+      "description": "区块浏览器功能",
+      "emoji": "🔍",
+      "configPath": "router/explorer.json",
+      "features": [
+        "explorer-page"
+      ]
+    }
+  ],
+  "recentQueue": [
+    {
+      "id": "global-track",
+      "module": "global",
+      "date": "2026-04-14",
+      "type": "feat",
+      "summary": "双链路埋点系统（神策+GA+SosoValue），22个业务事件，10种平台检测"
+    },
+    {
+      "id": "vault-page",
+      "module": "vault",
+      "date": "2026-04-10",
+      "type": "feature",
+      "summary": "SLP Vault 页面框架：指标面板（TVL/NAV/1Y Return）、4个Tab（My Position/Overview/Activity/Depos"
+    },
+    {
+      "id": "explorer-page",
+      "module": "explorer",
+      "date": "2026-04-10",
+      "type": "feature",
+      "summary": "Value Chain 区块浏览器，展示区块/交易实时数据（WS）和历史查询（HTTP），支持现货/合约双链切换"
+    },
+    {
+      "id": "points-page",
+      "module": "points",
+      "date": "2026-04-10",
+      "type": "feat",
+      "summary": "SoPoints 积分页面：Guest/User 双视图、Tier 等级卡片、Weekly Performance 表格、分享弹窗"
+    },
+    {
+      "id": "apikey-page",
+      "module": "apikey",
+      "date": "2026-04-10",
+      "type": "feat",
+      "summary": "API Key 全生命周期管理：资格验证、密钥生成、有效期调整、两步签名删除，PC/Mobile 响应式"
+    },
+    {
+      "id": "trade-position",
+      "module": "trade",
+      "date": "2026-04-10",
+      "type": "feature",
+      "summary": "交易页面底部的多功能 Tab 面板，集成资产余额、持仓、订单管理、交易历史等模块，支持搜索过滤、数据刷新和小余额隐藏功能"
+    },
+    {
+      "id": "user-auth-enable",
+      "module": "user",
+      "date": "2026-04-10",
+      "type": "feature",
+      "summary": "用户授权交易的核心流程，通过钱包签名生成私钥并注册 API Key，包含 useEnableTrading Hook、StaySignedIn 弹窗、私钥存储迁"
+    },
+    {
+      "id": "trade-steprate",
+      "module": "trade",
+      "date": "2026-04-09",
+      "type": "feature",
+      "summary": "独立页面展示用户手续费等级、费率表、交易量进度，支持申请专业费率（上传截图+选择平台）和超级合伙人入口"
+    },
+    {
+      "id": "trade-market-switch",
+      "module": "trade",
+      "date": "2026-04-09",
+      "type": "feat",
+      "summary": "币对切换与市场行情栏，搜索/收藏/标签分类/Ticker指标/资金费率倒计时"
+    },
+    {
+      "id": "trade-orderbook",
+      "module": "trade",
+      "date": "2026-04-09",
+      "type": "feat",
+      "summary": "现货/合约盘口深度展示，三种布局、深度合并、币种切换、悬停汇总Tooltip、点击填充下单"
+    },
+    {
+      "id": "user-auth-referrals",
+      "module": "user",
+      "date": "2026-04-08",
+      "type": "feature",
+      "summary": "邀请页面鉴权 + Claim 返佣领取功能"
+    }
+  ]
+}

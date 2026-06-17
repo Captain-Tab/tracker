@@ -1,0 +1,856 @@
+{
+  "module": {
+    "id": "global",
+    "name": "Global",
+    "emoji": "🌍",
+    "description": "全局组件与跨页面功能"
+  },
+  "features": {
+    "global-restrict": {
+      "id": "global-restrict",
+      "module": "global",
+      "type": "feature",
+      "title": "地区限制系统（Region Restrict）",
+      "summary": "基于 IP 检测的地区限制系统，限制特定地区用户（如美国）的入金/交易操作，保留提现能力。核心组件 RegionRestrictWrapper 自动添加 50% 透明度 + tooltip，失败默认放行",
+      "quickRef": {
+        "entryPoint": "src/global/RegionRestrictWrapper.tsx",
+        "hookPath": "src/hooks/restriction/useRegionRestrict.ts",
+        "storePath": "src/models/restriction.ts",
+        "coreLogic": [
+          "RegionRestrictWrapper: 包裹组件，自动添加 50% 透明度 + tooltip（L19-94）",
+          "useRegionRestrict(): 返回 { isRestricted, tooltipText, guardAction }（L5-25）",
+          "Restriction.fetchRestrictedRegion(): 获取地区限制状态，失败默认放行（L16-34）"
+        ],
+        "usagePattern": "<RegionRestrictWrapper><Button>Deposit</Button></RegionRestrictWrapper>",
+        "keyFiles": [
+          "src/global/RegionRestrictWrapper.tsx",
+          "src/hooks/restriction/useRegionRestrict.ts",
+          "src/models/restriction.ts",
+          "src/http/restriction/index.ts",
+          "src/components/header/components/regionRestrictBanner/index.tsx"
+        ],
+        "relatedConcepts": [
+          "geo-blocking",
+          "wrapper-component",
+          "tooltip",
+          "mobx-store"
+        ],
+        "keyComponents": [
+          "src/global/region-restrict/RegionRestrictWrapper.tsx — 仅地区限制包裹",
+          "src/global/region-restrict/RestrictWrapper.tsx — 维护+地区限制统一包裹（优先级：维护>地区）",
+          "src/hooks/restriction/useRegionRestrict.ts — isRestricted Hook",
+          "src/models/restriction.ts — MobX Store"
+        ]
+      },
+      "referencePath": "reference/global/global-restrict-guide.md",
+      "sections": [
+        {
+          "title": "概述",
+          "summary": "功能目的、RegionRestrictWrapper vs RestrictWrapper 区别",
+          "lineRange": [
+            3,
+            17
+          ],
+          "estimatedTokens": 220
+        },
+        {
+          "title": "核心架构",
+          "summary": "数据流、关键文件（含新路径和RestrictWrapper）",
+          "lineRange": [
+            18,
+            55
+          ],
+          "estimatedTokens": 550
+        },
+        {
+          "title": "使用位置索引",
+          "summary": "各页面包裹位置及使用的Wrapper类型（RegionRestrict/Restrict）",
+          "lineRange": [
+            56,
+            140
+          ],
+          "estimatedTokens": 1280
+        },
+        {
+          "title": "API 接口",
+          "summary": "环境路由规则、响应结构、降级策略",
+          "lineRange": [
+            141,
+            167
+          ],
+          "estimatedTokens": 380
+        },
+        {
+          "title": "使用方式",
+          "summary": "RegionRestrictWrapper和RestrictWrapper两种包裹示例",
+          "lineRange": [
+            168,
+            239
+          ],
+          "estimatedTokens": 900
+        },
+        {
+          "title": "限制规则",
+          "summary": "限制操作列表、OrderForm 限制规则矩阵、不限制操作列表及原因",
+          "lineRange": [
+            240,
+            275
+          ],
+          "estimatedTokens": 550
+        },
+        {
+          "title": "MainnetPreTradeButton 特殊逻辑",
+          "summary": "关键变量、完整场景矩阵（5种）、美国用户场景、skipDepositCheck 机制",
+          "lineRange": [
+            276,
+            327
+          ],
+          "estimatedTokens": 750
+        },
+        {
+          "title": "Tooltip 行为",
+          "summary": "PC/移动端触发与关闭方式",
+          "lineRange": [
+            328,
+            341
+          ],
+          "estimatedTokens": 250
+        },
+        {
+          "title": "国际化",
+          "summary": "翻译 Keys、支持语言列表",
+          "lineRange": [
+            342,
+            352
+          ],
+          "estimatedTokens": 160
+        },
+        {
+          "title": "常见问题",
+          "summary": "判断受限、新增按钮、接口失败、美国用户权限",
+          "lineRange": [
+            353,
+            389
+          ],
+          "estimatedTokens": 400
+        },
+        {
+          "title": "更新记录",
+          "summary": "文档变更历史",
+          "lineRange": [
+            390,
+            396
+          ],
+          "estimatedTokens": 80
+        }
+      ],
+      "tags": [
+        "region-restrict",
+        "usa",
+        "geo-blocking",
+        "wrapper-component",
+        "tooltip",
+        "banner"
+      ],
+      "created": "2026-03-24",
+      "updated": "2026-04-17"
+    },
+    "global-banner": {
+      "id": "global-banner",
+      "module": "global",
+      "type": "feature",
+      "title": "Global Banner 优先级展示系统",
+      "summary": "全站 Banner 系统，支持4种类型（新手/维护/币对活动/全站通知），按优先级 2>3>1>4 展示；维护状态优先于地区限制 Banner；链维护+Trade页面时隐藏 GlobalBanner",
+      "discovery_cost": "~2758 tokens（outline 扫描）+ ~1500 tokens（AI 分析）",
+      "quickRef": {
+        "coreLogic": [
+          "DepositBanner(): JSX.Element  L18-94  容器层：数据获取 + Type 1 资格判断 + 点击处理",
+          "GlobalBanner(props: GlobalBannerProps): JSX.Element  L53-267  展示层：优先级选择 + TTL 管理 + 样式切换 + UI 渲染",
+          "BANNER_MAP: Record<string, string>  L15-18  样式映射常量（regular→绿色，alert→红色）",
+          "isValidUrl(url: string): boolean  L22-37  URL 安全校验，拒绝 javascript/data/vbscript 协议",
+          "isBannerClosedWithinTTL(bannerId: number): boolean  L75-78  检查 Banner 是否在24小时内被关闭"
+        ],
+        "keyComponents": [
+          "depositBanner/index.tsx - 容器层：获取 Banner 配置、检查 Type 1 资格、处理充值弹窗",
+          "globalBanner/index.tsx - 展示层：按优先级选择 Banner、TTL 管理、多语言内容渲染",
+          "http/banner/index.ts - API：获取 Banner 配置列表",
+          "http/banner/api.d.ts - 类型定义：BannerConfigItem"
+        ],
+        "keyFiles": [
+          "src/components/header/components/depositBanner/index.tsx",
+          "src/components/header/components/globalBanner/index.tsx",
+          "src/http/banner/index.ts",
+          "src/http/banner/api.d.ts"
+        ],
+        "relatedConcepts": [
+          "priority-system",
+          "localStorage-ttl",
+          "url-validation",
+          "i18n"
+        ]
+      },
+      "referencePath": "reference/global/global-banner-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "两层组件架构：DepositBanner（容器层）负责数据获取与资格判断，GlobalBanner（展示层）负责优先级选择与 UI 渲染",
+          "lineRange": [
+            3,
+            30
+          ],
+          "estimatedTokens": 420
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "Banner优先级(2>3>1>4)、链维护Trade页面隐藏逻辑、维护优先于地区限制的矩阵、TTL关闭机制、URL安全校验",
+          "lineRange": [
+            31,
+            207
+          ],
+          "estimatedTokens": 3200
+        },
+        {
+          "title": "文件结构",
+          "summary": "组件文件（depositBanner/globalBanner）、API 文件（http/banner）、Hook 文件（banner-action）",
+          "lineRange": [
+            208,
+            226
+          ],
+          "estimatedTokens": 285
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "两层架构原因、Type1不可关闭、5分钟TTL轮询、链维护隐藏Banner、维护优先于地区限制原因",
+          "lineRange": [
+            227,
+            258
+          ],
+          "estimatedTokens": 580
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "新增类型、修改优先级、TTL、Banner Action、样式、链维护Banner控制、维护与地区限制优先级修改",
+          "lineRange": [
+            259,
+            316
+          ],
+          "estimatedTokens": 870
+        },
+        {
+          "title": "术语表",
+          "summary": "TTL、Type 1-4、Banner Action、style/regular/alert 术语定义",
+          "lineRange": [
+            317,
+            330
+          ],
+          "estimatedTokens": 210
+        },
+        {
+          "title": "更新记录",
+          "summary": "文档版本历史",
+          "lineRange": [
+            331,
+            347
+          ],
+          "estimatedTokens": 200
+        }
+      ],
+      "tags": [
+        "banner",
+        "priority",
+        "localStorage-ttl",
+        "i18n",
+        "url-validation",
+        "style-system"
+      ],
+      "created": "2026-03-18",
+      "updated": "2026-04-17"
+    },
+    "global-track": {
+      "id": "global-track",
+      "module": "global",
+      "type": "feature",
+      "title": "埋点系统（神策 + GA + SosoValue datasink）",
+      "summary": "双链路埋点系统：通过神策 SDK 和 SosoValue datasink 实现事件上报，覆盖钱包身份关联、交易流程、积分分享、Portfolio 等 22 个业务事件，支持 10 种平台检测和渠道追踪",
+      "discovery_cost": "~8154 tokens",
+      "quickRef": {
+        "coreLogic": [
+          "track(key: string, obj): Promise<void>  L358-366  神策标准事件上报",
+          "initTrack(): void  L387-419  初始化神策 SDK + 注册属性插件",
+          "trackConnectWallet(address): Promise<void>  L421-426  AES 加密钱包地址 → sensors.identify",
+          "saTrack(eventName: string, customData: any): Promise<void>  sosovalue.ts:L254-353  SosoValue datasink 直连上报",
+          "applyPublicParams(data): void  L119-275  注入公共参数（设备/平台/渠道/钱包）"
+        ],
+        "keyComponents": [
+          "index.ts - 核心入口：神策 SDK 初始化、track/identify、公共参数注入",
+          "sosovalue.ts - SosoValue datasink 直连上报链路",
+          "encrypt.ts - AES-128-CBC 加密（钱包地址脱敏）",
+          "events/trade.ts - 交易流程 16 个埋点事件",
+          "pageMapping.ts - URL 路径 → pageId 映射"
+        ],
+        "keyFiles": [
+          "src/track/index.ts",
+          "src/track/sosovalue.ts",
+          "src/track/encrypt.ts",
+          "src/track/hooks.tsx",
+          "src/track/pageMapping.ts",
+          "src/track/events/trade.ts",
+          "src/track/events/point.ts",
+          "src/track/events/portfolio.ts"
+        ],
+        "relatedConcepts": [
+          "analytics",
+          "sensors-sdk",
+          "aes-encryption",
+          "google-analytics",
+          "event-tracking"
+        ]
+      },
+      "referencePath": "reference/global/global-track-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "双链路上报架构：神策 SDK + SosoValue datasink + GA，文件结构说明",
+          "lineRange": [
+            3,
+            58
+          ],
+          "estimatedTokens": 840
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "初始化流程、钱包身份关联、公共参数注入、SosoValue 直连、平台检测",
+          "lineRange": [
+            59,
+            163
+          ],
+          "estimatedTokens": 1575
+        },
+        {
+          "title": "关键实现",
+          "summary": "22 个事件分类、使用方式示例、AES 加密、事件名映射",
+          "lineRange": [
+            164,
+            224
+          ],
+          "estimatedTokens": 915
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "双链路原因、地址加密原因、GA 用途、propertyPlugin 模式",
+          "lineRange": [
+            225,
+            242
+          ],
+          "estimatedTokens": 270
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "添加新事件、新页面映射、SosoValue 特化事件",
+          "lineRange": [
+            243,
+            269
+          ],
+          "estimatedTokens": 405
+        },
+        {
+          "title": "术语表",
+          "summary": "sensors、datasink、propertyPlugin、identify、tid/pid、MA 等术语",
+          "lineRange": [
+            270,
+            281
+          ],
+          "estimatedTokens": 180
+        },
+        {
+          "title": "更新记录",
+          "summary": "版本历史",
+          "lineRange": [
+            282,
+            286
+          ],
+          "estimatedTokens": 75
+        }
+      ],
+      "tags": [
+        "analytics",
+        "sensors",
+        "ga",
+        "aes",
+        "event-tracking",
+        "sosovalue"
+      ],
+      "created": "2026-04-14",
+      "updated": "2026-04-14"
+    },
+    "global-sentry": {
+      "id": "global-sentry",
+      "module": "global",
+      "type": "feature",
+      "title": "Sentry 错误监控模块",
+      "summary": "Sentry 错误监控模块，包含敏感数据过滤、Prompt Injection 防护、网络请求错误上报、钱包交互错误上报（14+ 模块集成）",
+      "quickRef": {
+        "coreLogic": [
+          "initSentry(): void  L146-216  初始化 Sentry + beforeSend 过滤管线",
+          "reportError(error, options?): void  L250-267  通用错误上报",
+          "reportWalletError(error, walletAction, context?): void  L278-295  钱包错误上报（自动过滤用户取消）",
+          "sanitizeData(data, depth?): unknown  L101-143  递归过滤敏感数据",
+          "filterPromptInjection(str): string  L92-98  Prompt Injection 检测与过滤"
+        ],
+        "keyComponents": [
+          "sentry.ts - 核心模块（初始化/过滤/API）",
+          "axios.config.ts - 网络请求错误上报",
+          "useEnableTrading.ts - Enable Trading 错误上报",
+          "login/index.tsx - 签名错误上报"
+        ],
+        "keyFiles": [
+          "src/utils/sentry.ts",
+          "src/utils/walletLogger.ts",
+          "src/axios.config.ts",
+          "src/hooks/useEnableTrading.ts",
+          "src/contexts/login/index.tsx",
+          "src/App.tsx"
+        ],
+        "relatedConcepts": [
+          "sentry",
+          "error-reporting",
+          "security",
+          "wallet",
+          "prompt-injection"
+        ]
+      },
+      "referencePath": "reference/global/global-sentry-guide.md",
+      "sections": [
+        {
+          "title": "概述",
+          "summary": "架构图：三种上报入口 → beforeSend 过滤管线 → Sentry 后台；环境策略表",
+          "lineRange": [
+            3,
+            36
+          ],
+          "estimatedTokens": 510
+        },
+        {
+          "title": "核心组件",
+          "summary": "3 个核心文件：sentry.ts、axios.config.ts、App.tsx",
+          "lineRange": [
+            37,
+            46
+          ],
+          "estimatedTokens": 150
+        },
+        {
+          "title": "公开 API",
+          "summary": "7 个公开函数：initSentry、reportError、reportWalletError、reportMessage、set/clearUserContext、useSentryScope",
+          "lineRange": [
+            47,
+            112
+          ],
+          "estimatedTokens": 990
+        },
+        {
+          "title": "安全过滤管线",
+          "summary": "敏感字段黑名单、正则过滤（私钥/JWT）、Prompt Injection 中英文检测、性能限制、异常容错",
+          "lineRange": [
+            113,
+            166
+          ],
+          "estimatedTokens": 810
+        },
+        {
+          "title": "网络请求错误上报",
+          "summary": "axios 拦截器 6 种 error_type 分类，过滤取消请求和 401/403",
+          "lineRange": [
+            167,
+            185
+          ],
+          "estimatedTokens": 285
+        },
+        {
+          "title": "钱包交互错误上报",
+          "summary": "reportWalletError 集成：Enable Trading、Deposit/Withdraw/Transfer、Vault、Stake + walletLogger 间接上报（签名/切链/交易）",
+          "lineRange": [
+            186,
+            249
+          ],
+          "estimatedTokens": 960
+        },
+        {
+          "title": "被过滤的错误",
+          "summary": "ignoreErrors 列表、用户取消自动过滤（4001/UserRejected/userCancelCheck）",
+          "lineRange": [
+            250,
+            274
+          ],
+          "estimatedTokens": 375
+        },
+        {
+          "title": "注意事项",
+          "summary": "DSN 安全性、SDK 不影响应用、walletAction 命名规范",
+          "lineRange": [
+            275,
+            283
+          ],
+          "estimatedTokens": 135
+        },
+        {
+          "title": "更新记录",
+          "summary": "版本历史：2026-03-27 初始 → 2026-03-30 Enable Trading 上报",
+          "lineRange": [
+            284,
+            289
+          ],
+          "estimatedTokens": 90
+        }
+      ],
+      "tags": [
+        "sentry",
+        "error-reporting",
+        "security",
+        "wallet",
+        "prompt-injection"
+      ],
+      "created": "2026-03-30",
+      "updated": "2026-03-30"
+    },
+    "global-maintenance": {
+      "id": "global-maintenance",
+      "module": "global",
+      "type": "feature",
+      "title": "维护模式升级：多等级维护支持",
+      "summary": "引入全量维护（mode 1）和链维护（mode 2）两级模式，Context+Provider 全局状态管理，25 个按钮位置按需禁用",
+      "quickRef": {
+        "coreLogic": [
+          "useMaintenanceStatus(): MaintenanceStatus — 轮询 /biz/v1/risk-control/global-status，30s 间隔，返回 level/isLoaded/estimatedTime [推断]",
+          "useMaintenanceContext(): MaintenanceStatus — Context 消费 hook，任意子组件读取维护状态 [推断]",
+          "MaintenanceProvider — Context Provider，包裹 Switch，含 isLoaded 守卫防初始误跳转 + mode 1 location.href 跳转 [推断]",
+          "MaintenanceWrapper — 模式二按钮禁用包裹，opacity-50 + inert + Tooltip [推断]",
+          "RestrictWrapper — 维护+地区限制统一包裹，优先级：维护 > 地区限制 [推断]"
+        ],
+        "keyComponents": [
+          "src/contexts/maintenance/index.tsx — MaintenanceProvider + useMaintenanceContext",
+          "src/hooks/maintanence/useMaintenanceStatus.ts — 轮询逻辑 + localStorage 优先级",
+          "src/global/maintanence/MaintenanceWrapper.tsx — 模式二禁用 Wrapper",
+          "src/global/region-restrict/RestrictWrapper.tsx — 维护+地区限制统一 Wrapper",
+          "src/global/maintanence/MaintenancePositionOverlay.tsx — Portfolio position 遮罩"
+        ],
+        "keyFiles": [
+          "src/contexts/maintenance/index.tsx",
+          "src/hooks/maintanence/useMaintenanceStatus.ts",
+          "src/global/maintanence/MaintenanceWrapper.tsx",
+          "src/global/region-restrict/RestrictWrapper.tsx",
+          "src/pages/maintenance/MaintenanceContent.tsx",
+          "src/http/maintenance/index.ts"
+        ],
+        "relatedConcepts": [
+          "maintenance",
+          "context",
+          "region-restrict",
+          "wrapper",
+          "polling",
+          "banner"
+        ]
+      },
+      "referencePath": "reference/global/global-maintenance-guide.md",
+      "sections": [
+        {
+          "title": "核心需求",
+          "summary": "两级维护模式（全量/链维护）需求说明",
+          "lineRange": [
+            3,
+            15
+          ],
+          "estimatedTokens": 195
+        },
+        {
+          "title": "核心流程图",
+          "summary": "状态流转、组件层级与25个按钮禁用清单",
+          "lineRange": [
+            16,
+            278
+          ],
+          "estimatedTokens": 3945
+        },
+        {
+          "title": "核心组件",
+          "summary": "核心组件接口与Props定义",
+          "lineRange": [
+            279,
+            295
+          ],
+          "estimatedTokens": 255
+        },
+        {
+          "title": "解决方案",
+          "summary": "Context+Provider方案选型理由",
+          "lineRange": [
+            296,
+            336
+          ],
+          "estimatedTokens": 615
+        },
+        {
+          "title": "核心文件",
+          "summary": "新增/修改/删除文件路径清单",
+          "lineRange": [
+            337,
+            351
+          ],
+          "estimatedTokens": 225
+        },
+        {
+          "title": "完整规范",
+          "summary": "完整spec文档内容引用",
+          "lineRange": [
+            352,
+            393
+          ],
+          "estimatedTokens": 630
+        },
+        {
+          "title": "背景与目的",
+          "summary": "维护模式从单级升级为双级的背景",
+          "lineRange": [
+            394,
+            408
+          ],
+          "estimatedTokens": 225
+        },
+        {
+          "title": "选定方案",
+          "summary": "Context+Provider模式，统一跳转与按钮禁用",
+          "lineRange": [
+            409,
+            420
+          ],
+          "estimatedTokens": 180
+        },
+        {
+          "title": "设计概要",
+          "summary": "架构图、按钮禁用清单、Banner优先级矩阵",
+          "lineRange": [
+            421,
+            608
+          ],
+          "estimatedTokens": 2820
+        },
+        {
+          "title": "边界与约束",
+          "summary": "9种状态转换矩阵、isLoaded守卫、已修复问题清单",
+          "lineRange": [
+            609,
+            734
+          ],
+          "estimatedTokens": 1890
+        },
+        {
+          "title": "集成点",
+          "summary": "新增/修改/删除文件表、API对接、i18n key",
+          "lineRange": [
+            735,
+            821
+          ],
+          "estimatedTokens": 1305
+        },
+        {
+          "title": "执行步骤",
+          "summary": "a→e五个阶段实施顺序",
+          "lineRange": [
+            822,
+            869
+          ],
+          "estimatedTokens": 720
+        },
+        {
+          "title": "验收标准",
+          "summary": "功能/回归/代码三类验收检查项",
+          "lineRange": [
+            870,
+            911
+          ],
+          "estimatedTokens": 630
+        },
+        {
+          "title": "验收场景",
+          "summary": "14个端到端Gherkin测试场景",
+          "lineRange": [
+            912,
+            1027
+          ],
+          "estimatedTokens": 1740
+        },
+        {
+          "title": "一、现状分析",
+          "summary": "现有MaintenanceGuard+useCheckChainStatus逻辑分析",
+          "lineRange": [
+            1028,
+            1063
+          ],
+          "estimatedTokens": 540
+        },
+        {
+          "title": "二、需求清单",
+          "summary": "功能需求列表",
+          "lineRange": [
+            1064,
+            1076
+          ],
+          "estimatedTokens": 195
+        },
+        {
+          "title": "三、技术方案",
+          "summary": "技术选型与架构设计",
+          "lineRange": [
+            1077,
+            1157
+          ],
+          "estimatedTokens": 1215
+        },
+        {
+          "title": "四、模块详细设计",
+          "summary": "各模块（Provider/Wrapper/Hook）设计细节",
+          "lineRange": [
+            1158,
+            1419
+          ],
+          "estimatedTokens": 3930
+        },
+        {
+          "title": "五、前置准备",
+          "summary": "实施前置条件",
+          "lineRange": [
+            1420,
+            1434
+          ],
+          "estimatedTokens": 225
+        },
+        {
+          "title": "六、实施路径",
+          "summary": "分阶段实施计划",
+          "lineRange": [
+            1435,
+            1461
+          ],
+          "estimatedTokens": 405
+        },
+        {
+          "title": "七、现有部署脚本参考",
+          "summary": "部署脚本参考",
+          "lineRange": [
+            1462,
+            1475
+          ],
+          "estimatedTokens": 210
+        },
+        {
+          "title": "八、安全考量",
+          "summary": "window.open tabnabbing等安全风险处理",
+          "lineRange": [
+            1476,
+            1486
+          ],
+          "estimatedTokens": 165
+        },
+        {
+          "title": "更新记录",
+          "summary": "文档变更历史",
+          "lineRange": [
+            1618,
+            1620
+          ],
+          "estimatedTokens": 45
+        }
+      ],
+      "tags": [
+        "global",
+        "maintenance",
+        "context",
+        "provider",
+        "wrapper",
+        "hook",
+        "api"
+      ],
+      "created": "2026-04-17",
+      "updated": "2026-04-17"
+    }
+  },
+  "history": {
+    "global-restrict": [
+      {
+        "date": "2026-04-17",
+        "type": "refactor",
+        "summary": "RegionRestrictWrapper 迁移到 global/region-restrict/ 目录；新增 RestrictWrapper 统一维护+地区限制；7处位置改用 RestrictWrapper",
+        "files": [
+          "RegionRestrictWrapper.tsx",
+          "RestrictWrapper.tsx",
+          "sign/index.tsx",
+          "SLP.tsx",
+          "NewReferralHeader.tsx",
+          "btnNav/index.tsx"
+        ],
+        "historyPath": "history/global/global-restrict/2026-04-17-refactor-move-to-region-restrict-dir.md"
+      },
+      {
+        "date": "2026-03-24",
+        "type": "feat",
+        "summary": "初始版本：地区限制系统，含 RegionRestrictWrapper 包裹组件、useRegionRestrict Hook、Restriction Store、RegionRestrictBanner",
+        "files": [
+          "src/global/RegionRestrictWrapper.tsx",
+          "src/hooks/restriction/useRegionRestrict.ts",
+          "src/models/restriction.ts",
+          "src/http/restriction/index.ts",
+          "src/components/header/components/regionRestrictBanner/index.tsx"
+        ]
+      }
+    ],
+    "global-track": [
+      {
+        "date": "2026-04-14",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": [
+          "index.ts",
+          "sosovalue.ts",
+          "encrypt.ts",
+          "hooks.tsx",
+          "pageMapping.ts",
+          "events/trade.ts",
+          "events/point.ts",
+          "events/portfolio.ts"
+        ]
+      }
+    ],
+    "global-banner": [
+      {
+        "date": "2026-04-17",
+        "type": "feat",
+        "summary": "链维护+Trade页面时隐藏GlobalBanner；维护状态优先于地区限制Banner（isInMaintenance守卫）",
+        "files": [
+          "globalBanner/index.tsx",
+          "depositBanner/index.tsx"
+        ],
+        "historyPath": "history/global/global-banner/2026-04-17-feat-maintenance-banner-priority.md"
+      },
+      {
+        "date": "2026-03-18",
+        "type": "feat",
+        "summary": "新增 style 样式字段，支持 regular（绿色）和 alert（红色）两种背景色；新增 hasUrl 字段",
+        "files": [
+          "globalBanner/index.tsx",
+          "api.d.ts"
+        ]
+      },
+      {
+        "date": "2026-03-18",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": [
+          "depositBanner/index.tsx",
+          "globalBanner/index.tsx",
+          "index.ts",
+          "api.d.ts"
+        ]
+      }
+    ]
+  }
+}

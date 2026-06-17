@@ -1,0 +1,336 @@
+{
+  "module": "stake",
+  "name": "Stake",
+  "description": "质押相关功能",
+  "emoji": "💎",
+  "features": {
+    "stake-page": {
+      "id": "stake-page",
+      "module": "stake",
+      "type": "feature",
+      "title": "Stake 页面 - 质押数据展示",
+      "summary": "Stake 页面展示用户 SOSO 质押数据，包括 StakingHero（多链数据聚合）、SOSOTier（动态等级高亮）、Deposit 联动",
+      "quickRef": {
+        "coreLogic": [
+          "useStakeData(): { formattedData, raw, loading, refresh }  L143-263  数据获取 Hook（ValueChain + Base 双链）",
+          "fetchTotalStaked(): Promise<TotalStakedData>  L33-68  平台总质押量（无需登录）",
+          "fetchUserStaked(address): Promise<UserStakedData>  L80-117  用户质押量（需登录）",
+          "getTierInfo(stakedAmount, connected): TierInfo  L25-54  计算用户当前档位和解锁金额"
+        ],
+        "keyComponents": [
+          "StakingHero.tsx - 顶部数据卡片（YourStakedCard + TotalStakedCard）",
+          "SOSOTier.tsx - 质押等级表格（高亮 + You 徽章 + 解锁提示）",
+          "SSIBoostBadge - SSI Boost 标签组件",
+          "useStakeData.ts - 数据获取和格式化 Hook"
+        ],
+        "keyFiles": [
+          "src/pages/stake/index.tsx",
+          "src/pages/stake/StakingHero.tsx",
+          "src/pages/stake/SOSOTier.tsx",
+          "src/pages/stake/hooks/useStakeData.ts"
+        ],
+        "relatedConcepts": [
+          "staking",
+          "tier",
+          "valuechain",
+          "base",
+          "sSOSO",
+          "deposit",
+          "i18n"
+        ]
+      },
+      "discovery_cost": "~6969 tokens",
+      "referencePath": "reference/stake/stake-page-guide.md",
+      "sections": [
+        {
+          "title": "功能概述",
+          "summary": "Stake 页面核心特性：多链数据聚合、动态等级高亮、Deposit 联动",
+          "lineRange": [
+            1,
+            20
+          ],
+          "estimatedTokens": 300
+        },
+        {
+          "title": "架构概览",
+          "summary": "组件结构（index → StakingHero/SOSOTier）和数据流（useStakeData → fetchTotalStaked/fetchUserStaked）",
+          "lineRange": [
+            22,
+            70
+          ],
+          "estimatedTokens": 500
+        },
+        {
+          "title": "数据字段说明",
+          "summary": "formattedData 输出（availableToStake/yourStaked/totalStaked）和 raw 原始数据（用于逻辑判断）",
+          "lineRange": [
+            72,
+            110
+          ],
+          "estimatedTokens": 400
+        },
+        {
+          "title": "StakingHero 组件",
+          "summary": "登录状态差异（未登录/已登录/零余额）和按钮行为（Start Staking/Get SOSO/Deposit）",
+          "lineRange": [
+            112,
+            160
+          ],
+          "estimatedTokens": 500
+        },
+        {
+          "title": "SOSOTier 等级计算",
+          "summary": "TIER_CONFIG 配置和高亮逻辑（当前档位/下一档位/解锁金额）",
+          "lineRange": [
+            162,
+            210
+          ],
+          "estimatedTokens": 500
+        },
+        {
+          "title": "Deposit Modal 联动",
+          "summary": "isFromStake 参数、预设 sSOSO + Base、特殊标签显示",
+          "lineRange": [
+            212,
+            240
+          ],
+          "estimatedTokens": 300
+        },
+        {
+          "title": "国际化",
+          "summary": "stake namespace 新增 14 个翻译 key，SSI Boost 统一翻译",
+          "lineRange": [
+            242,
+            270
+          ],
+          "estimatedTokens": 300
+        }
+      ],
+      "tags": [
+        "stake",
+        "page",
+        "tier",
+        "valuechain",
+        "base",
+        "sSOSO",
+        "deposit",
+        "i18n",
+        "hero"
+      ],
+      "created": "2026-03-12",
+      "updated": "2026-03-14"
+    },
+    "stake-soso": {
+      "id": "stake-soso",
+      "module": "stake",
+      "type": "feature",
+      "title": "Stake SOSO 质押弹窗",
+      "summary": "质押 SOSO 获得 sSOSO，支持双余额自动划转，内部获取 yourStaked 计算 Trading Fee Discount，通过 cacheKey 共享缓存",
+      "quickRef": {
+        "coreLogic": [
+          "StakeSoso(props: StakeSosoProps): JSX.Element  L1-450  主组件，输入界面 + 质押逻辑",
+          "calculateAvailableBalance(evmBalance: BigInt, spotBalance: BigInt): BigInt  L80-120  双余额计算（截断 4 位小数）",
+          "handleStake(amount: BigInt): Promise<void>  L200-300  执行质押，自动划转 + 轮询确认",
+          "calculateBoost(stakeUsd: number, totalSsiUsd: number): number  L320-350  Boost 系数计算（1.00x ~ 11.00x）"
+        ],
+        "keyComponents": [
+          "StakeSoso.tsx - 主组件（输入界面 + 质押逻辑）",
+          "StakeReview.tsx - Review 界面（进度展示）",
+          "MustToKnow.tsx - 必须了解信息（展开/折叠）",
+          "index.ts - 弹窗创建（成功/失败弹窗）"
+        ],
+        "keyFiles": [
+          "src/components_tw/modals/stakeSoso/StakeSoso.tsx",
+          "src/components_tw/modals/stakeSoso/StakeReview.tsx",
+          "src/components_tw/modals/stakeSoso/index.ts",
+          "src/utils/web3/valueChainStake.ts"
+        ],
+        "relatedConcepts": [
+          "staking",
+          "BigInt",
+          "transfer",
+          "boost",
+          "wallet",
+          "network-switch"
+        ]
+      },
+      "discovery_cost": "~3400 tokens",
+      "referencePath": "reference/stake/stake-soso-guide.md",
+      "sections": [
+        {
+          "title": "功能概述",
+          "summary": "StakeSoso 核心特性：双余额、Boost、Trading Fee Discount（内部获取 yourStaked）、BigInt 精度、缓存复用",
+          "lineRange": [
+            3,
+            17
+          ],
+          "estimatedTokens": 225
+        },
+        {
+          "title": "架构概览",
+          "summary": "组件结构（输入界面 + StakeReview）和状态流转图（网络切换 → 划转 → 质押 → 确认）",
+          "lineRange": [
+            18,
+            65
+          ],
+          "estimatedTokens": 720
+        },
+        {
+          "title": "关键实现",
+          "summary": "6 个核心实现：余额计算（BigInt）、划转逻辑、重入保护、Boost 计算、Trading Fee Discount（useStakeData 获取）、组件卸载保护",
+          "lineRange": [
+            66,
+            240
+          ],
+          "estimatedTokens": 2625
+        },
+        {
+          "title": "文件结构",
+          "summary": "组件文件（StakeSoso/StakeReview/MustToKnow/index）和相关工具函数",
+          "lineRange": [
+            241,
+            268
+          ],
+          "estimatedTokens": 420
+        },
+        {
+          "title": "UI 结构",
+          "summary": "输入界面（SSI Value/Boost/Amount Input）和 Review 界面（ProcessIndicator）",
+          "lineRange": [
+            269,
+            321
+          ],
+          "estimatedTokens": 795
+        },
+        {
+          "title": "关键配置",
+          "summary": "常量定义（FEE_WEI/轮询配置/精度单位）和按钮状态逻辑",
+          "lineRange": [
+            322,
+            344
+          ],
+          "estimatedTokens": 345
+        },
+        {
+          "title": "术语表",
+          "summary": "9 个术语：SOSO/sSOSO/ValueChain/Spot账户/EVM-Funding/SSI/Boost/划转/Enable Trading",
+          "lineRange": [
+            345,
+            360
+          ],
+          "estimatedTokens": 240
+        },
+        {
+          "title": "注意事项",
+          "summary": "弹窗状态重置、默认金额填入时序、划转后实际质押金额、useStakeData 缓存共享",
+          "lineRange": [
+            361,
+            417
+          ],
+          "estimatedTokens": 855
+        },
+        {
+          "title": "更新记录",
+          "summary": "版本历史：2026-03-18 全局 discount 修复、2026-03-14 discount 功能、2025-12-29 初始版本",
+          "lineRange": [
+            418,
+            444
+          ],
+          "estimatedTokens": 405
+        }
+      ],
+      "tags": [
+        "stake",
+        "soso",
+        "ssoso",
+        "boost",
+        "transfer",
+        "bigint",
+        "wallet",
+        "modal",
+        "discount",
+        "fee"
+      ],
+      "created": "2025-12-29",
+      "updated": "2026-03-18"
+    }
+  },
+  "history": {
+    "stake-page": [
+      {
+        "date": "2026-03-14",
+        "type": "feat",
+        "summary": "Start Staking 按钮传入 yourStaked 参数，供 StakeSoso 弹窗计算 Trading Fee Discount",
+        "files": [
+          "StakingHero.tsx",
+          "MobileBottomButton.tsx"
+        ]
+      },
+      {
+        "date": "2026-03-13",
+        "type": "feat",
+        "summary": "新增小额余额显示规则（=0 显示 0，<0.01 显示 < 0.01），按钮触发阈值从 =0 改为 <0.01",
+        "files": [
+          "useStakeData.ts",
+          "StakingHero.tsx"
+        ],
+        "historyPath": "history/stake/stake-page/2026-03-13-low-balance-display.md"
+      },
+      {
+        "date": "2026-03-12",
+        "type": "feat",
+        "summary": "重构 Stake 页面 UI，新增 StakingHero 数据拆分、SOSOTier 等级高亮、Deposit Modal 联动、14 个 i18n key",
+        "files": [
+          "StakingHero.tsx",
+          "SOSOTier.tsx",
+          "useStakeData.ts",
+          "DepositStepByStep.tsx",
+          "stake.json"
+        ]
+      }
+    ],
+    "stake-soso": [
+      {
+        "date": "2026-03-18",
+        "type": "fix",
+        "summary": "移除 yourStaked props，内部调用 useStakeData 获取，任意入口正确显示 discount",
+        "files": [
+          "StakeSoso.tsx",
+          "useStakeData.ts"
+        ],
+        "historyPath": "history/stake/stake-soso/2026-03-18-global-discount-fix.md"
+      },
+      {
+        "date": "2026-03-14",
+        "type": "refactor",
+        "summary": "移除 showDiscount 条件判断，Trading Fee Discount 区域始终显示",
+        "files": [
+          "StakeSoso.tsx",
+          "useStakingDiscount.ts"
+        ]
+      },
+      {
+        "date": "2026-03-14",
+        "type": "feat",
+        "summary": "新增 Trading Fee Discount 功能：useStakingDiscount hook + StakeSoso/StakeSuccess 动态显示 + 11 语言国际化",
+        "files": [
+          "StakeSoso.tsx",
+          "StakeSuccess.tsx",
+          "useStakingDiscount.ts",
+          "feeTiers.ts",
+          "stake.json"
+        ]
+      },
+      {
+        "date": "2025-12-29",
+        "type": "feat",
+        "summary": "实现 Stake SOSO 弹窗，支持双余额来源、Boost 计算、BigInt 精度",
+        "files": [
+          "StakeSoso.tsx",
+          "StakeReview.tsx",
+          "index.ts"
+        ]
+      }
+    ]
+  }
+}

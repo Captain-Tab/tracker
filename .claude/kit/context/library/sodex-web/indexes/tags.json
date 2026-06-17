@@ -1,0 +1,586 @@
+{
+  "meta": {
+    "lastUpdated": "2026-04-17",
+    "totalTags": 166,
+    "description": "功能标签索引：tag-name → feature-ids[]，用于查询「哪些功能使用了状态机/桥接模式等概念」"
+  },
+  "index": {
+    "region-restrict": [
+      "global-restrict",
+      "global-maintenance"
+    ],
+    "usa": [
+      "global-restrict"
+    ],
+    "geo-blocking": [
+      "global-restrict"
+    ],
+    "wrapper-component": [
+      "global-restrict"
+    ],
+    "tooltip": [
+      "global-restrict",
+      "trade-orderbook"
+    ],
+    "fee-rate": [
+      "trade-feerate"
+    ],
+    "tier-system": [
+      "trade-feerate",
+      "points-page"
+    ],
+    "banner": [
+      "global-banner",
+      "global-restrict",
+      "global-maintenance"
+    ],
+    "style-system": [
+      "global-banner"
+    ],
+    "priority": [
+      "global-banner"
+    ],
+    "localStorage-ttl": [
+      "global-banner"
+    ],
+    "i18n": [
+      "global-banner"
+    ],
+    "url-validation": [
+      "global-banner"
+    ],
+    "state-machine": [
+      "vault-deposit",
+      "user-auth-core",
+      "user-auth-referrals"
+    ],
+    "bridge": [
+      "vault-deposit",
+      "vault-claim"
+    ],
+    "staking": [
+      "vault-deposit",
+      "stake-soso"
+    ],
+    "stake": [
+      "stake-soso"
+    ],
+    "soso": [
+      "trade-transfer",
+      "stake-soso"
+    ],
+    "ssoso": [
+      "stake-soso"
+    ],
+    "boost": [
+      "stake-soso"
+    ],
+    "transfer": [
+      "trade-transfer",
+      "stake-soso"
+    ],
+    "bigint": [
+      "stake-soso"
+    ],
+    "modal": [
+      "stake-soso"
+    ],
+    "multi-chain": [
+      "vault-deposit",
+      "network-switch",
+      "trade-withdraw",
+      "trade-deposit"
+    ],
+    "enable-trading": [
+      "vault-deposit",
+      "user-auth-core",
+      "wallet-mobileApprove",
+      "vault-claim",
+      "user-auth-enable"
+    ],
+    "balance-sync": [
+      "transfer-evm-sync"
+    ],
+    "polling": [
+      "transfer-evm-sync",
+      "global-maintenance"
+    ],
+    "mobx": [
+      "transfer-evm-sync",
+      "trade-feerate",
+      "trade-orderbook",
+      "trade-market-switch",
+      "trade-steprate"
+    ],
+    "evm": [
+      "transfer-evm-sync"
+    ],
+    "network-switch": [
+      "network-switch",
+      "stake-soso",
+      "vault-withdraw"
+    ],
+    "wagmi": [
+      "network-switch"
+    ],
+    "user-experience": [
+      "network-switch"
+    ],
+    "hook": [
+      "network-switch",
+      "global-maintenance"
+    ],
+    "deposit": [
+      "vault-deposit",
+      "trade-deposit"
+    ],
+    "vault": [
+      "vault-deposit",
+      "vault-unstake",
+      "vault-claim",
+      "vault-withdraw",
+      "vault-page"
+    ],
+    "trade": [
+      "trade-transfer",
+      "trade-position",
+      "trade-withdraw",
+      "trade-deposit",
+      "trade-futures-orderform",
+      "trade-futures-orderform-mobile"
+    ],
+    "funding": [
+      "trade-transfer",
+      "trade-withdraw"
+    ],
+    "spot": [
+      "trade-transfer",
+      "trade-withdraw",
+      "trade-feerate",
+      "trade-spot-orderform"
+    ],
+    "perps": [
+      "trade-transfer",
+      "trade-feerate"
+    ],
+    "email-login": [
+      "trade-transfer",
+      "user-auth-enable"
+    ],
+    "permit": [
+      "trade-transfer",
+      "trade-withdraw",
+      "vault-withdraw"
+    ],
+    "withdraw": [
+      "trade-withdraw",
+      "vault-withdraw"
+    ],
+    "eip-712": [
+      "trade-withdraw"
+    ],
+    "form-validation": [
+      "trade-withdraw",
+      "vault-unstake",
+      "vault-claim",
+      "vault-withdraw"
+    ],
+    "account-switch": [
+      "trade-transfer"
+    ],
+    "tabs": [
+      "trade-position"
+    ],
+    "position": [
+      "trade-position",
+      "trade-futures-orderform"
+    ],
+    "orders": [
+      "trade-position"
+    ],
+    "balances": [
+      "trade-position"
+    ],
+    "history": [
+      "trade-position"
+    ],
+    "event-bus": [
+      "trade-position",
+      "trade-spot-orderform",
+      "trade-futures-orderform-mobile",
+      "trade-orderbook",
+      "trade-market-switch",
+      "vault-page"
+    ],
+    "search-filter": [
+      "trade-position"
+    ],
+    "leaderboard": [
+      "leaderboard-ranking"
+    ],
+    "share-poster": [
+      "leaderboard-ranking",
+      "points-page"
+    ],
+    "responsive": [
+      "leaderboard-ranking",
+      "trade-feerate",
+      "trade-orderbook",
+      "trade-market-switch",
+      "trade-steprate",
+      "points-page",
+      "explorer-page",
+      "vault-page"
+    ],
+    "pagination": [
+      "leaderboard-ranking"
+    ],
+    "sorting": [
+      "leaderboard-ranking"
+    ],
+    "html-to-image": [
+      "leaderboard-ranking"
+    ],
+    "blacklist": [
+      "trade-blacklist",
+      "trade-deposit"
+    ],
+    "whitelist": [
+      "trade-blacklist"
+    ],
+    "deposit-filter": [
+      "trade-blacklist"
+    ],
+    "warning-list": [
+      "trade-blacklist"
+    ],
+    "chain-mapping": [
+      "trade-blacklist"
+    ],
+    "auth": [
+      "user-auth-core",
+      "user-auth-referrals"
+    ],
+    "jwt": [
+      "user-auth-core"
+    ],
+    "wallet-sign": [
+      "user-auth-core",
+      "user-auth-referrals",
+      "user-auth-enable"
+    ],
+    "private-key": [
+      "user-auth-core",
+      "user-auth-enable"
+    ],
+    "nonce": [
+      "user-auth-core"
+    ],
+    "terms-of-use": [
+      "user-auth-core"
+    ],
+    "referral": [
+      "user-auth-referrals"
+    ],
+    "two-step-modal": [
+      "user-auth-referrals"
+    ],
+    "wallet-connect": [
+      "user-auth-referrals",
+      "wallet-mobileApprove"
+    ],
+    "BigInt": [
+      "stake-soso"
+    ],
+    "discount": [
+      "stake-soso"
+    ],
+    "fee": [
+      "stake-soso"
+    ],
+    "wallet": [
+      "stake-soso",
+      "wallet-mobileApprove",
+      "global-sentry"
+    ],
+    "mobx-store": [
+      "trade-feerate",
+      "global-restrict"
+    ],
+    "responsive-modal": [
+      "trade-feerate",
+      "apikey-page"
+    ],
+    "strikethrough-comparison": [
+      "trade-feerate"
+    ],
+    "tier-highlight": [
+      "trade-feerate"
+    ],
+    "soso-wrap": [
+      "trade-transfer"
+    ],
+    "signature": [
+      "wallet-mobileApprove"
+    ],
+    "ux": [
+      "wallet-mobileApprove"
+    ],
+    "walletconnect": [
+      "wallet-mobileApprove"
+    ],
+    "unstake": [
+      "vault-unstake",
+      "vault-withdraw"
+    ],
+    "smart-transfer": [
+      "vault-unstake"
+    ],
+    "bigint-precision": [
+      "vault-unstake"
+    ],
+    "wallet-signing": [
+      "vault-unstake",
+      "apikey-page"
+    ],
+    "eip712": [
+      "vault-unstake"
+    ],
+    "address-status": [
+      "trade-deposit"
+    ],
+    "flash": [
+      "trade-deposit"
+    ],
+    "flash-deposit": [
+      "trade-deposit"
+    ],
+    "qr-code": [
+      "trade-deposit"
+    ],
+    "regular": [
+      "trade-deposit"
+    ],
+    "bridge-call-for": [
+      "vault-claim"
+    ],
+    "claim": [
+      "vault-claim"
+    ],
+    "cooldown": [
+      "vault-claim",
+      "vault-withdraw"
+    ],
+    "mag7": [
+      "vault-claim"
+    ],
+    "smag7": [
+      "vault-claim"
+    ],
+    "viem": [
+      "vault-claim"
+    ],
+    "multi-step-tx": [
+      "vault-withdraw"
+    ],
+    "parse-event-log": [
+      "vault-withdraw"
+    ],
+    "redeem": [
+      "vault-withdraw"
+    ],
+    "auto-enable": [
+      "user-auth-enable"
+    ],
+    "remember-me": [
+      "user-auth-enable"
+    ],
+    "stay-signed-in": [
+      "user-auth-enable"
+    ],
+    "error-reporting": [
+      "global-sentry"
+    ],
+    "prompt-injection": [
+      "global-sentry"
+    ],
+    "security": [
+      "global-sentry"
+    ],
+    "sentry": [
+      "global-sentry"
+    ],
+    "order-form": [
+      "trade-spot-orderform"
+    ],
+    "market-order": [
+      "trade-spot-orderform"
+    ],
+    "limit-order": [
+      "trade-spot-orderform"
+    ],
+    "signing": [
+      "trade-spot-orderform",
+      "trade-futures-orderform-mobile"
+    ],
+    "eventbus": [
+      "trade-spot-orderform"
+    ],
+    "balance-check": [
+      "trade-spot-orderform"
+    ],
+    "futures": [
+      "trade-futures-orderform",
+      "trade-futures-orderform-mobile"
+    ],
+    "leverage": [
+      "trade-futures-orderform"
+    ],
+    "stop-limit": [
+      "trade-futures-orderform",
+      "trade-futures-orderform-mobile"
+    ],
+    "unit-conversion": [
+      "trade-futures-orderform",
+      "trade-orderbook"
+    ],
+    "coin-based": [
+      "trade-futures-orderform"
+    ],
+    "usdt-margin": [
+      "trade-futures-orderform"
+    ],
+    "tp-sl": [
+      "trade-futures-orderform-mobile"
+    ],
+    "react-hook-form": [
+      "trade-futures-orderform-mobile"
+    ],
+    "zod": [
+      "trade-futures-orderform-mobile"
+    ],
+    "bolt-order": [
+      "trade-futures-orderform-mobile"
+    ],
+    "reduce-only": [
+      "trade-futures-orderform-mobile"
+    ],
+    "sign-message": [
+      "user-auth-referrals"
+    ],
+    "orderbook": [
+      "trade-orderbook"
+    ],
+    "depth": [
+      "trade-orderbook"
+    ],
+    "market-search": [
+      "trade-market-switch"
+    ],
+    "collection": [
+      "trade-market-switch"
+    ],
+    "tag-category": [
+      "trade-market-switch"
+    ],
+    "funding-rate": [
+      "trade-market-switch"
+    ],
+    "fee-tier": [
+      "trade-steprate"
+    ],
+    "level-system": [
+      "trade-steprate"
+    ],
+    "file-upload": [
+      "trade-steprate"
+    ],
+    "spark-signer": [
+      "apikey-page"
+    ],
+    "optimistic-update": [
+      "apikey-page"
+    ],
+    "tier-eligibility": [
+      "apikey-page"
+    ],
+    "closed-alpha": [
+      "apikey-page"
+    ],
+    "weekly-snapshot": [
+      "points-page"
+    ],
+    "rate-limit-retry": [
+      "points-page"
+    ],
+    "page-auth": [
+      "points-page"
+    ],
+    "countdown": [
+      "points-page"
+    ],
+    "websocket": [
+      "explorer-page"
+    ],
+    "blockchain-explorer": [
+      "explorer-page"
+    ],
+    "real-time": [
+      "explorer-page"
+    ],
+    "gzip": [
+      "explorer-page"
+    ],
+    "value-chain": [
+      "explorer-page"
+    ],
+    "liquidity-provider": [
+      "vault-page"
+    ],
+    "echarts": [
+      "vault-page"
+    ],
+    "share": [
+      "vault-page"
+    ],
+    "analytics": [
+      "global-track"
+    ],
+    "sensors": [
+      "global-track"
+    ],
+    "ga": [
+      "global-track"
+    ],
+    "aes": [
+      "global-track"
+    ],
+    "event-tracking": [
+      "global-track"
+    ],
+    "sosovalue": [
+      "global-track"
+    ],
+    "api": [
+      "global-maintenance"
+    ],
+    "context": [
+      "global-maintenance"
+    ],
+    "global": [
+      "global-maintenance"
+    ],
+    "maintenance": [
+      "global-maintenance"
+    ],
+    "provider": [
+      "global-maintenance"
+    ],
+    "wrapper": [
+      "global-maintenance"
+    ],
+    "priority-system": [
+      "global-banner"
+    ]
+  }
+}

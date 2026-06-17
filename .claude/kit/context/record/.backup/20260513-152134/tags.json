@@ -1,0 +1,362 @@
+{
+  "meta": {
+    "lastUpdated": "2026-05-12T00:00:00Z",
+    "totalTags": 101,
+    "description": "功能标签索引：tag-name -> feature-ids[]，用于查询「哪些功能使用了某概念」"
+  },
+  "index": {
+    "geo-blocking": [
+      "global-restrict"
+    ],
+    "compliance": [
+      "global-restrict"
+    ],
+    "region": [
+      "global-restrict"
+    ],
+    "wrapper": [
+      "global-restrict"
+    ],
+    "tooltip": [
+      "global-restrict"
+    ],
+    "zustand": [
+      "global-restrict",
+      "vault-notification"
+    ],
+    "react-query": [
+      "global-restrict",
+      "global-banner",
+      "stake-page",
+      "stake-soso",
+      "vault-notification"
+    ],
+    "failure-degradation": [
+      "global-restrict"
+    ],
+    "deposit-lock": [
+      "global-restrict"
+    ],
+    "migration": [
+      "global-restrict"
+    ],
+    "global": [
+      "global-banner",
+      "global-restrict",
+      "global-track"
+    ],
+    "banner": [
+      "global-banner"
+    ],
+    "operational-notice": [
+      "global-banner"
+    ],
+    "view-model": [
+      "global-banner"
+    ],
+    "ttl-localstorage": [
+      "global-banner"
+    ],
+    "guard-pattern": [
+      "global-banner"
+    ],
+    "single-consumer-fallback": [
+      "global-banner"
+    ],
+    "decision-matrix": [
+      "global-banner"
+    ],
+    "old-project-alignment": [
+      "global-banner",
+      "global-track",
+      "stake-soso"
+    ],
+    "framer-motion": [
+      "global-banner"
+    ],
+    "url-safety": [
+      "global-banner"
+    ],
+    "staking": [
+      "stake-page"
+    ],
+    "soso": [
+      "stake-page"
+    ],
+    "ssi-boost": [
+      "stake-soso"
+    ],
+    "trading-fee-discount": [
+      "stake-page",
+      "stake-soso"
+    ],
+    "valuechain": [
+      "stake-page",
+      "stake-soso"
+    ],
+    "tier-system": [
+      "stake-page"
+    ],
+    "cooldown-aggregation": [
+      "stake-soso"
+    ],
+    "lp-lockdatas": [
+      "stake-soso"
+    ],
+    "privy-compatible": [
+      "stake-page",
+      "stake-soso"
+    ],
+    "decimal-precision": [
+      "stake-page",
+      "stake-soso"
+    ],
+    "wagmi-readcontracts": [
+      "stake-page",
+      "stake-soso"
+    ],
+    "ssi-gateway": [
+      "stake-soso"
+    ],
+    "modal-dialog": [
+      "stake-soso"
+    ],
+    "ssi-mining-boost": [
+      "stake-soso"
+    ],
+    "tier-preview": [
+      "stake-soso"
+    ],
+    "button-state-machine": [
+      "stake-soso"
+    ],
+    "spot-refetch-retry": [
+      "stake-soso"
+    ],
+    "ws-cache-bridge": [
+      "stake-soso"
+    ],
+    "toast-phasing": [
+      "stake-soso"
+    ],
+    "vault": [
+      "vault-notification",
+      "vault-unstake",
+      "vault-claim",
+      "vault-withdraw",
+      "vault-deposit"
+    ],
+    "notification": [
+      "vault-notification"
+    ],
+    "toast": [
+      "vault-notification"
+    ],
+    "websocket": [
+      "vault-notification"
+    ],
+    "invalidate": [
+      "vault-notification"
+    ],
+    "decompression": [
+      "vault-notification"
+    ],
+    "call-for-permit": [
+      "vault-notification",
+      "vault-unstake",
+      "vault-claim",
+      "vault-withdraw",
+      "vault-deposit"
+    ],
+    "deposit": [
+      "vault-notification",
+      "vault-deposit"
+    ],
+    "withdraw": [
+      "vault-notification",
+      "vault-withdraw"
+    ],
+    "unstake": [
+      "vault-notification",
+      "vault-unstake"
+    ],
+    "claim": [
+      "vault-notification",
+      "vault-claim"
+    ],
+    "error-handling": [
+      "vault-notification"
+    ],
+    "dedupe": [
+      "vault-notification"
+    ],
+    "gzip": [
+      "vault-notification"
+    ],
+    "trade": [
+      "vault-notification"
+    ],
+    "sodex-call-for": [
+      "vault-notification"
+    ],
+    "service-error-mapping": [
+      "vault-notification",
+      "vault-unstake",
+      "vault-claim",
+      "vault-withdraw",
+      "vault-deposit"
+    ],
+    "toast-lifecycle": [
+      "vault-notification"
+    ],
+    "discriminated-union-error": [
+      "vault-notification"
+    ],
+    "smart-transfer": [
+      "vault-unstake",
+      "vault-deposit"
+    ],
+    "cooldown": [
+      "vault-unstake",
+      "vault-claim"
+    ],
+    "signer-lock": [
+      "vault-unstake",
+      "vault-claim"
+    ],
+    "websocket-driven-toast": [
+      "vault-unstake",
+      "vault-claim",
+      "vault-withdraw",
+      "vault-deposit"
+    ],
+    "react-query-invalidate": [
+      "vault-unstake",
+      "vault-claim",
+      "vault-withdraw",
+      "vault-deposit"
+    ],
+    "privy-embedded-wallet": [
+      "vault-unstake",
+      "vault-claim"
+    ],
+    "boundaries-rule": [
+      "vault-unstake",
+      "vault-claim",
+      "vault-withdraw",
+      "vault-deposit"
+    ],
+    "eip-712": [
+      "vault-unstake",
+      "vault-claim",
+      "vault-withdraw",
+      "vault-deposit"
+    ],
+    "value-chain": [
+      "vault-unstake",
+      "vault-claim",
+      "vault-withdraw",
+      "vault-deposit"
+    ],
+    "infrastructure-feature": [
+      "vault-claim"
+    ],
+    "two-step-signing": [
+      "vault-withdraw"
+    ],
+    "cross-service-orchestration": [
+      "vault-withdraw"
+    ],
+    "erc20-permit": [
+      "vault-withdraw",
+      "vault-deposit"
+    ],
+    "redeem-event-parsing": [
+      "vault-withdraw"
+    ],
+    "phase-state-machine": [
+      "vault-withdraw"
+    ],
+    "cooldown-confirmation": [
+      "vault-withdraw"
+    ],
+    "nested-dialog": [
+      "vault-withdraw"
+    ],
+    "three-layer-reducer-machine": [
+      "vault-deposit"
+    ],
+    "effect-driver-pattern": [
+      "vault-deposit"
+    ],
+    "no-service-architecture": [
+      "vault-deposit"
+    ],
+    "cross-feature-callback-bridge": [
+      "vault-deposit"
+    ],
+    "auto-fill-double-ref": [
+      "vault-deposit"
+    ],
+    "retry-cache-reuse": [
+      "vault-deposit"
+    ],
+    "isnewuser-snapshot": [
+      "vault-deposit"
+    ],
+    "phase-split-enable-trading": [
+      "vault-deposit"
+    ],
+    "strict-mode-reentrancy-guard": [
+      "vault-deposit"
+    ],
+    "base-chain": [
+      "vault-deposit"
+    ],
+    "bridge": [
+      "vault-deposit"
+    ],
+    "enable-trading": [
+      "vault-deposit"
+    ],
+    "complex-feature": [
+      "vault-deposit"
+    ],
+    "tracking": [
+      "global-track"
+    ],
+    "analytics": [
+      "global-track"
+    ],
+    "sensors-analytics": [
+      "global-track"
+    ],
+    "google-analytics": [
+      "global-track"
+    ],
+    "datasink": [
+      "global-track"
+    ],
+    "autoTrack": [
+      "global-track"
+    ],
+    "heatmap": [
+      "global-track"
+    ],
+    "wallet-identity": [
+      "global-track"
+    ],
+    "AES-encryption": [
+      "global-track"
+    ],
+    "SRI": [
+      "global-track"
+    ],
+    "shared-infrastructure": [
+      "global-track"
+    ],
+    "single-channel-design": [
+      "global-track"
+    ]
+  }
+}

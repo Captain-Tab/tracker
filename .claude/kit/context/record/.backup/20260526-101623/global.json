@@ -1,0 +1,886 @@
+{
+  "module": {
+    "id": "global",
+    "name": "Global",
+    "emoji": "🌍",
+    "description": "全局组件与跨页面功能"
+  },
+  "features": {
+    "global-restrict": {
+      "id": "global-restrict",
+      "module": "global",
+      "type": "feature",
+      "title": "地区限制系统（Region Restrict）",
+      "summary": "基于 IP 检测的地区限制系统，从 sodex-web 完整迁移。涵盖 5 份 spec（a/b/c/d/e）共 18 个生效使用点 + ConnectedDeposit lockedToken/lockedChain 能力扩展。失败默认放行，retry: false 防伪轮询，会话内仅请求 1 次。",
+      "quickRef": {
+        "entryPoint": "src/features/region-restrict/index.ts",
+        "hookPath": "src/features/region-restrict/containers/useRegionRestrict.ts",
+        "storePath": "src/features/region-restrict/stores/regionStore.ts",
+        "coreLogic": [
+          "useRegionRestrict(): 业务消费唯一入口，返回 { isRestricted, region, isLoaded, tooltipText }（useRegionRestrict.ts L7-15）",
+          "useInitRegionRestrict(): App 顶层一次性拉取，staleTime/gcTime: Infinity + retry: false + 全部 refetchOn*: false（useInitRegionRestrict.ts L11-29）",
+          "toRegionStatus(dto): 失败降级合约，dto/data/字段缺失 → { isRestricted: false }；isRestrictedRegion === true 严格判断防 truthy（normalize.ts）",
+          "RegionRestrictWrapper: active && isRestricted 同时 true 时渲染 Tooltip(asChild) + opacity-50 + inert={blocked}；否则透传 children（components/RegionRestrictWrapper.tsx）",
+          "regionApi.fetchRestrictedRegion(): bizClient.get('biz/user/restrictedRegion') 必须带 biz/ 前缀（regionApi.ts L15-19）"
+        ],
+        "usagePattern": "<RegionRestrictWrapper><Button>Deposit</Button></RegionRestrictWrapper>  // 无条件激活（默认 true）\n<RegionRestrictWrapper active={vm.isRegionBlocked} className=\"block w-full\"><Button>Buy</Button></RegionRestrictWrapper>  // OrderForm 按 buttonState 条件激活",
+        "keyFiles": [
+          "src/features/region-restrict/index.ts",
+          "src/features/region-restrict/containers/useInitRegionRestrict.ts",
+          "src/features/region-restrict/containers/useRegionRestrict.ts",
+          "src/features/region-restrict/stores/regionStore.ts",
+          "src/features/region-restrict/infra/api/regionApi.ts",
+          "src/features/region-restrict/domain/normalize.ts",
+          "src/features/region-restrict/components/RegionRestrictWrapper.tsx",
+          "src/features/region-restrict/components/RegionRestrictBanner.tsx"
+        ],
+        "relatedConcepts": [
+          "geo-blocking",
+          "wrapper-component",
+          "tooltip",
+          "zustand-store",
+          "react-query",
+          "failure-degradation",
+          "compliance",
+          "vite-proxy",
+          "ky-retry"
+        ],
+        "keyComponents": [
+          "src/features/region-restrict/components/RegionRestrictWrapper.tsx — 包裹组件，active prop 条件激活 + className 透传",
+          "src/features/region-restrict/components/RegionRestrictBanner.tsx — 红色全局 Banner + Terms of Use 链接",
+          "src/features/region-restrict/containers/useRegionRestrict.ts — 业务消费 hook（原子 selector）",
+          "src/features/region-restrict/stores/regionStore.ts — Zustand Realtime Store（不暴露给外部）",
+          "src/features/trade/containers/spotOrderFormLogic.ts — deriveSpotRegionBlocked 限制矩阵纯函数",
+          "src/features/trade/containers/perpsOrderFormLogic.ts — derivePerpsRegionBlocked 限制矩阵纯函数",
+          "src/shared/components/features/Deposit/_components/TokenSelector.tsx — disabled 时渲染纯静态视图（无下拉）",
+          "src/shared/components/features/Deposit/_components/ChainSelector.tsx — 同上"
+        ]
+      },
+      "referencePath": "reference/global/global-restrict-guide.md",
+      "sections": [
+        {
+          "title": "概述",
+          "summary": "接口、降级策略、UI 形态、文案、状态层架构总览",
+          "lineRange": [
+            9,
+            16
+          ]
+        },
+        {
+          "title": "核心架构 - 数据流",
+          "summary": "App 顶层挂载 → React Query → store → wrapper / banner 消费链路",
+          "lineRange": [
+            22,
+            36
+          ]
+        },
+        {
+          "title": "Feature 目录结构",
+          "summary": "infra/domain/store/containers/components/__tests__ 完整目录",
+          "lineRange": [
+            40,
+            58
+          ]
+        },
+        {
+          "title": "Public API",
+          "summary": "index.ts 仅导出 type + hook + wrapper + banner，绝对禁止导出 stores/infra/normalize",
+          "lineRange": [
+            62,
+            71
+          ]
+        },
+        {
+          "title": "Spec a — Feature 本体",
+          "summary": "11 个新建文件 + 1 个 queryKeys 修改",
+          "lineRange": [
+            78,
+            92
+          ]
+        },
+        {
+          "title": "Spec b — App 接入",
+          "summary": "App.tsx 一处文件 4 项改动：import / RegionRestrictInit 组件 / mount / Banner 渲染",
+          "lineRange": [
+            94,
+            98
+          ]
+        },
+        {
+          "title": "Spec c — OrderForm 条件包裹",
+          "summary": "Spot/Futures derive 纯函数 + ViewModel isRegionBlocked + handleSubmit 守卫 + 提交按钮包裹",
+          "lineRange": [
+            100,
+            113
+          ]
+        },
+        {
+          "title": "Spec d — 14 处无条件按钮包裹",
+          "summary": "Header/Trade/Portfolio/Vault/Referrals/BalancesTable/UsdtSwapPromo/FundWalletDialog 共 11 文件 18 个使用点",
+          "lineRange": [
+            115,
+            137
+          ]
+        },
+        {
+          "title": "Spec e — ConnectedDeposit lockedToken/lockedChain 能力",
+          "summary": "封堵 Stake → Deposit into ValueChain 漏洞；ConnectedDeposit/Deposit/TokenSelector/ChainSelector/YourStakedCard 共 6 文件",
+          "lineRange": [
+            139,
+            154
+          ]
+        },
+        {
+          "title": "显式不在范围",
+          "summary": "Sell/Withdraw/Transfer/Stake/ApiKeys/Invite/Banner优先级/i18n/localStorage 开关",
+          "lineRange": [
+            156,
+            170
+          ]
+        },
+        {
+          "title": "关键决策与坑点",
+          "summary": "D-001 至 D-010：路径前缀 / retry false / staleTime / 严格判断 / inert / className 透传 / 内部包裹 / FundWallet 漏洞 / 锁定无下拉 / spec 文档位置",
+          "lineRange": [
+            174,
+            235
+          ]
+        },
+        {
+          "title": "限制规则矩阵",
+          "summary": "Spot/Perps 各 buttonState 限制状态对照",
+          "lineRange": [
+            239,
+            265
+          ]
+        },
+        {
+          "title": "测试策略",
+          "summary": "normalize 6 case + Spot logic 14 case + Perps logic 7 case = 27 case，383/383 通过",
+          "lineRange": [
+            269,
+            277
+          ]
+        },
+        {
+          "title": "API 参考",
+          "summary": "useRegionRestrict / RegionRestrictWrapper / RegionRestrictBanner / OpenDepositProps 签名",
+          "lineRange": [
+            281,
+            327
+          ]
+        },
+        {
+          "title": "受限用户行为速览",
+          "summary": "允许 / 禁止操作完整对照表",
+          "lineRange": [
+            331,
+            351
+          ]
+        }
+      ],
+      "tags": [
+        "geo-blocking",
+        "compliance",
+        "region",
+        "wrapper",
+        "tooltip",
+        "zustand",
+        "react-query",
+        "failure-degradation",
+        "deposit-lock",
+        "migration",
+        "global"
+      ],
+      "lastUpdated": "2026-04-28",
+      "specPath": ".claude/kit/spec/migration-globa-region-restrict/",
+      "history": [
+        {
+          "date": "2026-04-28",
+          "type": "feat",
+          "summary": "从 sodex-web 完整迁移 region-restrict：5 份 spec（a/b/c/d/e）+ 18 个生效使用点 + ConnectedDeposit lockedToken/lockedChain 能力 + retry:false 防伪轮询 + 接口路径 biz/ 前缀修正"
+        }
+      ]
+    },
+    "global-maintenance": {
+      "id": "global-maintenance",
+      "module": "global",
+      "type": "feature",
+      "title": "全局维护系统（Global Maintenance）",
+      "summary": "两级维护系统（全量 level=1 + 链维护 level=2）从 sodex-web 完整迁移。5 份 spec + 7 个 PR 实施。30s 轮询 fail-open + 503 兜底 SPA + 9 状态跳转矩阵 + 12 状态 Banner 优先级矩阵 + 19+19 wrapper 落点 + Portfolio Overlay + 4 Trade RouteGuard + T-Rex 游戏。",
+      "quickRef": {
+        "entryPoint": "src/features/maintenance/index.ts",
+        "hookPath": "src/features/maintenance/containers/useMaintenance.ts",
+        "storePath": "src/features/maintenance/stores/maintenanceStore.ts",
+        "coreLogic": [
+          "useMaintenance(): 业务消费唯一入口，返回 { level, isFullMaintenance, isChainMaintenance, estimatedTime, isLoaded, isInMaintenance }（useMaintenance.ts L7-17）",
+          "useInitMaintenance(): App 顶层挂载，30s 轮询 + DEV localStorage 覆盖 + onSuccess 写 store（useInitMaintenance.ts L24-58）",
+          "toMaintenanceStatus(dto): fail-open 降级 + toUpperCase 抗漂移 + maintenanceDuration 边界检查（normalize.ts L7-30）",
+          "MaintenanceInit: 9 状态转换矩阵两条规则覆盖跳转（A: full && !maintPage → /maintenance; B: !full && maintPage → /trade）（MaintenanceInit.tsx L16-29）",
+          "TopAlertSlot: 3 条 Banner 守卫规则（pathname=/maintenance + isChainMaintenance && isTradeRoute + isInMaintenance ? Maintenance : Region）（App.tsx 内部组件）",
+          "TradeRouteGuard: 4 条 Trade Route 包裹，level=2 替换整页为 MaintenanceContent（TradeRouteGuard.tsx L7-12）",
+          "RestrictWrapper: 维护 + 地区融合包裹，优先级维护 > 地区（RestrictWrapper.tsx L18-32）",
+          "installMaintenanceInterceptor(): 注入 503 hook，写 store level=1 走 SPA 路径（maintenanceInterceptor.ts L7-17）"
+        ],
+        "usagePattern": "// 触发按钮包裹\n<MaintenanceWrapper><Button>Withdraw</Button></MaintenanceWrapper>\n<RestrictWrapper><Button>Deposit</Button></RestrictWrapper>\n\n// Portfolio Position 区域\n{isChainMaintenance ? <MaintenancePositionOverlay /> : <PositionTabs />}\n\n// Trade 路由\n<Route path=\"/trade/spot/:symbolId\" element={<TradeRouteGuard><SpotTradePage /></TradeRouteGuard>} />",
+        "keyFiles": [
+          "src/features/maintenance/index.ts",
+          "src/features/maintenance/containers/useInitMaintenance.ts",
+          "src/features/maintenance/containers/useMaintenance.ts",
+          "src/features/maintenance/stores/maintenanceStore.ts",
+          "src/features/maintenance/infra/api/maintenanceApi.ts",
+          "src/features/maintenance/domain/normalize.ts",
+          "src/features/maintenance/domain/types.ts",
+          "src/features/maintenance/components/MaintenanceInit.tsx",
+          "src/features/maintenance/components/MaintenanceBanner.tsx",
+          "src/features/maintenance/components/MaintenanceWrapper.tsx",
+          "src/features/maintenance/components/RestrictWrapper.tsx",
+          "src/features/maintenance/components/MaintenanceContent.tsx",
+          "src/features/maintenance/components/MaintenancePositionOverlay.tsx",
+          "src/features/maintenance/components/TradeRouteGuard.tsx",
+          "src/features/maintenance/components/DisabledShell.tsx",
+          "src/features/maintenance/components/TRexGame/index.tsx",
+          "src/features/maintenance/components/TRexGame/runner.js",
+          "src/features/maintenance/pages/MaintenancePage.tsx",
+          "src/features/maintenance/integrations/maintenanceInterceptor.ts",
+          "src/shared/infra/httpClient.ts",
+          "src/shared/constants/urls.ts",
+          "src/features/market/containers/useGlobalBanner.ts",
+          "src/features/portfolio/pages/PortfolioPage.tsx",
+          "src/App.tsx"
+        ],
+        "relatedConcepts": [
+          "two-level-maintenance",
+          "fail-open",
+          "react-query-polling",
+          "503-interceptor",
+          "spa-navigation",
+          "wrapper-component",
+          "tooltip",
+          "zustand-store",
+          "route-guard",
+          "trex-game",
+          "banner-priority",
+          "region-restrict",
+          "iife-extraction",
+          "tree-shake",
+          "compliance"
+        ],
+        "keyComponents": [
+          "src/features/maintenance/components/MaintenanceInit.tsx — 顶层挂载 + 9 状态转换矩阵 + DEV 守卫",
+          "src/features/maintenance/components/TradeRouteGuard.tsx — 路由层 level=2 整页替换 MaintenanceContent",
+          "src/features/maintenance/components/RestrictWrapper.tsx — 维护+地区融合包裹（维护优先）",
+          "src/features/maintenance/components/MaintenanceWrapper.tsx — 单一维护包裹（仅 level=2）",
+          "src/features/maintenance/components/MaintenanceBanner.tsx — 顶部 Banner（warning variant）",
+          "src/features/maintenance/components/MaintenancePositionOverlay.tsx — Portfolio Position 区域 SVG 图标 + 灰色文字",
+          "src/features/maintenance/components/MaintenanceContent.tsx — Logo + 标题 + 副本 + Discord 按钮 + Get Support + T-Rex",
+          "src/features/maintenance/components/TRexGame/runner.js — Chromium offline page 移植 + IIFE 拆除 + ESM 导出 + onKeyDown target patch",
+          "src/features/maintenance/integrations/maintenanceInterceptor.ts — 503 兜底注入 setStatus level=1",
+          "src/App.tsx (TopAlertSlot) — 3 条 Banner 守卫规则精确对齐老项目 DepositBanner + GlobalBanner 双重守卫"
+        ]
+      },
+      "referencePath": "reference/global/global-maintenance-guide.md",
+      "sections": [
+        {
+          "title": "概述",
+          "summary": "状态层、数据流、失败降级、DEV 开关、文案、总落点统计",
+          "lineRange": [
+            3,
+            14
+          ]
+        },
+        {
+          "title": "维护级别定义",
+          "summary": "level 0/1/2 与 status 枚举、行为、范围对应",
+          "lineRange": [
+            16,
+            24
+          ]
+        },
+        {
+          "title": "核心架构 - 数据流",
+          "summary": "API → normalize → store → 7 类消费方完整链路",
+          "lineRange": [
+            26,
+            65
+          ]
+        },
+        {
+          "title": "接口契约",
+          "summary": "GET /biz/v1/maintenance/status 实测响应（含 code/message/data 包装）+ 字段表 + 4 种特殊情况降级",
+          "lineRange": [
+            67,
+            105
+          ]
+        },
+        {
+          "title": "Feature 目录结构",
+          "summary": "infra/domain/store/containers/components/pages/integrations/__fixtures__/__tests__ 完整 17 文件",
+          "lineRange": [
+            107,
+            144
+          ]
+        },
+        {
+          "title": "Public API",
+          "summary": "13 个导出 + 绝对禁止导出 stores/infra/normalize/TRexGame 内部",
+          "lineRange": [
+            146,
+            167
+          ]
+        },
+        {
+          "title": "PR 拆分（6 + 1 个）",
+          "summary": "spec a/b/c/d/e + banner-guard 共 7 个 PR 完整范围",
+          "lineRange": [
+            169,
+            181
+          ]
+        },
+        {
+          "title": "9 状态转换矩阵（MaintenanceInit）",
+          "summary": "两条规则覆盖 4 象限 + 9 种 level 切换的完整行为表 + isLoaded/DEV 守卫",
+          "lineRange": [
+            183,
+            227
+          ]
+        },
+        {
+          "title": "Banner 优先级矩阵（TopAlertSlot 守卫）",
+          "summary": "3 条规则 + isChainMaintenance/isInMaintenance 精确分用 + 12 状态象限",
+          "lineRange": [
+            229,
+            277
+          ]
+        },
+        {
+          "title": "错误处理机制（4 层）",
+          "summary": "infra retry:0 + domain fail-open + 503 SPA + UI isLoaded 守卫 4 层防护",
+          "lineRange": [
+            279,
+            322
+          ]
+        },
+        {
+          "title": "19 处 RestrictWrapper（Phase 1 升级）",
+          "summary": "13 文件 20 处 wrapper 详细位置 + className 透传 + 双层保护说明",
+          "lineRange": [
+            324,
+            348
+          ]
+        },
+        {
+          "title": "19 处 MaintenanceWrapper（Phase 2 新增）",
+          "summary": "d.1-d.6 子集落点 + Apikey Menu 等价处理 + dialog 内层例外说明",
+          "lineRange": [
+            350,
+            367
+          ]
+        },
+        {
+          "title": "Portfolio Position Overlay 集成",
+          "summary": "整 PositionTabs 容器条件渲染替换 + ws 订阅自动停止",
+          "lineRange": [
+            369,
+            387
+          ]
+        },
+        {
+          "title": "4 条 Trade Route TradeRouteGuard",
+          "summary": "PC + Mobile spot/futures 4 条路由包裹 + children 不挂载停 ws",
+          "lineRange": [
+            389,
+            408
+          ]
+        },
+        {
+          "title": "MaintenancePage / T-Rex 游戏",
+          "summary": "Page 结构 + T-Rex 移植决策 + URL 常量来源",
+          "lineRange": [
+            410,
+            447
+          ]
+        },
+        {
+          "title": "DEV Mock 与轮询测试",
+          "summary": "localStorage.maintenanceLevel 覆盖机制 + 生产 tree-shake 保证",
+          "lineRange": [
+            449,
+            472
+          ]
+        },
+        {
+          "title": "关键决策与坑点",
+          "summary": "D-001 至 D-013：Banner 角色 / 守卫变量分用 / Trade 路由前缀 / w-fit / Portfolio bg / 模块顶层 / IIFE 拆除 / null target / loadSounds 容错 / fail-open",
+          "lineRange": [
+            474,
+            550
+          ]
+        },
+        {
+          "title": "文案速查（硬编码英文，无 i18n）",
+          "summary": "Wrapper Tooltip / Banner / Overlay / Page 标题 / 副本 / 按钮文字 完整对照",
+          "lineRange": [
+            552,
+            566
+          ]
+        },
+        {
+          "title": "测试策略",
+          "summary": "Domain 8 case 单测 + UI 集成手测 + 9 状态转换手测",
+          "lineRange": [
+            568,
+            579
+          ]
+        },
+        {
+          "title": "验收标准",
+          "summary": "功能 / 架构 / 回归 / 测试 4 类完整 checklist",
+          "lineRange": [
+            581,
+            607
+          ]
+        },
+        {
+          "title": "老项目对齐细节核对",
+          "summary": "30 项与 sodex-web 对照表（接口/轮询/枚举/降级/跳转/守卫/Wrapper/Page/T-Rex/i18n 全维度）",
+          "lineRange": [
+            609,
+            640
+          ]
+        },
+        {
+          "title": "总落点统计",
+          "summary": "20 RestrictWrapper + 19 MaintenanceWrapper + 1 Overlay + 4 RouteGuard + 3 Banner 规则 + 1 503 hook = 48 生效点",
+          "lineRange": [
+            642,
+            650
+          ]
+        },
+        {
+          "title": "集成点",
+          "summary": "修改文件 + 新增文件完整列表（含 sprite/SVG 资源）",
+          "lineRange": [
+            652,
+            660
+          ]
+        }
+      ],
+      "tags": [
+        "two-level-maintenance",
+        "global-maintenance",
+        "fail-open",
+        "react-query-polling",
+        "503-interceptor",
+        "spa-navigation",
+        "wrapper",
+        "tooltip",
+        "zustand",
+        "route-guard",
+        "trex-game",
+        "banner-priority",
+        "region-restrict-fusion",
+        "tree-shake",
+        "migration",
+        "global"
+      ],
+      "lastUpdated": "2026-04-28",
+      "specPath": ".claude/kit/spec/migration-global-maintenance/",
+      "history": [
+        {
+          "date": "2026-04-28",
+          "type": "feat",
+          "summary": "从 sodex-web 完整迁移 global-maintenance：5 份 spec + 7 个 PR + 30s 轮询 fail-open + 503 SPA 兜底 + 9 状态跳转矩阵 + 12 状态 Banner 优先级矩阵 + 19+19 wrapper 落点 + Portfolio Overlay + 4 Trade RouteGuard + Chromium T-Rex 移植"
+        }
+      ]
+    },
+    "global-banner": {
+      "id": "global-banner",
+      "module": "global",
+      "type": "feature",
+      "title": "全局公告 Banner（Global Banner）",
+      "summary": "基于 biz/config/banner 的运营公告系统，对齐老项目 sodex-web 单消费者架构：useGlobalBanner 渲染所有 type 2/3/4 公告（含 24h TTL 关闭 + URL 安全校验），MaintenanceBanner 仅在维护期且后端无 type 2 时兜底硬编码英文。守卫层 isChainMaintenanceOnTrade + isRestricted + TopAlertSlot 三条规则覆盖 18 行场景决策矩阵。",
+      "discovery_cost": "~4200 tokens",
+      "quickRef": {
+        "coreLogic": [
+          "useGlobalBanner(): GlobalBannerViewModel  L83-189  消费 type 2/3/4 公告；守卫 !(isChainMaintenance && isTradeRoute) + !isRestricted；首条渲染 + 24h TTL + URL 安全跳转",
+          "selectVisibleBanners(banners, isTradeRoute, routeSymbol, closeTimeMap): Banner[]  L40-78  type 2/4 在非 Trade 页支持 page='all'；type 3 仅 Trade 页 + symbol 匹配；type 1 暂未接入",
+          "MaintenanceBanner(): JSX | null  纯 fallback：isInMaintenance && !hasType2Banner 时硬编码英文不可关闭；hasType2Banner 时 null 让位 GlobalBanner",
+          "TopAlertSlot(): JSX | null  App.tsx 三条守卫：/maintenance→null；isChainMaintenance && isTradeRoute→null；isInMaintenance? Maintenance : Region",
+          "isValidUrl(url): url is string  L18-29  阻止 javascript:/data:/vbscript: 协议注入",
+          "useBannerQuery(): UseQueryResult<Banner[]>  L9-16  React Query staleTime 5min + select(toBanner)，双消费者复用同一份请求（dedupe）",
+          "toBanner(dto): Banner  normalize.ts L165-177  BANNER_STYLE_MAP regular→success / alert→error / 其他→warning"
+        ],
+        "keyComponents": [
+          "src/features/market/components/GlobalBanner/index.tsx - 主公告渲染：Collapse + AnimatePresence + Alert；首次跳过 opacity 动画，后续 banner 切换淡入淡出",
+          "src/features/maintenance/components/MaintenanceBanner.tsx - 纯 fallback：仅 isInMaintenance && !hasType2Banner 时渲染硬编码英文（不可关闭）",
+          "src/App.tsx TopAlertSlot - 三条守卫互斥 MaintenanceBanner / RegionRestrictBanner，对齐老项目 DepositBanner.tsx:97-114 + globalBanner.tsx:244",
+          "src/App.tsx StickyTopBar - sticky 容器堆叠 Header + GlobalBanner + TopAlertSlot，/maintenance 整页接管时返回 null"
+        ],
+        "keyFiles": [
+          "src/features/market/containers/useGlobalBanner.ts",
+          "src/features/market/containers/useBannerQuery.ts",
+          "src/features/market/components/GlobalBanner/index.tsx",
+          "src/features/market/domain/types.ts",
+          "src/features/market/domain/normalize.ts",
+          "src/features/market/infra/api/configApi.ts",
+          "src/features/maintenance/components/MaintenanceBanner.tsx",
+          "src/App.tsx"
+        ],
+        "relatedConcepts": [
+          "react-query",
+          "zustand-store",
+          "view-model",
+          "ttl-localstorage",
+          "url-validation",
+          "collapse-animation",
+          "framer-motion",
+          "guard-pattern",
+          "single-consumer-fallback",
+          "decision-matrix",
+          "old-project-alignment"
+        ]
+      },
+      "referencePath": "reference/global/global-banner-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "主消费者 + fallback 兜底 + sticky 顶部堆叠示意",
+          "lineRange": [
+            3,
+            40
+          ],
+          "estimatedTokens": 570
+        },
+        {
+          "title": "老项目对齐",
+          "summary": "sodex-web DepositBanner + GlobalBanner 双层映射表 + 新增项说明",
+          "lineRange": [
+            41,
+            61
+          ],
+          "estimatedTokens": 315
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "useGlobalBanner 守卫与 filter / MaintenanceBanner 让位判断 / URL 安全校验 / TopAlertSlot 三条规则",
+          "lineRange": [
+            62,
+            161
+          ],
+          "estimatedTokens": 1500
+        },
+        {
+          "title": "场景决策矩阵（不同情况下的渲染逻辑）",
+          "summary": "M×R×Route×B2×Closed2 五维 18 行场景组合，每行给出 GlobalBanner / TopAlertSlot / 顶部最终显示",
+          "lineRange": [
+            162,
+            202
+          ],
+          "estimatedTokens": 615
+        },
+        {
+          "title": "关键实现",
+          "summary": "24h TTL + 5min 巡检 / DTO→Domain / 内容选择 / Collapse + Motion 动画",
+          "lineRange": [
+            203,
+            250
+          ],
+          "estimatedTokens": 720
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "D-001 单消费者+fallback；D-002 localStorage 共享；D-003 type 1 暂不渲染；D-004 TopAlertSlot 守卫顺序；D-005 禁止重新引入 !isInMaintenance 守卫",
+          "lineRange": [
+            251,
+            289
+          ],
+          "estimatedTokens": 585
+        },
+        {
+          "title": "文件结构",
+          "summary": "market feature + maintenance feature + App.tsx 顶层组合",
+          "lineRange": [
+            290,
+            311
+          ],
+          "estimatedTokens": 330
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "新增类型 / 调整 TTL / 修改 style / 影响清单覆盖决策矩阵 18 行",
+          "lineRange": [
+            312,
+            338
+          ],
+          "estimatedTokens": 405
+        },
+        {
+          "title": "术语表",
+          "summary": "主消费者 / fallback / STORAGE_PREFIX / TTL / isChainMaintenanceOnTrade / hasType2Banner",
+          "lineRange": [
+            339,
+            346
+          ],
+          "estimatedTokens": 120
+        },
+        {
+          "title": "更新记录",
+          "summary": "v1 初始版本（错误双消费者）→ v2 架构修正（对齐老项目单消费者）",
+          "lineRange": [
+            347,
+            360
+          ],
+          "estimatedTokens": 210
+        }
+      ],
+      "tags": [
+        "banner",
+        "operational-notice",
+        "view-model",
+        "react-query",
+        "ttl-localstorage",
+        "guard-pattern",
+        "single-consumer-fallback",
+        "decision-matrix",
+        "framer-motion",
+        "url-safety",
+        "old-project-alignment",
+        "global"
+      ],
+      "created": "2026-04-30",
+      "updated": "2026-04-30",
+      "history": [
+        {
+          "date": "2026-04-30",
+          "type": "feat",
+          "summary": "初始版本（v1）：useGlobalBanner（type 2/3/4 + 24h TTL + URL 校验 + maintenance/region 守卫）+ MaintenanceBanner（维护期 type 2 + fallback 双层）+ TopAlertSlot 三条守卫"
+        },
+        {
+          "date": "2026-04-30",
+          "type": "fix",
+          "summary": "架构修正（v2）：对齐老项目 sodex-web 单消费者架构。删除 useGlobalBanner 错误的 !isInMaintenance 守卫；MaintenanceBanner 退回纯 fallback（仅 isInMaintenance && !hasType2Banner 时渲染）；type 2/4 在非 Trade 页支持 page='all'；新增 18 行场景决策矩阵章节；新增 D-005 防止回退；新增老项目对齐章节明确每条逻辑的 sodex-web 出处"
+        }
+      ]
+    },
+    "global-track": {
+      "id": "global-track",
+      "module": "global",
+      "type": "feature",
+      "title": "埋点系统（Tracking / 神策 SDK + saTrack + GA）",
+      "summary": "Batch A 基础设施：神策 SDK 仅承担 autoTrack（PV/$WebClick/$WebStay）+ sensors.identify；业务事件统一走 saTrack 直连 datasink 私有化神策实例；GA gtag 单独承担钱包登录跨产品 user_id 共享。10 个 shared/track 文件 + 2 个 auth identity hook；SRI 强制 + AES 钱包脱敏 + autoTrack 敏感过滤；CSP 移除待独立任务。Batch B 起接入 sodex-web 历史 55+ 业务事件。",
+      "discovery_cost": "~6500 tokens",
+      "quickRef": {
+        "coreLogic": [
+          "useTrackInit(): void  containers/useTrackInit.ts L11-19  App 顶层挂一次：deviceId/anonymousId 兜底 + sensorsSink.init（registerPropertyPlugin + autoTrack）",
+          "saTrackService.track(eventName, payload?): void  services/saTrackService.ts L8-13  业务事件唯一入口 → datasinkSink fetch POST",
+          "identityService.trackConnectWallet(address): Promise<void>  services/identityService.ts L13-18  AES-128 加密 → sensors.identify",
+          "identityService.trackWalletLogin(address): void  services/identityService.ts L25-27  钱包地址可用即触发 gtag log_in（不依赖 JWT）",
+          "buildSosovalueParams(input): SosovalueFields  domain/publicParams.ts L367-401  公共参数 17 字段构造，autoTrack 与 saTrack 共用",
+          "useTrackConnectWallet(): void  features/auth/containers/useTrackConnectWallet.ts L11-22  监听 session.address → trackConnectWallet（useRef 防重）",
+          "useTrackWalletLogin(): void  features/auth/containers/useTrackWalletLogin.ts L15-23  监听 address → trackWalletLogin（gtagSink sessionStorage 防重）"
+        ],
+        "keyComponents": [
+          "src/shared/track/infra/sensorsSink.ts - 神策 SDK 封装：init + identify + whenReady 轮询；propertyPlugin 注入公共参数到 autoTrack 事件",
+          "src/shared/track/infra/datasinkSink.ts - saTrack 直连：fetch POST，body 格式 data=<base64>&ext=crc%3D<crc>",
+          "src/shared/track/infra/gtagSink.ts - GA gtag 封装 + updateSharedUserId + emitLoginIfNotTracked（sessionStorage 防重在 infra）",
+          "src/shared/track/infra/encrypt.ts - AES-128-CBC + 固定 IV；顶部强制 obfuscation 风险注释",
+          "src/features/auth/containers/useAuthAppRoot.ts - 注册 2 个 identity hook 到 auth 编排链路",
+          "src/index.html - 神策 init IIFE（heatmap 全开 + URL 脱敏 + collect_element 敏感过滤）+ SDK script SRI + GA gtag",
+          "vite.config.ts - htmlEnvReplacePlugin（%VITE_TRACK_URL% 替换）+ gtagUserIdPlugin（user_id bootstrap）"
+        ],
+        "keyFiles": [
+          "src/shared/track/index.ts",
+          "src/shared/track/containers/useTrackInit.ts",
+          "src/shared/track/services/saTrackService.ts",
+          "src/shared/track/services/identityService.ts",
+          "src/shared/track/infra/sensorsSink.ts",
+          "src/shared/track/infra/datasinkSink.ts",
+          "src/shared/track/infra/gtagSink.ts",
+          "src/shared/track/infra/encrypt.ts",
+          "src/shared/track/domain/publicParams.ts",
+          "src/shared/track/domain/types.ts",
+          "src/features/auth/containers/useTrackConnectWallet.ts",
+          "src/features/auth/containers/useTrackWalletLogin.ts",
+          "src/features/auth/containers/useAuthAppRoot.ts",
+          "src/App.tsx",
+          "index.html",
+          "vite.config.ts",
+          "src/vite-env.d.ts",
+          "public/static/sensorsdata.min.js"
+        ],
+        "relatedConcepts": [
+          "sensors-analytics",
+          "private-deployment",
+          "autoTrack",
+          "heatmap",
+          "pageview",
+          "WebClick",
+          "WebStay",
+          "AES-128-CBC",
+          "obfuscation",
+          "SRI",
+          "google-analytics",
+          "user-id-sharing",
+          "wallet-identity",
+          "shared-infrastructure",
+          "single-channel"
+        ]
+      },
+      "referencePath": "reference/global/global-track-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "三路上报通道 + sodex-web 对齐表（heatmap 已关）",
+          "lineRange": [
+            3,
+            36
+          ],
+          "estimatedTokens": 510
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "useTrackInit / propertyPlugin / identityService（+ IfDirty）/ auth hook / saTrackService / safe localStorage 包装",
+          "lineRange": [
+            37,
+            120
+          ],
+          "estimatedTokens": 1260
+        },
+        {
+          "title": "关键实现",
+          "summary": "SRI / heatmap 已关 + URL 脱敏 / Vite 插件 / CLAUDE.md 分层合规",
+          "lineRange": [
+            121,
+            166
+          ],
+          "estimatedTokens": 690
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "D-1~D-13：三路并行 / 业务单通道 / heatmap 关闭 / AES 脱敏 / 钱包身份链路 / safe storage / 刷新残留兜底",
+          "lineRange": [
+            167,
+            182
+          ],
+          "estimatedTokens": 240
+        },
+        {
+          "title": "文件结构",
+          "summary": "shared/track 4 层 + auth feature 2 hook + App/index.html/vite/env",
+          "lineRange": [
+            183,
+            214
+          ],
+          "estimatedTokens": 480
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "Batch B 业务事件 / heatmap 修改注意事项 / server_url 切换 / CSP 加固待办",
+          "lineRange": [
+            215,
+            258
+          ],
+          "estimatedTokens": 660
+        },
+        {
+          "title": "术语表",
+          "summary": "autoTrack / propertyPlugin / saTrack / datasink / SRI / __device_id__ / thridBrowser / obfuscation",
+          "lineRange": [
+            259,
+            273
+          ],
+          "estimatedTokens": 225
+        },
+        {
+          "title": "更新记录",
+          "summary": "2026-05-13 heatmap 关闭 + safe storage + 刷新兜底；2026-05-12 钱包身份链路修复；初始版本",
+          "lineRange": [
+            274,
+            312
+          ],
+          "estimatedTokens": 585
+        }
+      ],
+      "tags": [
+        "tracking",
+        "analytics",
+        "sensors-analytics",
+        "google-analytics",
+        "datasink",
+        "autoTrack",
+        "heatmap",
+        "wallet-identity",
+        "AES-encryption",
+        "SRI",
+        "shared-infrastructure",
+        "global",
+        "old-project-alignment",
+        "single-channel-design"
+      ],
+      "created": "2026-05-12",
+      "updated": "2026-05-13",
+      "history": [
+        {
+          "date": "2026-05-12",
+          "type": "feat",
+          "summary": "Batch A 基础设施初始版本：神策 SDK + saTrack + GA 三路 + 安全加固（SRI/AES脱敏/敏感过滤/URL脱敏）+ 2 个 auth identity hook。Debug 实测 H2/H3/H4 全套通过（$pageview×7 + $WebClick×6 + $WebStay×2 + 3 钱包 identify + GA log_in 防重）。CSP 移除待独立任务。Batch B 起接入 55+ 业务事件。"
+        },
+        {
+          "date": "2026-05-12",
+          "type": "fix",
+          "summary": "钱包身份双向链路完整性修复：(1) identityService.trackConnectWallet 显式写 __wallet_address__/__wallet_type__/user_id localStorage（sodex-next auth 重构后业务侧不再写）→ sosovalue.walletAddress 字段不再空 / 残留；(2) setUserId(encrypted) 统一 saTrack 直连与 sensors.identify 的 distinct_id（避免神策后台同用户两个 ID）；(3) clearWalletLoginIdentity 加 sensors.logout()，登出时两路 distinct_id 同步回归 anonymous；(4) useTrackConnectWallet 监听 address null 时清 localStorage 残留 + 取 wagmi connector?.id 作 walletType。"
+        },
+        {
+          "date": "2026-05-13",
+          "type": "fix",
+          "summary": "关闭 heatmap（不再上报 $WebClick/$WebStay）+ localStorage safe wrapper（safeGetItem/safeSetItem/safeRemoveItem + inMemoryStore fallback）+ 刷新后残留兜底清理（clearWalletLoginIdentityIfDirty）。新增 D-12 / D-13 关键决策，反转 D-3。"
+        },
+        {
+          "date": "2026-05-13",
+          "type": "refactor",
+          "summary": "VITE_TRACK_URL 全环境统一为 https://datasink.sosovalue.com/sa?project=production（dev/preview 不再走 datasink1?project=default）。dev/preview 流量将进入生产数据池，需通知数据团队按 channelArea/pageId/userAgent 过滤。AES 密钥分支保留不变。"
+        }
+      ]
+    }
+  },
+  "history": {
+    "global-track": [
+      {
+        "date": "2026-05-13",
+        "type": "refactor",
+        "summary": "VITE_TRACK_URL 全环境统一为 datasink production；dev/preview 流量将进入生产数据池",
+        "files": [
+          ".env.development",
+          ".env.preview",
+          "datasinkSink.ts"
+        ],
+        "historyPath": "history/global/global-track/2026-05-13-track-url-unified-to-production.md"
+      },
+      {
+        "date": "2026-05-13",
+        "type": "fix",
+        "summary": "关闭 heatmap（不再上报 $WebClick/$WebStay）+ localStorage safe wrapper + 刷新后残留兜底清理",
+        "files": [
+          "index.html",
+          "publicParams.ts",
+          "identityService.ts",
+          "useTrackConnectWallet.ts"
+        ],
+        "historyPath": "history/global/global-track/2026-05-13-heatmap-disable-and-storage-hardening.md"
+      },
+      {
+        "date": "2026-05-13",
+        "type": "fix",
+        "summary": "关闭 heatmap（不再上报 $WebClick/$WebStay）+ localStorage safe wrapper + 刷新后残留兜底清理",
+        "files": [
+          "index.html",
+          "publicParams.ts",
+          "identityService.ts",
+          "useTrackConnectWallet.ts"
+        ],
+        "historyPath": "history/global/global-track/2026-05-13-heatmap-disable-and-storage-hardening.md"
+      }
+    ]
+  }
+}

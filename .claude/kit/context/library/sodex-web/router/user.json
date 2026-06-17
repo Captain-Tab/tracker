@@ -1,0 +1,727 @@
+{
+  "module": "user",
+  "name": "User",
+  "description": "用户鉴权与身份管理",
+  "emoji": "👤",
+  "features": {
+    "user-auth-core": {
+      "id": "user-auth-core",
+      "module": "user",
+      "type": "feature",
+      "title": "用户鉴权核心机制",
+      "summary": "JWT Token 鉴权系统，包含 API 层、全局鉴权层（useAuthTokenValidation）、页面级鉴权层（usePageAuth），支持自动刷新、私钥校验、Terms of Use 签署",
+      "quickRef": {
+        "coreLogic": [
+          "useAuthTokenValidation(): { isValid: boolean, refresh: () => void }  L1-120  全局鉴权 Hook，自动校验/刷新",
+          "usePageAuth(config: PageAuthConfig): PageAuthState  L1-200  页面级鉴权状态机",
+          "getAuthToken(address: string): string | null  L30-45  按钱包地址获取 Token",
+          "checkAuthToken(token: string): Promise<AuthCheckResult>  L50-80  校验 Token 有效性"
+        ],
+        "keyComponents": [
+          "useAuthTokenValidation.ts - 全局鉴权 Hook（自动校验/刷新）",
+          "usePageAuth.ts - 页面级鉴权状态机（idle→checking→authenticated）",
+          "http/auth/index.ts - Auth API 定义（check/nonce/verify）",
+          "utils/storage/local.ts - Token 存储方法"
+        ],
+        "keyFiles": [
+          "src/hooks/useAuthTokenValidation.ts",
+          "src/hooks/usePageAuth.ts",
+          "src/http/auth/index.ts",
+          "src/utils/storage/local.ts",
+          "src/contexts/login/index.tsx",
+          "src/components/baseInfoRequester/index.tsx"
+        ],
+        "relatedConcepts": [
+          "jwt",
+          "wallet-sign",
+          "private-key",
+          "nonce",
+          "terms-of-use",
+          "enable-trading"
+        ]
+      },
+      "discovery_cost": "~5200 tokens",
+      "referencePath": "reference/user/user-auth-core-guide.md",
+      "sections": [
+        {
+          "title": "概述",
+          "summary": "三层鉴权架构图：API 层、全局鉴权层、页面级鉴权层、Token 存储层",
+          "lineRange": [
+            3,
+            42
+          ],
+          "estimatedTokens": 600
+        },
+        {
+          "title": "核心概念",
+          "summary": "Auth Token（JWT）、AuthSignType（6种签名类型）、Private Key（webkey/mobilekey）",
+          "lineRange": [
+            44,
+            78
+          ],
+          "estimatedTokens": 500
+        },
+        {
+          "title": "API 接口",
+          "summary": "/auth/check、/auth/v2/nonce、/auth/v2/verify 三个接口的参数和响应",
+          "lineRange": [
+            80,
+            128
+          ],
+          "estimatedTokens": 700
+        },
+        {
+          "title": "Token 存储",
+          "summary": "localStorage __auth_token_map__ 存储结构，getAuthToken/setAuthToken/removeAuthToken 方法",
+          "lineRange": [
+            130,
+            164
+          ],
+          "estimatedTokens": 500
+        },
+        {
+          "title": "全局鉴权流程",
+          "summary": "useAuthTokenValidation 完整流程图：触发时机、校验逻辑、私钥刷新流程",
+          "lineRange": [
+            166,
+            250
+          ],
+          "estimatedTokens": 1200
+        },
+        {
+          "title": "页面级鉴权",
+          "summary": "usePageAuth 状态机（5种状态）、两种鉴权路径（有/无 userid）、使用示例",
+          "lineRange": [
+            252,
+            310
+          ],
+          "estimatedTokens": 850
+        },
+        {
+          "title": "Terms of Use 签署",
+          "summary": "checkUserAgreement 流程：检查签署状态 → 弹窗同意 → 签名 → 保存记录",
+          "lineRange": [
+            312,
+            355
+          ],
+          "estimatedTokens": 600
+        },
+        {
+          "title": "事件机制",
+          "summary": "自定义事件（privateKeyChanged/authTokenRefreshed/authTokenRemoved）和浏览器事件",
+          "lineRange": [
+            357,
+            377
+          ],
+          "estimatedTokens": 300
+        },
+        {
+          "title": "文件结构",
+          "summary": "http/auth、hooks、utils/storage、contexts/login、components/baseInfoRequester 目录结构",
+          "lineRange": [
+            379,
+            398
+          ],
+          "estimatedTokens": 280
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "分层架构、两种鉴权路径、事件驱动解耦",
+          "lineRange": [
+            400,
+            422
+          ],
+          "estimatedTokens": 320
+        },
+        {
+          "title": "术语表",
+          "summary": "7 个核心术语：Auth Token、AuthSignType、Private Key、webkey、mobilekey、enableTrading、nonce",
+          "lineRange": [
+            424,
+            438
+          ],
+          "estimatedTokens": 200
+        },
+        {
+          "title": "更新记录",
+          "summary": "文档版本信息：创建日期 2026-03-04",
+          "lineRange": [
+            440,
+            444
+          ],
+          "estimatedTokens": 60
+        }
+      ],
+      "tags": [
+        "auth",
+        "jwt",
+        "wallet-sign",
+        "private-key",
+        "nonce",
+        "terms-of-use",
+        "enable-trading",
+        "state-machine"
+      ],
+      "created": "2026-03-04",
+      "updated": "2026-03-04"
+    },
+    "user-auth-referrals": {
+      "id": "user-auth-referrals",
+      "module": "user",
+      "type": "feature",
+      "title": "邀请页面鉴权流程",
+      "summary": "邀请页面鉴权 + Claim 返佣领取功能，使用 usePageAuth 管理状态，支持 enableTrading 路径和链上合约交互",
+      "quickRef": {
+        "coreLogic": [
+          "ReferralsPage(): JSX.Element  L1-250  主页面，usePageAuth({ authType: 'referral' }) 配置",
+          "ReferralConnectWalletStepsModal(props: ModalProps): JSX.Element  L1-180  两步鉴权弹窗",
+          "handleStep1(): Promise<void>  L50-80  Connect Wallet 步骤",
+          "handleStep2(): Promise<void>  L90-130  Sign to verify 自动签名步骤"
+        ],
+        "keyComponents": [
+          "ReferralsPage (index.tsx) - 主页面，配置 usePageAuth",
+          "NewReferralHeader.tsx - 页面顶部按钮和用户信息显示",
+          "ReferralConnectWalletStepsModal.tsx - 两步鉴权弹窗",
+          "usePageAuth.ts - 页面级鉴权 Hook（复用）"
+        ],
+        "keyFiles": [
+          "src/pages/referrals/index.tsx",
+          "src/pages/referrals/components/NewReferralHeader.tsx",
+          "src/pages/referrals/components/ReferralConnectWalletStepsModal.tsx",
+          "src/hooks/usePageAuth.ts"
+        ],
+        "relatedConcepts": [
+          "referral",
+          "two-step-modal",
+          "wallet-connect",
+          "sign-message"
+        ]
+      },
+      "discovery_cost": "~3200 tokens",
+      "referencePath": "reference/user/user-auth-referrals-guide.md",
+      "sections": [
+        {
+          "title": "概述",
+          "summary": "邀请页面鉴权 + Claim 架构图，含数据类型和链上交互",
+          "lineRange": [
+            3,
+            37
+          ],
+          "estimatedTokens": 525
+        },
+        {
+          "title": "页面入口",
+          "summary": "ReferralStats 等类型定义、主组件 usePageAuth 配置、Header Props 接口",
+          "lineRange": [
+            38,
+            134
+          ],
+          "estimatedTokens": 1455
+        },
+        {
+          "title": "鉴权状态机",
+          "summary": "5 种状态定义和状态流转图（含用户交互触发点）",
+          "lineRange": [
+            135,
+            198
+          ],
+          "estimatedTokens": 960
+        },
+        {
+          "title": "两步鉴权弹窗",
+          "summary": "StepStatus 类型、nonce 预获取、token 有效性预检查、签名流程",
+          "lineRange": [
+            199,
+            261
+          ],
+          "estimatedTokens": 945
+        },
+        {
+          "title": "页面数据获取",
+          "summary": "5 个数据源：统计/ClaimHistory/ReferralList/链上Claimed/claimableRewards 计算",
+          "lineRange": [
+            262,
+            318
+          ],
+          "estimatedTokens": 855
+        },
+        {
+          "title": "UI 状态映射",
+          "summary": "Header 按钮四态、Claim Rebate、RegionRestrict、全屏 Loading 超时安全阀",
+          "lineRange": [
+            319,
+            361
+          ],
+          "estimatedTokens": 645
+        },
+        {
+          "title": "事件监听",
+          "summary": "authTokenRefreshed 事件监听，Token 刷新后重新获取数据",
+          "lineRange": [
+            362,
+            386
+          ],
+          "estimatedTokens": 375
+        },
+        {
+          "title": "文件结构",
+          "summary": "完整文件目录含 API/ABI/弹窗组件/通用鉴权弹窗",
+          "lineRange": [
+            387,
+            415
+          ],
+          "estimatedTokens": 435
+        },
+        {
+          "title": "与其他页面的差异",
+          "summary": "AuthSignType、鉴权触发、弹窗组件、数据隔离对比表",
+          "lineRange": [
+            416,
+            426
+          ],
+          "estimatedTokens": 165
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "usePageAuth 统一管理、两步弹窗设计、自动签名优化",
+          "lineRange": [
+            427,
+            450
+          ],
+          "estimatedTokens": 360
+        },
+        {
+          "title": "术语表",
+          "summary": "核心术语：ReferralConnectWalletStepsModal、obtainToken 等",
+          "lineRange": [
+            451,
+            462
+          ],
+          "estimatedTokens": 180
+        },
+        {
+          "title": "代码位置索引",
+          "summary": "13 个关键文件位置索引（含行号范围）",
+          "lineRange": [
+            463,
+            482
+          ],
+          "estimatedTokens": 300
+        },
+        {
+          "title": "更新记录",
+          "summary": "文档版本：2026-03-04 创建，2026-04-08 Claim 功能更新",
+          "lineRange": [
+            483,
+            497
+          ],
+          "estimatedTokens": 225
+        }
+      ],
+      "tags": [
+        "auth",
+        "referral",
+        "two-step-modal",
+        "wallet-connect",
+        "sign-message",
+        "state-machine"
+      ],
+      "created": "2026-03-04",
+      "updated": "2026-04-08"
+    },
+    "user-auth-enable": {
+      "id": "user-auth-enable",
+      "module": "user",
+      "type": "feature",
+      "title": "Enable Trading 完整流程",
+      "summary": "用户授权交易的核心流程，通过钱包签名生成私钥并注册 API Key，包含 useEnableTrading Hook、StaySignedIn 弹窗、私钥存储迁移、邮箱登录自动 enable",
+      "quickRef": {
+        "coreLogic": [
+          "useEnableTrading(options: EnableOptions): EnableTradingResult  L1-180  新版 Enable Trading Hook",
+          "signMessage(message: string): Promise<SignResult>  L200-280  PC 端钱包签名",
+          "signMessageMobile(message: string): Promise<SignResult>  L290-350  移动端签名（含 loading 优化）",
+          "syncPrivateKeyStorage(rememberMe: boolean): void  L80-120  私钥 local/session 迁移"
+        ],
+        "keyComponents": [
+          "useEnableTrading.ts - 新版 Enable Trading Hook",
+          "StaySignedIn.tsx - Stay signed in 弹窗组件",
+          "LoginContext - signMessage/signMessageMobile 签名方法",
+          "syncPrivateKeyStorage - 私钥 local/session 迁移函数"
+        ],
+        "keyFiles": [
+          "src/hooks/useEnableTrading.ts",
+          "src/contexts/login/index.tsx",
+          "src/components_tw/modals/tradingProcess/StaySignedIn.tsx",
+          "src/components_tw/modals/spot/index.tsx",
+          "src/components_tw/drawers/index.tsx"
+        ],
+        "relatedConcepts": [
+          "wallet-sign",
+          "private-key",
+          "remember-me",
+          "stay-signed-in",
+          "email-login"
+        ]
+      },
+      "discovery_cost": "~3800 tokens",
+      "referencePath": "reference/user/user-auth-enable-guide.md",
+      "sections": [
+        {
+          "title": "概述",
+          "summary": "Enable Trading 架构图：签名 → StaySignedIn 弹窗 → 私钥存储迁移 → 后续处理",
+          "lineRange": [
+            3,
+            50
+          ],
+          "estimatedTokens": 720
+        },
+        {
+          "title": "核心组件",
+          "summary": "5 个核心文件：useEnableTrading、LoginContext、StaySignedIn、modals/spot、drawers",
+          "lineRange": [
+            51,
+            62
+          ],
+          "estimatedTokens": 180
+        },
+        {
+          "title": "useEnableTrading Hook",
+          "summary": "接口定义（8 个参数，含 showWalletConnectSigningModal）、返回值、使用示例",
+          "lineRange": [
+            63,
+            122
+          ],
+          "estimatedTokens": 900
+        },
+        {
+          "title": "signMessage / signMessageMobile",
+          "summary": "返回值类型、PC 端和移动端签名实现、错误处理",
+          "lineRange": [
+            123,
+            172
+          ],
+          "estimatedTokens": 750
+        },
+        {
+          "title": "StaySignedIn 私钥存储迁移",
+          "summary": "syncPrivateKeyStorage 函数、存储逻辑表（Yes/No/关闭弹窗）",
+          "lineRange": [
+            173,
+            207
+          ],
+          "estimatedTokens": 525
+        },
+        {
+          "title": "邮箱登录自动 Enable",
+          "summary": "触发条件（6 个）、流程特点（延迟/重试/私钥删除后重新触发）",
+          "lineRange": [
+            208,
+            230
+          ],
+          "estimatedTokens": 345
+        },
+        {
+          "title": "移动端 Loading 状态优化",
+          "summary": "visibilitychange 事件监听，跳转钱包 app 后才显示 loading",
+          "lineRange": [
+            231,
+            254
+          ],
+          "estimatedTokens": 360
+        },
+        {
+          "title": "PC 端额外校验",
+          "summary": "100ms 延迟 + needsPrivateKeyRefresh 检查 + clearPrivateKeyCache",
+          "lineRange": [
+            255,
+            274
+          ],
+          "estimatedTokens": 300
+        },
+        {
+          "title": "影响范围",
+          "summary": "14 个使用 useEnableTrading 的文件列表、保留的旧组件",
+          "lineRange": [
+            275,
+            303
+          ],
+          "estimatedTokens": 435
+        },
+        {
+          "title": "注意事项",
+          "summary": "5 个关键注意点：.open() 方法、返回值检查、privateKeyChanged 事件、邮箱自动 enable、API key name fallback 兼容",
+          "lineRange": [
+            304,
+            313
+          ],
+          "estimatedTokens": 150
+        },
+        {
+          "title": "更新记录",
+          "summary": "版本历史：2026-01-20 初始 → 2026-04-10 补充 mobilekey fallback 兼容",
+          "lineRange": [
+            314,
+            320
+          ],
+          "estimatedTokens": 105
+        }
+      ],
+      "tags": [
+        "enable-trading",
+        "wallet-sign",
+        "private-key",
+        "remember-me",
+        "stay-signed-in",
+        "email-login",
+        "auto-enable"
+      ],
+      "created": "2026-01-20",
+      "updated": "2026-04-10",
+      "history": [
+        {
+          "date": "2026-04-10",
+          "type": "fix",
+          "summary": "移动端 mobilekey fallback 到 webkey，避免历史用户被迫重签",
+          "files": [
+            "apiKeyName.ts"
+          ],
+          "path": "history/user/user-auth-enable/2026-04-10-mobilekey-fallback.md"
+        }
+      ]
+    },
+    "user-auth-private-key": {
+      "id": "user-auth-private-key",
+      "module": "user",
+      "type": "feature",
+      "title": "私钥管理机制",
+      "summary": "私钥生成、校验、刷新的底层机制，包含 needsPrivateKeyRefresh 状态管理、validatePrivateKey 校验逻辑、addAPIKey 注册 API Key、3秒缓存防抖、地址切换检测",
+      "quickRef": {
+        "coreLogic": [
+          "checkPrivateKeyValidity(validateFn: () => Promise<boolean>): Promise<void>  L80-150  带 3s 缓存的私钥校验入口",
+          "validatePrivateKey(accountId: string, address: string): Promise<boolean>  L160-250  本地私钥 vs 服务端公钥校验",
+          "addAPIKey(): Promise<{ webkey: string, mobilekey: string }>  L260-380  生成私钥 + EIP-712 签名 + 注册 API",
+          "refreshPrivateKey(addAPIKey: () => Promise<void>): Promise<void>  L390-450  刷新私钥并更新状态"
+        ],
+        "keyComponents": [
+          "usePrivateKeyRefresh.ts - Hook，协调私钥检查和刷新触发",
+          "useSignApi.ts - 核心逻辑，validatePrivateKey 和 addAPIKey 实现",
+          "user.ts - MobX Store，needsPrivateKeyRefresh 状态和 checkPrivateKeyValidity 方法"
+        ],
+        "keyFiles": [
+          "src/hooks/usePrivateKeyRefresh.ts",
+          "src/hooks/useSignApi/useSignApi.ts",
+          "src/models/user.ts"
+        ],
+        "relatedConcepts": [
+          "private-key",
+          "api-key",
+          "eip-712",
+          "mobx",
+          "caching",
+          "debounce"
+        ]
+      },
+      "discovery_cost": "~4600 tokens",
+      "referencePath": "reference/user/user-auth-private-key-guide.md",
+      "sections": [
+        {
+          "title": "概述",
+          "summary": "私钥管理架构图：协调层、状态层、逻辑层、服务端 API",
+          "lineRange": [
+            3,
+            49
+          ],
+          "estimatedTokens": 705
+        },
+        {
+          "title": "核心状态",
+          "summary": "MobX Observable：needsPrivateKeyRefresh、isRefreshingPrivateKey、privateKeyCheckTimestamp",
+          "lineRange": [
+            50,
+            79
+          ],
+          "estimatedTokens": 450
+        },
+        {
+          "title": "判断是否需要 Enable",
+          "summary": "checkPrivateKeyValidity 流程：防并发、地址切换检测、3s 缓存",
+          "lineRange": [
+            80,
+            170
+          ],
+          "estimatedTokens": 1365
+        },
+        {
+          "title": "校验私钥有效性",
+          "summary": "validatePrivateKey：本地私钥检查 → 服务端查询 → 公钥匹配 → 过期检查",
+          "lineRange": [
+            171,
+            255
+          ],
+          "estimatedTokens": 1275
+        },
+        {
+          "title": "注册 API Key",
+          "summary": "addAPIKey：等待 realId → generatePayload → EIP-712 签名 → 并行注册 → 双重验证存储",
+          "lineRange": [
+            256,
+            362
+          ],
+          "estimatedTokens": 1605
+        },
+        {
+          "title": "刷新私钥",
+          "summary": "refreshPrivateKey：防重入 → addAPIKey → 更新状态 → 等待事件处理",
+          "lineRange": [
+            363,
+            449
+          ],
+          "estimatedTokens": 1305
+        },
+        {
+          "title": "触发时机",
+          "summary": "usePrivateKeyRefresh 监听：状态变化、storage 事件、页面可见性",
+          "lineRange": [
+            450,
+            514
+          ],
+          "estimatedTokens": 975
+        },
+        {
+          "title": "私钥存储",
+          "summary": "Remember Me=Yes→localStorage / No→sessionStorage，存储结构",
+          "lineRange": [
+            515,
+            537
+          ],
+          "estimatedTokens": 345
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "3s 缓存防抖、地址切换检测、防并发 Promise、双重验证存储",
+          "lineRange": [
+            538,
+            565
+          ],
+          "estimatedTokens": 420
+        },
+        {
+          "title": "文件结构",
+          "summary": "hooks/usePrivateKeyRefresh、hooks/useSignApi、models/user.ts、utils/storage",
+          "lineRange": [
+            566,
+            587
+          ],
+          "estimatedTokens": 330
+        },
+        {
+          "title": "术语表",
+          "summary": "8 个核心术语：needsPrivateKeyRefresh、validatePrivateKey、addAPIKey、webkey、mobilekey 等",
+          "lineRange": [
+            588,
+            602
+          ],
+          "estimatedTokens": 225
+        },
+        {
+          "title": "更新记录",
+          "summary": "2026-03-05 初始版本",
+          "lineRange": [
+            603,
+            607
+          ],
+          "estimatedTokens": 75
+        }
+      ],
+      "tags": [
+        "private-key",
+        "api-key",
+        "wallet-sign",
+        "mobx",
+        "caching",
+        "enable-trading"
+      ],
+      "created": "2026-03-05",
+      "updated": "2026-03-05"
+    }
+  },
+  "history": {
+    "user-auth-core": [],
+    "user-auth-referrals": [
+      {
+        "date": "2026-04-08",
+        "type": "feat",
+        "summary": "新增 Claim Rebate 功能、数据类型重构、鉴权弹窗通用化、区域受限、usePageAuth enableTrading 路径",
+        "files": [
+          "index.tsx",
+          "NewReferralHeader.tsx",
+          "ReferralConnectWalletStepsModal.tsx",
+          "usePageAuth.ts"
+        ],
+        "historyPath": "history/user/user-auth-referrals/2026-04-08-claim-airdrop-update.md"
+      }
+    ],
+    "user-auth-enable": [
+      {
+        "date": "2026-04-10",
+        "type": "fix",
+        "summary": "移动端 mobilekey fallback 到 webkey，避免历史用户被迫重签",
+        "files": [
+          "apiKeyName.ts"
+        ],
+        "historyPath": "history/user/user-auth-enable/2026-04-10-mobilekey-fallback.md"
+      },
+      {
+        "date": "2026-03-30",
+        "type": "feat",
+        "summary": "SOD-21: 新增 showWalletConnectSigningModal 参数，支持 WalletConnect 签名提示弹窗",
+        "files": [
+          "useEnableTrading.ts",
+          "modals/spot/index.tsx"
+        ],
+        "historyPath": "history/user/user-auth-enable/2026-03-30-walletconnect-signing-modal.md"
+      },
+      {
+        "date": "2026-03-05",
+        "type": "docs",
+        "summary": "补充未文档化逻辑：syncPrivateKeyStorage 私钥迁移、onSignFailed 回调、邮箱登录自动 enable、移动端 loading 优化、PC 端额外校验",
+        "files": [
+          "src/hooks/useEnableTrading.ts",
+          "src/contexts/login/index.tsx",
+          "src/components_tw/modals/tradingProcess/StaySignedIn.tsx"
+        ]
+      },
+      {
+        "date": "2026-01-27",
+        "type": "fix",
+        "summary": "signMessageMobile 添加 refreshPrivateKey 返回值检查，修复移动端取消签名后仍显示 StaySignedIn 弹窗的问题",
+        "files": [
+          "src/contexts/login/index.tsx"
+        ]
+      },
+      {
+        "date": "2026-01-20",
+        "type": "feat",
+        "summary": "初始版本：完成 Enable Trading 流程优化，直接签名 → Stay signed in 弹窗",
+        "files": [
+          "src/hooks/useEnableTrading.ts",
+          "src/components_tw/modals/tradingProcess/StaySignedIn.tsx",
+          "src/components_tw/modals/spot/index.tsx",
+          "src/components_tw/drawers/index.tsx"
+        ]
+      }
+    ],
+    "user-auth-private-key": [
+      {
+        "date": "2026-03-05",
+        "type": "docs",
+        "summary": "初始版本：通过 /k/context learn 从代码自动生成，覆盖私钥管理完整机制",
+        "files": [
+          "src/hooks/usePrivateKeyRefresh.ts",
+          "src/hooks/useSignApi/useSignApi.ts",
+          "src/models/user.ts"
+        ]
+      }
+    ]
+  }
+}

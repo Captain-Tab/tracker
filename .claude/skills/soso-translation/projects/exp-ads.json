@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "projectName": "exp-ads",
+  "projectRoot": "/Users/soso/Documents/code/exp-ads-feature",
+  "detectedAt": "2026-05-30",
+  "targets": [
+    {
+      "name": "web",
+      "localesDir": "apps/web/public/assets/locales",
+      "srcDir": "apps/web/src",
+      "namespaceRoots": ["features"],
+      "namespaceMap": {
+        "features/ads-center": "ads-center",
+        "features/auth": "common",
+        "features/deposit": "common"
+      },
+      "fallbackNamespace": "common",
+      "manualNamespaces": []
+    },
+    {
+      "name": "landing",
+      "localesDir": "apps/landing/public/locales",
+      "srcDir": "apps/landing",
+      "namespaceRoots": ["pages"],
+      "namespaceMap": {},
+      "fallbackNamespace": "about-exp-ads",
+      "manualNamespaces": []
+    }
+  ]
+}

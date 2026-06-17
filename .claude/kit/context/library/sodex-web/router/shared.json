@@ -1,0 +1,241 @@
+{
+  "module": "shared",
+  "name": "Shared",
+  "description": "共享基础设施与通用功能",
+  "emoji": "🔧",
+  "features": {
+    "transfer-evm-sync": {
+      "id": "transfer-evm-sync",
+      "module": "shared",
+      "type": "infrastructure",
+      "title": "Transfer SOSO EVM 余额即时更新",
+      "summary": "修复 Spot → Funding(EVM) Transfer 后余额不即时更新的问题，通过轮询链上余额确认",
+      "quickRef": {
+        "coreLogic": [
+          "updateBalance(): Promise<void>  L120-180  Transfer 成功后触发余额更新",
+          "checkBalancesModified(): boolean  L80-100  检测 Spot/Futures 余额变化",
+          "getBalances(forceRefresh: boolean): Promise<Balance[]>  L50-75  轮询链上 EVM 余额",
+          "onTransferSuccess(): void  L200-230  MobX observable 触发 UI 自动更新"
+        ],
+        "keyComponents": [
+          "chainAsset.ts - 链上资产余额管理 Store",
+          "Transfer Modal - 触发 Transfer 操作的 UI 组件"
+        ],
+        "keyFiles": [
+          "src/models/chainAsset.ts",
+          "src/components_tw/modals/spot/transfer/index.tsx"
+        ],
+        "relatedConcepts": [
+          "balance-sync",
+          "polling",
+          "mobx",
+          "evm"
+        ]
+      },
+      "discovery_cost": "~1800 tokens",
+      "tags": [
+        "transfer",
+        "balance",
+        "evm",
+        "sync",
+        "fix"
+      ],
+      "created": "2026-02-13",
+      "updated": "2026-02-13"
+    },
+    "network-switch": {
+      "id": "network-switch",
+      "module": "shared",
+      "type": "infrastructure",
+      "title": "统一网络切换逻辑",
+      "summary": "将切换网络与执行操作合并为一步，使用 executeWithAutoSwitch 实现自动切换，支持多链（ValueChain/Base/Ethereum/Arbitrum）",
+      "quickRef": {
+        "coreLogic": [
+          "useAutoSwitchNetwork(targetChainId: number): AutoSwitchResult  L1-150  统一网络切换 Hook",
+          "executeWithAutoSwitch<T>(action: () => Promise<T>): Promise<T>  L50-90  包装业务操作自动切换网络",
+          "checkNetwork(targetChainId: number): boolean  L100-115  检查当前网络是否匹配目标",
+          "performSwitch(chainId: number): Promise<void>  L120-150  自动切换 + 轮询确认（最多 5s）"
+        ],
+        "keyComponents": [
+          "useAutoSwitchNetwork.ts - 统一网络切换 Hook",
+          "chainConfig.ts - 多链配置映射表（chainId, needsManualAdd）"
+        ],
+        "keyFiles": [
+          "src/hooks/useAutoSwitchNetwork.ts",
+          "src/config/chainConfig.ts",
+          "src/components_tw/modals/spot/transfer/index.tsx",
+          "src/pages/_components/withdraw/WithdrawModal.tsx",
+          "src/pages/_components/deposit/DepositStepByStep.tsx"
+        ],
+        "relatedConcepts": [
+          "network-switch",
+          "multi-chain",
+          "wagmi",
+          "user-experience"
+        ]
+      },
+      "discovery_cost": "~2200 tokens",
+      "tags": [
+        "network",
+        "switch",
+        "multi-chain",
+        "hook",
+        "ux"
+      ],
+      "created": "2025-01-27",
+      "updated": "2026-02-06"
+    },
+    "wallet-mobileApprove": {
+      "id": "wallet-mobileApprove",
+      "module": "shared",
+      "type": "feature",
+      "title": "钱包签名交互统一规范",
+      "summary": "统一 WalletConnect/插件钱包签名交互：一步签名按钮 loading 文案、两步签名副标题提示、小按钮签名弹窗，根据 connectorType 自动切换文案",
+      "quickRef": {
+        "coreLogic": [
+          "useWalletApproveText(): { wallet, spending, confirm, signature }  L12-66  根据 connectorType 返回适配的签名提示文案",
+          "useEnableTrading(options): { enableTrading, loading }  L37-223  统一的 Enable Trading 流程，支持签名弹窗开关",
+          "walletConnectSigningHintModal.open()  L127-136  WalletConnect 签名提示弹窗"
+        ],
+        "keyComponents": [
+          "WalletConnectSigningHint.tsx - 小尺寸按钮签名时的提示弹窗组件",
+          "useWalletApproveText.tsx - 钱包签名文案的统一来源 Hook",
+          "useEnableTrading.ts - Enable Trading 流程 Hook，含签名弹窗控制",
+          "TermsUse.tsx - 条款确认弹窗，loading 时展示签名文案"
+        ],
+        "keyFiles": [
+          "src/hooks/useWalletApproveText.tsx",
+          "src/hooks/useEnableTrading.ts",
+          "src/components_tw/modals/spot/WalletConnectSigningHint.tsx",
+          "src/components_tw/modals/spot/TermsUse.tsx",
+          "src/components_tw/modals/spot/index.tsx",
+          "src/pages/_components/common/DepositProcessIndicator.tsx",
+          "src/pages/account/assets/components/btnNav/index.tsx",
+          "src/pages/referrals/components/CreateReferralCodeModal.tsx",
+          "src/pages/referrals/components/InviteToSoDEXModal.tsx",
+          "src/pages/spot/main/components/preTradeButton/MainnetPreTradeButton.tsx",
+          "src/pages/vault/components/modals/funding/deposit/VaultPreTradeButton.tsx",
+          "src/components_tw/modals/spot/transfer/index.tsx"
+        ],
+        "relatedConcepts": [
+          "wallet-connect",
+          "signature-ux",
+          "responsive-modal",
+          "connector-type"
+        ]
+      },
+      "referencePath": "reference/shared/wallet-mobileApprove-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "钱包签名交互架构图，展示 connectorType 到文案的映射和三种交互场景",
+          "lineRange": [
+            3,
+            37
+          ],
+          "estimatedTokens": 525
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "useWalletApproveText Hook 的 4 种文案 key、useEnableTrading Hook 的签名流程、WalletConnectSigningHint 组件",
+          "lineRange": [
+            38,
+            130
+          ],
+          "estimatedTokens": 1395
+        },
+        {
+          "title": "关键实现",
+          "summary": "一步签名按钮 loading、两步签名副标题、小按钮签名弹窗的代码示例",
+          "lineRange": [
+            131,
+            189
+          ],
+          "estimatedTokens": 885
+        },
+        {
+          "title": "文件结构",
+          "summary": "相关文件目录结构",
+          "lineRange": [
+            190,
+            228
+          ],
+          "estimatedTokens": 585
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "为什么根据 connectorType 区分文案、小按钮使用弹窗、签名失败三种状态的设计考量",
+          "lineRange": [
+            229,
+            255
+          ],
+          "estimatedTokens": 405
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "新增签名按钮、两步签名流程的实现模式和代码审查检查清单",
+          "lineRange": [
+            256,
+            299
+          ],
+          "estimatedTokens": 660
+        }
+      ],
+      "discovery_cost": "~4010 tokens",
+      "tags": [
+        "wallet",
+        "signature",
+        "ux",
+        "walletconnect",
+        "enable-trading"
+      ],
+      "created": "2026-03-25",
+      "updated": "2026-03-25"
+    }
+  },
+  "history": {
+    "transfer-evm-sync": [
+      {
+        "date": "2026-02-13",
+        "type": "fix",
+        "summary": "修复 Transfer SOSO 后 EVM 余额不即时更新",
+        "files": [
+          "chainAsset.ts"
+        ],
+        "historyPath": "history/shared/transfer/20260213-fix-transfer-soso-evm-balance-update.md"
+      }
+    ],
+    "network-switch": [
+      {
+        "date": "2026-02-06",
+        "type": "refactor",
+        "summary": "统一网络切换逻辑，创建 useAutoSwitchNetwork Hook",
+        "files": [
+          "useAutoSwitchNetwork.ts",
+          "chainConfig.ts",
+          "transfer/index.tsx",
+          "WithdrawModal.tsx",
+          "DepositStepByStep.tsx"
+        ],
+        "historyPath": "history/shared/network-switch/20260206-unified-network-switch.md"
+      }
+    ],
+    "wallet-mobileApprove": [
+      {
+        "date": "2026-03-25",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": [
+          "useWalletApproveText.tsx",
+          "useEnableTrading.ts",
+          "WalletConnectSigningHint.tsx",
+          "TermsUse.tsx",
+          "MainnetPreTradeButton.tsx",
+          "VaultPreTradeButton.tsx",
+          "CreateReferralCodeModal.tsx",
+          "InviteToSoDEXModal.tsx"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "module": "apikey",
+  "name": "API Key",
+  "description": "API Key 管理功能",
+  "emoji": "🔑",
+  "features": {
+    "apikey-page": {
+      "id": "apikey-page",
+      "module": "apikey",
+      "type": "feature",
+      "title": "API Key 管理页面",
+      "summary": "Closed Alpha API Key 全生命周期管理：资格验证（Tier/账户价值/交易量三条件任一达标）、密钥生成（viem 密钥对 + Spark 签名注册 Spot/Futures）、有效期调整、两步签名删除，支持 PC/Mobile 响应式布局",
+      "discovery_cost": "~22500 tokens",
+      "quickRef": {
+        "coreLogic": [
+          "useApiKeyGenerator(): { generateApiKey, adjustApiKeyValidity, revokeApiKeyWithSteps, ... }  L47-267  API Key CRUD 核心 Hook，封装密钥对生成、签名注册、两步撤销",
+          "ApiKeyPage(): JSX  L208-922  页面主组件，管理资格检查→列表展示→操作弹窗的完整状态机",
+          "registerApiKey({ signParams }): Promise<boolean>  L57-79  通过 Spark 签名向 Spot+Futures 双端注册 API Key",
+          "revokeApiKeyWithSteps(name, onStepChange): Promise<boolean>  L186-252  分步签名撤销（Spot→Futures），支持步骤状态回调",
+          "formatApiKeyExpiry(expiresAt, localeCode): ExpiryInfo  L173-206  解析过期时间为状态/剩余天数/格式化日期"
+        ],
+        "keyComponents": [
+          "ApiKeyGenerateModal.tsx - 生成弹窗：Key Name + Valid Days 输入，签名中显示 walletApproveText",
+          "ApiKeySaveResultModal.tsx - 保存结果弹窗：Public/Private Key 展示与复制，需确认已保存后才能关闭",
+          "ApiKeyDeleteStepsModal.tsx - 两步删除弹窗：Spot→Futures 分步签名进度展示",
+          "ApiKeyListState.tsx - 列表展示：PC 表格 + Mobile 卡片列表 + 底部操作抽屉",
+          "PageHeader.tsx - 页头：Closed Alpha 徽章 + API Docs 链接 + Create 按钮"
+        ],
+        "keyFiles": [
+          "src/pages/apiKey/index.tsx",
+          "src/pages/apiKey/hooks/useApiKeyGenerator.ts",
+          "src/pages/apiKey/components/ApiKeyGenerateModal.tsx",
+          "src/pages/apiKey/components/ApiKeySaveResultModal.tsx",
+          "src/pages/apiKey/components/ApiKeyDeleteStepsModal.tsx",
+          "src/pages/apiKey/components/ApiKeyListState.tsx",
+          "src/pages/apiKey/components/modals/index.ts",
+          "src/pages/apiKey/components/PageHeader.tsx",
+          "src/pages/apiKey/components/ApiKeySectionTypes.ts"
+        ],
+        "relatedConcepts": ["spark-signer", "wallet-signing", "responsive-modal", "optimistic-update", "tier-eligibility"]
+      },
+      "referencePath": "reference/apikey/apikey-page-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "页面状态机、组件层级、数据流总览",
+          "lineRange": [3, 68],
+          "estimatedTokens": 990
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "useApiKeyGenerator Hook 详解：生成、调整有效期、两步撤销的签名流程",
+          "lineRange": [69, 120],
+          "estimatedTokens": 780
+        },
+        {
+          "title": "资格验证",
+          "summary": "三条件并行检查（Tier/AccountValue/Volume）+ 阈值配置 + 进度计算",
+          "lineRange": [121, 151],
+          "estimatedTokens": 465
+        },
+        {
+          "title": "弹窗系统",
+          "summary": "五个 createResponsiveModal 弹窗的职责与交互链路",
+          "lineRange": [152, 180],
+          "estimatedTokens": 435
+        },
+        {
+          "title": "文件结构",
+          "summary": "目录布局与各文件职责",
+          "lineRange": [181, 215],
+          "estimatedTokens": 525
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "乐观更新、双端签名、Closed Alpha 鉴权复用",
+          "lineRange": [216, 249],
+          "estimatedTokens": 510
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "常见修改场景与注意事项",
+          "lineRange": [250, 272],
+          "estimatedTokens": 345
+        }
+      ],
+      "tags": ["spark-signer", "wallet-signing", "responsive-modal", "optimistic-update", "tier-eligibility", "closed-alpha"],
+      "created": "2026-04-10",
+      "updated": "2026-04-10"
+    }
+  },
+  "history": {
+    "apikey-page": [
+      {
+        "date": "2026-04-10",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": ["index.tsx", "useApiKeyGenerator.ts", "ApiKeyGenerateModal.tsx", "ApiKeySaveResultModal.tsx", "ApiKeyDeleteStepsModal.tsx", "ApiKeyListState.tsx", "modals/index.ts", "PageHeader.tsx", "ApiKeySectionTypes.ts"]
+      }
+    ]
+  }
+}

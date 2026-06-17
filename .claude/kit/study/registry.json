@@ -1,0 +1,162 @@
+{
+  "projects": {
+    "pi-autoresearch": {
+      "repo": "https://github.com/davebcn87/pi-autoresearch.git",
+      "localPath": "/Users/soso/Documents/code/pi-autoresearch",
+      "docPath": ".claude/kit/study/output/pi-autoresearch.md",
+      "lastStudyAt": "2026-04-16",
+      "lastCommit": "5a29db0",
+      "aliases": [
+        "pi-autoresearch"
+      ]
+    },
+    "andrej-karpathy-skills": {
+      "repo": "https://github.com/forrestchang/andrej-karpathy-skills",
+      "localPath": "/Users/soso/Documents/code/andrej-karpathy-skills",
+      "docPath": ".claude/kit/study/output/andrej-karpathy-skills.md",
+      "lastStudyAt": "2026-04-17",
+      "lastCommit": "c9a44ae",
+      "aliases": [
+        "andrej-karpathy-skills"
+      ]
+    },
+    "everything-claude-code": {
+      "repo": "https://github.com/affaan-m/everything-claude-code.git",
+      "localPath": "/Users/soso/Documents/code/everything-claude-code",
+      "docPath": ".claude/kit/study/output/everything-claude-code.md",
+      "lastStudyAt": "2026-04-27",
+      "lastCommit": "4e66b28",
+      "aliases": [
+        "everything-claude-code"
+      ]
+    },
+    "claude-mem": {
+      "repo": "https://github.com/thedotmack/claude-mem.git",
+      "localPath": "/Users/soso/Documents/code/claude-mem",
+      "docPath": ".claude/kit/study/output/claude-mem.md",
+      "lastStudyAt": "2026-05-10",
+      "lastCommit": "a10d1b34",
+      "aliases": [
+        "claude-mem"
+      ]
+    },
+    "agentmemory": {
+      "repo": "https://github.com/rohitg00/agentmemory",
+      "localPath": "/Users/soso/Documents/code/agentmemory",
+      "docPath": ".claude/kit/study/output/agentmemory.md",
+      "lastStudyAt": "2026-05-21",
+      "lastCommit": "bc64107",
+      "aliases": [
+        "agentmemory"
+      ]
+    },
+    "codegraph": {
+      "repo": "https://github.com/colbymchenry/codegraph",
+      "localPath": "/Users/soso/Documents/code/codegraph",
+      "docPath": ".claude/kit/study/output/codegraph.md",
+      "lastStudyAt": "2026-05-28",
+      "lastCommit": "02935d7",
+      "aliases": [
+        "codegraph"
+      ]
+    },
+    "mattpocock-skills": {
+      "repo": "https://github.com/mattpocock/skills",
+      "localPath": "/Users/soso/Documents/code/skills",
+      "docPath": ".claude/kit/study/output/mattpocock-skills.md",
+      "lastStudyAt": "2026-05-21",
+      "lastCommit": "b8be62f",
+      "aliases": [
+        "mattpocock-skills",
+        "mattpocock/skills",
+        "skills"
+      ]
+    },
+    "awesome-claude-code": {
+      "repo": "https://github.com/hesreallyhim/awesome-claude-code",
+      "localPath": "/Users/soso/Documents/code/awesome-claude-code",
+      "docPath": ".claude/kit/study/output/awesome-claude-code.md",
+      "lastStudyAt": "2026-05-28",
+      "lastCommit": "614f102",
+      "aliases": [
+        "awesome-claude-code"
+      ]
+    },
+    "Understand-Anything": {
+      "repo": "https://github.com/Lum1104/Understand-Anything",
+      "localPath": "/Users/soso/Documents/code/Understand-Anything",
+      "docPath": ".claude/kit/study/output/Understand-Anything.md",
+      "lastStudyAt": "2026-05-28",
+      "lastCommit": "26edf61",
+      "aliases": [
+        "Understand-Anything"
+      ]
+    },
+    "TencentDB-Agent-Memory": {
+      "repo": "https://github.com/Tencent/TencentDB-Agent-Memory",
+      "localPath": "/Users/soso/Documents/code/TencentDB-Agent-Memory",
+      "docPath": ".claude/kit/study/output/TencentDB-Agent-Memory.md",
+      "lastStudyAt": "2026-05-28",
+      "lastCommit": "438869b",
+      "aliases": [
+        "TencentDB-Agent-Memory"
+      ]
+    },
+    "gstack": {
+      "repo": "https://github.com/garrytan/gstack.git",
+      "localPath": "/Users/soso/Documents/code/gstack",
+      "docPath": ".claude/kit/study/output/gstack.md",
+      "lastStudyAt": "2026-05-30",
+      "lastCommit": "62024d11",
+      "aliases": [
+        "gstack"
+      ]
+    },
+    "claude-code-dynamic-workflow": {
+      "repo": "https://x.com/riba2534/status/2060102236676792711?s=46",
+      "localPath": null,
+      "docPath": ".claude/kit/study/output/claude-code-dynamic-workflow.md",
+      "lastStudyAt": "2026-05-30",
+      "lastCommit": null,
+      "aliases": [
+        "claude-code-dynamic-workflow",
+        "dynamic-workflow",
+        "workflow"
+      ]
+    },
+    "compound-engineering-plugin": {
+      "repo": "https://github.com/EveryInc/compound-engineering-plugin.git",
+      "localPath": "/Users/soso/Documents/code/compound-engineering-plugin",
+      "docPath": ".claude/kit/study/output/compound-engineering-plugin.md",
+      "lastStudyAt": "2026-05-30",
+      "lastCommit": "85987d49",
+      "aliases": [
+        "compound-engineering-plugin"
+      ]
+    },
+    "OpenSpec": {
+      "repo": "https://github.com/Fission-AI/OpenSpec.git",
+      "localPath": "/Users/soso/Documents/code/OpenSpec",
+      "docPath": ".claude/kit/study/output/OpenSpec.md",
+      "lastStudyAt": "2026-05-31",
+      "lastCommit": "9aded17",
+      "aliases": [
+        "OpenSpec"
+      ]
+    },
+    "spec-kit": {
+      "repo": "https://github.com/github/spec-kit.git",
+      "localPath": "/Users/soso/Documents/code/spec-kit",
+      "docPath": ".claude/kit/study/output/spec-kit.md",
+      "lastStudyAt": "2026-05-31",
+      "lastCommit": "3617cd9",
+      "aliases": [
+        "spec-kit"
+      ]
+    }
+  },
+  "meta": {
+    "totalProjects": 15,
+    "lastUpdated": "2026-05-31"
+  }
+}

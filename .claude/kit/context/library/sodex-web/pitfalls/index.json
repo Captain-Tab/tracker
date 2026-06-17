@@ -1,0 +1,117 @@
+{
+  "meta": {
+    "lastUpdated": "2026-04-14",
+    "description": "Pitfall 索引：按 tag/feature 检索已知问题，避免重复踩坑。AI 只读此索引，完整内容按需加载。"
+  },
+  "pitfalls": [
+    {
+      "id": "trade-feerate-mobx",
+      "tags": [
+        "mobx",
+        "store",
+        "react",
+        "响应式"
+      ],
+      "title": "MobX 缺少 makeObservable",
+      "summary": "数据写入 store 但组件不重新渲染，根因是 makeObservable 未调用",
+      "related_feature": "trade-feerate",
+      "severity": "high",
+      "date": "2026-03-22",
+      "path": "pitfalls/trade-feerate-mobx.md",
+      "estimatedTokens": 431,
+      "gate": true,
+      "gate_rule": "新建/修改 MobX store → 确认有 makeObservable(this)",
+      "trigger": [
+        "store",
+        "mobx",
+        "observable",
+        "响应式"
+      ]
+    },
+    {
+      "id": "mobx-store-timing-isMobileScreen",
+      "tags": [
+        "mobx",
+        "store",
+        "isMobileScreen",
+        "timing",
+        "useEffect",
+        "matchMedia"
+      ],
+      "title": "MobX ui.isMobileScreen 初始值时序问题",
+      "summary": "需要同步获取屏幕尺寸时禁止依赖 MobX store，必须用 window.matchMedia",
+      "related_feature": "user-auth-enable",
+      "severity": "high",
+      "date": "2026-04-09",
+      "path": "pitfalls/mobx-store-timing-isMobileScreen.md",
+      "estimatedTokens": 449,
+      "gate": true,
+      "gate_rule": "需要同步获取屏幕尺寸时，禁止依赖 MobX ui.isMobileScreen（初始值 false，异步更新），必须用 window.matchMedia 同步检测",
+      "trigger": [
+        "isMobileScreen",
+        "store",
+        "mobx",
+        "mobile",
+        "移动端",
+        "屏幕"
+      ]
+    },
+    {
+      "id": "async-mock-hides-timing-bug",
+      "tags": [
+        "mock",
+        "async",
+        "useState",
+        "redirect",
+        "timing"
+      ],
+      "title": "异步数据 Mock 陷阱：同步 Mock 隐藏时序 Bug",
+      "summary": "同步 mock 跳过异步时序，隐藏 useState 初始值导致的跳转死循环",
+      "related_feature": "maintenance",
+      "severity": "high",
+      "date": "2026-04-13",
+      "path": "pitfalls/async-mock-hides-timing-bug.md",
+      "estimatedTokens": 541,
+      "gate": true,
+      "gate_rule": "当功能依赖接口数据做路由跳转或条件渲染时，mock 必须模拟异步时序，不得使用同步 mock",
+      "trigger": [
+        "mock",
+        "useState",
+        "redirect",
+        "跳转",
+        "路由",
+        "maintenance",
+        "维护模式"
+      ]
+    },
+    {
+      "id": "multi-state-missing-transition",
+      "tags": [
+        "state-machine",
+        "redirect",
+        "useEffect",
+        "spec"
+      ],
+      "title": "多状态遗漏转换路径：spec 定义错误导致 check 也无法捕获",
+      "summary": "需求涉及多状态时 spec 未构建 N×N 转换矩阵，遗漏 1→2 降级路径",
+      "related_feature": "maintenance",
+      "severity": "high",
+      "date": "2026-04-14",
+      "path": "pitfalls/multi-state-missing-transition.md",
+      "estimatedTokens": 486,
+      "gate": true,
+      "gate_rule": "需求涉及多状态（≥3 个枚举值）时，spec 阶段必须构建 N×N 状态转换矩阵，逐格填写期望处理",
+      "trigger": [
+        "状态",
+        "state",
+        "level",
+        "status",
+        "模式",
+        "mode",
+        "维护",
+        "枚举",
+        "enum"
+      ]
+    }
+  ]
+}

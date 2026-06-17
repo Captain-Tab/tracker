@@ -1,0 +1,10 @@
+{
+  "summary/overview.md": { "title": "项目概览", "tags": ["overview", "architecture"] },
+  "summary/agent-nav.md": { "title": "Agent导航指南", "tags": ["navigation", "guide"] },
+  "router/routes.md": { "title": "路由配置", "tags": ["router", "permissions", "pages"] },
+  "reference/http-patterns.md": { "title": "HTTP请求规范", "tags": ["http", "axios", "api"] },
+  "reference/auth-flow.md": { "title": "认证与权限", "tags": ["auth", "jwt", "mfa", "permissions"] },
+  "reusable/pro-table-pattern.md": { "title": "ProTable使用模式", "tags": ["component", "table", "pattern"] },
+  "reusable/pro-form-pattern.md": { "title": "ProForm使用模式", "tags": ["component", "form", "pattern"] },
+  "reusable/dialog-pattern.md": { "title": "弹窗使用模式", "tags": ["component", "dialog", "pattern"] }
+}

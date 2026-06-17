@@ -1,0 +1,74 @@
+{
+  "fileKey": "Nd6fZEIJS8bjCvJxBZVQGi",
+  "projectName": "SoDEX",
+  "pulledAt": "2026-04-23",
+  "pullStatus": "partial",
+  "note": "仅 Phase 0 已拉 Base PC 主弹窗(详见 figma-nodes/base-pc-main.md)。其余节点 URL 登记在此,由 Phase 1 的 /k:ui-migration 各自调用 mcp__figma__get_design_context 拉取,共享 fileKey 可复用项目 token 映射。",
+  "nodes": {
+    "base-pc-main": {
+      "nodeId": "430:35403",
+      "url": "https://www.figma.com/design/Nd6fZEIJS8bjCvJxBZVQGi/SoDEX?node-id=430-35403",
+      "screen": "Base Chain 选中 / PC / idle(未开始)",
+      "pulled": true,
+      "artifact": ".claude/kit/migration/logs/vault/deposit/figma-nodes/base-pc-main.md"
+    },
+    "base-mobile-main": {
+      "nodeId": "434:46140",
+      "url": "https://www.figma.com/design/Nd6fZEIJS8bjCvJxBZVQGi/SoDEX?node-id=434-46140",
+      "screen": "Base Chain 选中 / Mobile / idle",
+      "pulled": false
+    },
+    "base-progress-step1": {
+      "nodeId": "430:34942",
+      "url": "https://www.figma.com/design/Nd6fZEIJS8bjCvJxBZVQGi/SoDEX?node-id=430-34942",
+      "screen": "Base Chain / 进行中第一步",
+      "pulled": false,
+      "mapsTo": ["Trading", "DepositToSodexStep", "CollapsiblePanel"]
+    },
+    "base-progress-step2": {
+      "nodeId": "430:36342",
+      "url": "https://www.figma.com/design/Nd6fZEIJS8bjCvJxBZVQGi/SoDEX?node-id=430-36342",
+      "screen": "Base Chain / 第一步完成 + 进行中第二步",
+      "pulled": false,
+      "mapsTo": ["Trading", "CollapsiblePanel"]
+    },
+    "value-pc-main": {
+      "nodeId": "430:38354",
+      "url": "https://www.figma.com/design/Nd6fZEIJS8bjCvJxBZVQGi/SoDEX?node-id=430-38354",
+      "screen": "Value Chain 选中 / PC / idle",
+      "pulled": false,
+      "mapsTo": ["VaultDepositDialog", "AccountSelector"]
+    },
+    "value-mobile-main": {
+      "nodeId": "434:50448",
+      "url": "https://www.figma.com/design/Nd6fZEIJS8bjCvJxBZVQGi/SoDEX?node-id=434-50448",
+      "screen": "Value Chain / Mobile / idle",
+      "pulled": false
+    },
+    "value-progress": {
+      "nodeId": "430:38250",
+      "url": "https://www.figma.com/design/Nd6fZEIJS8bjCvJxBZVQGi/SoDEX?node-id=430-38250",
+      "screen": "Value Chain / 进行中",
+      "pulled": false,
+      "mapsTo": ["Trading", "CollapsiblePanel"]
+    },
+    "preview": {
+      "nodeId": null,
+      "url": null,
+      "screen": "Preview (无 Figma 链接)",
+      "pulled": false,
+      "note": "用户指示:参考旧项目 Preview.tsx + 新项目 UI 规范自行生成"
+    }
+  },
+  "componentToScreenMapping": {
+    "VaultDepositDialog": ["base-pc-main", "base-mobile-main", "value-pc-main", "value-mobile-main"],
+    "AccountSelector": ["base-pc-main", "value-pc-main"],
+    "BaseAccountInput": ["base-pc-main"],
+    "Preview": ["preview (自行生成)"],
+    "Trading": ["base-progress-step1", "base-progress-step2", "value-progress"],
+    "DepositToSodexStep": ["base-progress-step1"],
+    "CollapsiblePanel": ["base-progress-step1", "base-progress-step2", "value-progress"],
+    "WarningText": ["(内嵌于 Trading failed 态,各 progress 节点均可参考)"],
+    "VaultPreTradeButton": ["base-pc-main", "value-pc-main"]
+  }
+}

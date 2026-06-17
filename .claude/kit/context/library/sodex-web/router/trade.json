@@ -1,0 +1,1866 @@
+{
+  "module": "trade",
+  "name": "Trade",
+  "description": "主站交易相关功能（充值、提现等）",
+  "emoji": "💱",
+  "features": {
+    "trade-transfer": {
+      "id": "trade-transfer",
+      "module": "trade",
+      "type": "feature",
+      "title": "Trade Transfer 划转功能",
+      "summary": "账户间资金划转弹窗，支持 Funding/Spot/Perps 三种账户互转，包含邮箱用户特殊规则、默认账户组合选择、币种自动切换逻辑",
+      "quickRef": {
+        "coreLogic": [
+          "Transfer(props: TransferProps): JSX.Element  L71-598  主划转弹窗，管理账户/币种选择和划转流程",
+          "handleApproveForPermit(): Promise<void>  L218-244  Funding→Spot permit 签名流程，含 Sentry 上报",
+          "executeTransfer(options?): Promise<void>  L255-354  Spot↔Perps 签名划转，含 Sentry 上报",
+          "signTransferAssetRequest(params, keyType, address): Promise<{signature, nonce}>  来自 useSparkSigner hook"
+        ],
+        "keyComponents": [
+          "Transfer/index.tsx - 主划转弹窗组件（694行）",
+          "TransferAccountSwitcher - 账户选择器（支持双向切换）",
+          "SymbolSelector - 币种选择+金额输入+余额显示",
+          "Process - SOSO wrap+deposit 流程处理"
+        ],
+        "keyFiles": [
+          "src/components_tw/modals/spot/transfer/index.tsx",
+          "src/components_tw/modals/spot/transfer/types.ts",
+          "src/components_tw/modals/spot/transfer/helper.ts",
+          "src/components_tw/modals/spot/transfer/_components/SymbolSelector.tsx",
+          "src/components_tw/modals/spot/transfer/_components/transferAccountSwitcher.tsx"
+        ],
+        "relatedConcepts": [
+          "transfer",
+          "funding",
+          "spot",
+          "perps",
+          "email-login",
+          "soso-wrap",
+          "permit"
+        ]
+      },
+      "discovery_cost": "~3500 tokens",
+      "referencePath": "reference/trade/trade-transfer-guide.md",
+      "sections": [
+        {
+          "title": "概述",
+          "summary": "Transfer 功能介绍：三种账户类型和有效划转路径",
+          "lineRange": [
+            3,
+            16
+          ],
+          "estimatedTokens": 210
+        },
+        {
+          "title": "类型定义",
+          "summary": "TransferAccountType、TransferData、ValidTransferKey 类型定义",
+          "lineRange": [
+            17,
+            54
+          ],
+          "estimatedTokens": 570
+        },
+        {
+          "title": "默认账户组合选择规则",
+          "summary": "优先级规则（入口传参→测试网→主网），邮箱登录用户特殊规则（EVM/Futures币种）",
+          "lineRange": [
+            55,
+            137
+          ],
+          "estimatedTokens": 1245
+        },
+        {
+          "title": "默认币种选择规则",
+          "summary": "优先级规则（入口币种→USDC→列表第一项），可选列表规则",
+          "lineRange": [
+            138,
+            207
+          ],
+          "estimatedTokens": 1050
+        },
+        {
+          "title": "业务入口与默认配置",
+          "summary": "现货/合约/资产页各入口的默认币种和方向配置",
+          "lineRange": [
+            208,
+            234
+          ],
+          "estimatedTokens": 405
+        },
+        {
+          "title": "划转执行流程",
+          "summary": "Funding→Spot（permit/SOSO wrap）、Spot↔Perps 签名流程、Sentry 错误上报",
+          "lineRange": [
+            235,
+            396
+          ],
+          "estimatedTokens": 2430
+        },
+        {
+          "title": "组件架构",
+          "summary": "主组件结构、核心子组件（TransferAccountSwitcher/SymbolSelector/Process）、核心 Hooks",
+          "lineRange": [
+            397,
+            433
+          ],
+          "estimatedTokens": 555
+        },
+        {
+          "title": "验证与限制",
+          "summary": "确认按钮 disabled 条件、特殊提示条件（合约划转/多资产/SOSO费用）",
+          "lineRange": [
+            434,
+            457
+          ],
+          "estimatedTokens": 360
+        },
+        {
+          "title": "API 与签名",
+          "summary": "签名类型映射（TransferAssetType/KeyType）、签名参数结构",
+          "lineRange": [
+            458,
+            482
+          ],
+          "estimatedTokens": 375
+        },
+        {
+          "title": "文件结构",
+          "summary": "transfer 目录完整文件结构，transferAccountSwitcher 为目录",
+          "lineRange": [
+            483,
+            505
+          ],
+          "estimatedTokens": 345
+        },
+        {
+          "title": "术语表",
+          "summary": "9 个核心术语：Funding、Spot、Perps、EVM类币种、Futures类币种等",
+          "lineRange": [
+            506,
+            521
+          ],
+          "estimatedTokens": 240
+        },
+        {
+          "title": "代码位置索引",
+          "summary": "11 个关键文件位置索引，transferAccountSwitcher 路径已修正为目录",
+          "lineRange": [
+            522,
+            538
+          ],
+          "estimatedTokens": 255
+        },
+        {
+          "title": "更新记录",
+          "summary": "版本历史：2026-03-29 Sentry 错误上报、路径修正",
+          "lineRange": [
+            539,
+            554
+          ],
+          "estimatedTokens": 240
+        }
+      ],
+      "tags": [
+        "trade",
+        "transfer",
+        "funding",
+        "spot",
+        "perps",
+        "email-login",
+        "soso",
+        "permit",
+        "account-switch"
+      ],
+      "created": "2026-02-25",
+      "updated": "2026-03-29",
+      "history": [
+        {
+          "date": "2026-03-24",
+          "type": "perf",
+          "summary": "Spot↔Perps 性能优化：跳过 EVM 轮询 + 两次检测机制（300ms+900ms）",
+          "files": [
+            "chainAsset.ts",
+            "transfer/index.tsx"
+          ],
+          "historyPath": "history/trade/trade-transfer/2026-03-24-spot-perps-perf-fix.md"
+        }
+      ]
+    },
+    "trade-deposit": {
+      "id": "trade-deposit",
+      "module": "trade",
+      "type": "feature",
+      "title": "Trade Deposit 充值功能",
+      "summary": "主站充值弹窗，支持 Regular（二维码）和 Flash（钱包签名）两种充值方式，包含地址状态检测、黑名单过滤、多链支持",
+      "quickRef": {
+        "coreLogic": [
+          "DepositStepByStep(props: DepositProps): JSX.Element  L1-1962  主充值弹窗，三步流程管理",
+          "useDeposit(coin: string, chain: string): DepositState  L1-350  充值核心逻辑，Regular/Flash 流程控制",
+          "depositFlowReducer(state, action): FlowState  L50-120  充值流程状态机（Select → Chain → Deposit）",
+          "handleFlashDeposit(): Promise<void>  L400-550  Flash 充值：网络切换 → Approve → Bridge"
+        ],
+        "keyComponents": [
+          "sosoValueChainConfig.ts",
+          "WaitingTransferStatus.tsx",
+          "networks.ts"
+        ],
+        "keyFiles": [
+          "src/pages/_components/deposit/DepositStepByStep.tsx",
+          "src/pages/_components/deposit/_hooks/useDeposit.ts",
+          "src/pages/_components/hooks/useFundingToken.ts",
+          "src/pages/_components/helper/depositFilter.ts",
+          "src/components_tw/modals/spot/index.tsx"
+        ],
+        "relatedConcepts": [
+          "deposit",
+          "multi-chain",
+          "qr-code",
+          "flash-deposit",
+          "address-status",
+          "blacklist"
+        ]
+      },
+      "discovery_cost": "~4200 tokens",
+      "referencePath": "reference/trade/trade-deposit-guide.md",
+      "sections": [
+        {
+          "title": "概述",
+          "summary": "Trade Deposit 功能介绍：Regular（二维码）和 Flash（钱包签名）两种充值方式",
+          "lineRange": [
+            3,
+            10
+          ],
+          "estimatedTokens": 120
+        },
+        {
+          "title": "币种与链数据结构",
+          "summary": "CoinInfoData 和 ChainInfo 类型定义，链 ID 映射（BASE_ETH/ETH/ARBITRUM_ETH/VALUECHAIN）",
+          "lineRange": [
+            11,
+            51
+          ],
+          "estimatedTokens": 615
+        },
+        {
+          "title": "API 接口汇总",
+          "summary": "充值地址相关（createDepositAddress/fetchDepositAddress/replaceDepositAddress）、接受状态（getDepositAcceptStatus/updateDepositAcceptStatus）",
+          "lineRange": [
+            52,
+            77
+          ],
+          "estimatedTokens": 390
+        },
+        {
+          "title": "合约交互",
+          "summary": "portalContract/sosoDepositContract 地址获取，Flash 合约调用，sosoValueChainConfig 配置，VALUE_CHAIN_NETWORK 网络配置",
+          "lineRange": [
+            78,
+            117
+          ],
+          "estimatedTokens": 600
+        },
+        {
+          "title": "币种排序规则",
+          "summary": "PRIORITY_COIN_SYMBOLS 排序逻辑，热门币种标签和下拉列表排序",
+          "lineRange": [
+            118,
+            149
+          ],
+          "estimatedTokens": 480
+        },
+        {
+          "title": "预设币种和链参数",
+          "summary": "DepositStepByStepProps 定义，coinSymbol/chainId/lockedCoin/lockedChain 参数处理",
+          "lineRange": [
+            150,
+            191
+          ],
+          "estimatedTokens": 630
+        },
+        {
+          "title": "特殊币种处理规则",
+          "summary": "SOSO（固定最小1、专用合约）、SOSO+ValueChain 硬编码覆盖（地址/状态/蒙层/时间/提示）、XRP/XLM/MAG7.ssi",
+          "lineRange": [
+            192,
+            228
+          ],
+          "estimatedTokens": 555
+        },
+        {
+          "title": "组件架构",
+          "summary": "三个 Reducer 状态管理，核心 Hooks（useFundingToken/useDeposit/useDepositAcceptState/useTokenConfig）",
+          "lineRange": [
+            229,
+            249
+          ],
+          "estimatedTokens": 315
+        },
+        {
+          "title": "充值流程",
+          "summary": "三步流程图，充值方式判断，Flash 流程（8步）、SOSO 特殊处理（bridgeNativeToken）、Regular 流程（6步）、地址轮询机制",
+          "lineRange": [
+            250,
+            369
+          ],
+          "estimatedTokens": 1800
+        },
+        {
+          "title": "地址状态检查",
+          "summary": "Enabled/Suspicious 状态类型，检查流程（fetchDepositAddress → replaceDepositAddress → 轮询）",
+          "lineRange": [
+            370,
+            401
+          ],
+          "estimatedTokens": 480
+        },
+        {
+          "title": "充值过滤规则",
+          "summary": "黑名单格式（整币种/链级/方式级），过滤流程（白名单→黑名单→方式过滤），警告配置",
+          "lineRange": [
+            402,
+            428
+          ],
+          "estimatedTokens": 405
+        },
+        {
+          "title": "文件结构",
+          "summary": "完整目录结构：主组件、_config（sosoValueChainConfig）、reducers、hooks、WaitingTransferStatus、子组件",
+          "lineRange": [
+            429,
+            460
+          ],
+          "estimatedTokens": 480
+        },
+        {
+          "title": "UI 显示逻辑",
+          "summary": "主组件条件渲染流程图，Step 3 Deposit 显示逻辑（Flash/Regular/选择器）",
+          "lineRange": [
+            461,
+            499
+          ],
+          "estimatedTokens": 585
+        },
+        {
+          "title": "术语表",
+          "summary": "8 个核心术语：Regular、Flash、Suspicious、Accept Status、formattedChain、enableRegular/enableFlash、minDepositAmount、maxDepositAmount",
+          "lineRange": [
+            500,
+            514
+          ],
+          "estimatedTokens": 225
+        },
+        {
+          "title": "代码位置索引",
+          "summary": "17 个关键文件位置索引（含 ValueChain 配置、网络、合约、状态追踪）",
+          "lineRange": [
+            515,
+            538
+          ],
+          "estimatedTokens": 360
+        },
+        {
+          "title": "创建记录",
+          "summary": "文档版本信息：创建日期 2026-02-24，版本 1.4，最后更新 2026-04-08",
+          "lineRange": [
+            539,
+            553
+          ],
+          "estimatedTokens": 225
+        }
+      ],
+      "tags": [
+        "trade",
+        "deposit",
+        "multi-chain",
+        "flash",
+        "regular",
+        "qr-code",
+        "address-status",
+        "blacklist"
+      ],
+      "created": "2026-02-24",
+      "updated": "2026-04-08"
+    },
+    "trade-position": {
+      "id": "trade-position",
+      "module": "trade",
+      "type": "feature",
+      "title": "Trade Position Tab 仓位与订单面板",
+      "summary": "交易页面底部的多功能 Tab 面板，集成资产余额、持仓、订单管理、交易历史等模块，支持搜索过滤、数据刷新和小余额隐藏功能",
+      "quickRef": {
+        "coreLogic": [
+          "Position(props: PositionProps): JSX.Element  L1-450  主组件，8 个 Tab 切换与数据管理",
+          "NativeTransferPolling.loop(): detected 轻接口 3s 检测 + 条件触发 combined_transfers"
+        ],
+        "keyComponents": [
+          "useNativeTransferPolling.ts",
+          "nativeTransfer.ts",
+          "spotOrder.ts"
+        ],
+        "keyFiles": [
+          "src/pages/spot/main/position/index.tsx",
+          "src/pages/spot/main/position/tab/order/useAggList.ts",
+          "src/pages/spot/main/position/tab/positionTab/index.tsx",
+          "src/pages/spot/main/position/tab/asset/index.tsx"
+        ],
+        "relatedConcepts": [
+          "trade",
+          "tabs",
+          "position",
+          "orders",
+          "balances",
+          "history",
+          "event-bus",
+          "search-filter"
+        ]
+      },
+      "discovery_cost": "~3800 tokens",
+      "referencePath": "reference/trade/trade-position-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "组件整体结构：Tab Bar + Tab Content Area，8 个功能 Tab 覆盖完整账户管理",
+          "lineRange": [
+            5,
+            29
+          ],
+          "estimatedTokens": 375
+        },
+        {
+          "title": "Tab 类型定义",
+          "summary": "TabKey 类型定义和 Tab 与埋点映射表",
+          "lineRange": [
+            30,
+            58
+          ],
+          "estimatedTokens": 435
+        },
+        {
+          "title": "核心数据流",
+          "summary": "各 Tab 数据获取、BC 接口两类数据源（fund_transfer/native_transfer）刷新机制、三源合并与 txHash 去重",
+          "lineRange": [
+            59,
+            117
+          ],
+          "estimatedTokens": 885
+        },
+        {
+          "title": "搜索过滤实现",
+          "summary": "通用 filterBySearch 函数和各 Tab 过滤字段映射",
+          "lineRange": [
+            118,
+            161
+          ],
+          "estimatedTokens": 660
+        },
+        {
+          "title": "事件总线监听",
+          "summary": "自动刷新事件、NativeTransferPolling detected 轻接口轮询（cachedBlockNumber 由 detected 驱动）、四层 toast 防护",
+          "lineRange": [
+            162,
+            246
+          ],
+          "estimatedTokens": 1275
+        },
+        {
+          "title": "小余额过滤",
+          "summary": "SMALL_USD_VALUE_THRESHOLD 阈值和过滤逻辑，SOSO 币种例外",
+          "lineRange": [
+            247,
+            270
+          ],
+          "estimatedTokens": 360
+        },
+        {
+          "title": "合约类型切换处理",
+          "summary": "Spot/Futures 切换时自动切换 Tab，Futures 持仓更新事件监听",
+          "lineRange": [
+            271,
+            301
+          ],
+          "estimatedTokens": 465
+        },
+        {
+          "title": "文件结构",
+          "summary": "position 目录完整文件结构",
+          "lineRange": [
+            302,
+            335
+          ],
+          "estimatedTokens": 510
+        },
+        {
+          "title": "Props 接口",
+          "summary": "PositionProps 接口定义：showRightBorder、from、initialActiveTab、showSymbolSearch",
+          "lineRange": [
+            336,
+            346
+          ],
+          "estimatedTokens": 165
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "聚合订单 Hook、三源合并去重、四层 toast 防护、detected 轻接口轮询、搜索 Key 机制",
+          "lineRange": [
+            347,
+            387
+          ],
+          "estimatedTokens": 615
+        },
+        {
+          "title": "术语表",
+          "summary": "14 个核心术语：含 cachedBlockNumber、getTransferDetected、NativeTransferPolling 等",
+          "lineRange": [
+            388,
+            405
+          ],
+          "estimatedTokens": 270
+        },
+        {
+          "title": "代码位置索引",
+          "summary": "20 个关键代码位置索引（含 detected 检测接口、WithdrawModal txHash 注入）",
+          "lineRange": [
+            406,
+            430
+          ],
+          "estimatedTokens": 375
+        },
+        {
+          "title": "更新记录",
+          "summary": "文档版本：创建 2026-02-25 至 detected 优化+重复请求修复 2026-04-15",
+          "lineRange": [
+            431,
+            447
+          ],
+          "estimatedTokens": 255
+        }
+      ],
+      "tags": [
+        "trade",
+        "tabs",
+        "position",
+        "orders",
+        "balances",
+        "history",
+        "event-bus",
+        "search-filter"
+      ],
+      "created": "2026-02-25",
+      "updated": "2026-04-15"
+    },
+    "trade-withdraw": {
+      "id": "trade-withdraw",
+      "module": "trade",
+      "type": "feature",
+      "title": "Trade Withdraw 提现功能",
+      "summary": "主站提现弹窗，支持 Spot/Funding 双账户、Regular/Flash 双模式提现，包含多链地址校验、XRP/XLM Memo、SOSO 原生转账、Enable Trading 等完整提现流程",
+      "quickRef": {
+        "coreLogic": [
+          "WithdrawModal(props: WithdrawProps): JSX.Element  L1-1745  主提现弹窗，表单 + 签名 + 状态管理",
+          "withdrawFor(data: WithdrawData, type: WithdrawType): Promise<void>  L450-600  EIP-712 签名 + callForPermit API",
+          "handleTransfer(): Promise<void>  L300-400  Spot 账户先转移资产到链上",
+          "getWithdrawSchema(options: SchemaOptions): ZodSchema  L50-150  动态 Zod schema，地址/金额/Memo 校验"
+        ],
+        "keyComponents": [
+          "WithdrawModal.tsx - 主提现弹窗组件（1745行），表单逻辑、签名流程、状态管理",
+          "AccountAmountSelector.tsx - 账户选择器+金额输入，支持 Spot/Funding 切换",
+          "TransferProcess.tsx - 转账进度展示组件（approving/confirming 状态）",
+          "schema.ts - Zod 表单验证 schema，地址/金额/Memo 校验规则",
+          "useWithdraw.ts - 提现参数查询 Hook（withdrawFee, availableAmount）"
+        ],
+        "keyFiles": [
+          "src/pages/_components/withdraw/WithdrawModal.tsx",
+          "src/pages/_components/withdraw/schema.ts",
+          "src/pages/_components/withdraw/AccountAmountSelector.tsx",
+          "src/pages/_components/withdraw/TransferProcess.tsx",
+          "src/pages/_components/hooks/useWithdraw.ts"
+        ],
+        "relatedConcepts": [
+          "eip-712-signing",
+          "callForPermit",
+          "spot-funding-transfer",
+          "multi-chain-validation",
+          "enable-trading"
+        ]
+      },
+      "discovery_cost": "~4500 tokens",
+      "referencePath": "reference/trade/trade-withdraw-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "组件整体结构：币种/链选择 → 账户金额 → 目标地址 → Fee/Receive → 提现按钮",
+          "lineRange": [
+            5,
+            36
+          ],
+          "estimatedTokens": 480
+        },
+        {
+          "title": "核心状态",
+          "summary": "selectedAccountType、tabValue、withdrawStatus、fundsData、noMemoForAddress 五个核心状态",
+          "lineRange": [
+            37,
+            46
+          ],
+          "estimatedTokens": 150
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "表单验证 schema、三层提现流程、EIP-712 签名结构、SOSO 原生转账、Enable Trading 流程",
+          "lineRange": [
+            47,
+            233
+          ],
+          "estimatedTokens": 2805
+        },
+        {
+          "title": "关键 Hooks",
+          "summary": "useWithdraw 提现参数查询，useFundingToken、useTokenConfig、useNonce、useSparkSigner 等",
+          "lineRange": [
+            234,
+            273
+          ],
+          "estimatedTokens": 600
+        },
+        {
+          "title": "账户余额获取",
+          "summary": "从 mergedSpotAndFuturesBalances 获取余额，构建 Spot/Funding 账户数据源",
+          "lineRange": [
+            274,
+            298
+          ],
+          "estimatedTokens": 375
+        },
+        {
+          "title": "文件结构",
+          "summary": "withdraw 目录完整文件结构",
+          "lineRange": [
+            299,
+            319
+          ],
+          "estimatedTokens": 315
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "双账户支持、表单恢复机制、动态 Schema 设计",
+          "lineRange": [
+            320,
+            341
+          ],
+          "estimatedTokens": 330
+        },
+        {
+          "title": "术语表",
+          "summary": "7 个核心术语：Regular、Flash、callForPermit、withdrawFee、availableAmount、Enable Trading、needsRefresh",
+          "lineRange": [
+            342,
+            353
+          ],
+          "estimatedTokens": 180
+        },
+        {
+          "title": "代码位置索引",
+          "summary": "8 个关键代码位置索引",
+          "lineRange": [
+            354,
+            366
+          ],
+          "estimatedTokens": 195
+        },
+        {
+          "title": "更新记录",
+          "summary": "文档版本信息：创建日期 2026-03-03",
+          "lineRange": [
+            367,
+            371
+          ],
+          "estimatedTokens": 75
+        }
+      ],
+      "tags": [
+        "withdraw",
+        "trade",
+        "spot",
+        "funding",
+        "eip-712",
+        "permit",
+        "multi-chain",
+        "form-validation"
+      ],
+      "created": "2026-03-03",
+      "updated": "2026-03-03"
+    },
+    "trade-feerate": {
+      "id": "trade-feerate",
+      "module": "trade",
+      "type": "feature",
+      "title": "Fee Schedule 费率展示系统",
+      "summary": "统一的费率展示系统，包含 FeeEntry 入口组件和 FeeScheduleModal 弹窗，支持 Spot/Perps 双类型费率获取、Tier 高亮、Staking 折扣计算、划线对比显示",
+      "quickRef": {
+        "coreLogic": [
+          "fetchFeeRates(address): Promise<void>  L19-56  并行获取 spot/perps 费率，处理竞态和错误",
+          "findTierByTakerFee(takerFee, type): number  L149-155  根据 taker 费率反推 tier",
+          "calculateFeeBreakdown: object  L87-115  计算 Tooltip 显示的费率明细",
+          "showStrikethrough: boolean  L76-86  判断是否显示划线价格对比"
+        ],
+        "keyComponents": [
+          "FeeEntry.tsx - 费率入口组件，显示当前费率和划线对比",
+          "FeeScheduleModal.tsx - 费率弹窗，展示三种 Tier 表格和高亮",
+          "feeRate.ts - MobX Store，管理费率数据和请求状态",
+          "feeTiers.ts - 费率配置，Staking/Fee Tiers 表格数据"
+        ],
+        "keyFiles": [
+          "src/components_tw/FeeEntry.tsx",
+          "src/components_tw/modals/spot/FeeScheduleModal.tsx",
+          "src/models/feeRate.ts",
+          "src/config/feeTiers.ts",
+          "src/http/spot/index.ts",
+          "src/http/spot/api.d.ts"
+        ],
+        "relatedConcepts": [
+          "mobx-store",
+          "tier-highlight",
+          "strikethrough-comparison",
+          "responsive-modal"
+        ]
+      },
+      "discovery_cost": "~1800 tokens",
+      "referencePath": "reference/trade/trade-feerate-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "数据流架构和文件结构：FeeEntry → feeRate Store → API → FeeScheduleModal",
+          "lineRange": [
+            3,
+            44
+          ],
+          "estimatedTokens": 630
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "费率数据获取、划线显示判断（基于 address）、Tier 高亮逻辑的详细实现",
+          "lineRange": [
+            45,
+            136
+          ],
+          "estimatedTokens": 1380
+        },
+        {
+          "title": "关键实现",
+          "summary": "API 接口定义、响应结构、费率 Tooltip 计算逻辑",
+          "lineRange": [
+            137,
+            201
+          ],
+          "estimatedTokens": 975
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "MobX Store 设计、makeObservable 要求、弹窗参数传递、划线硬编码",
+          "lineRange": [
+            202,
+            239
+          ],
+          "estimatedTokens": 570
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "新增 Tier 等级、修改划线规则、调整弹窗布局的步骤",
+          "lineRange": [
+            240,
+            261
+          ],
+          "estimatedTokens": 330
+        },
+        {
+          "title": "术语表",
+          "summary": "Fee Tier、Staking Tier、Maker Rebate Tier、Taker/Maker 术语定义",
+          "lineRange": [
+            262,
+            272
+          ],
+          "estimatedTokens": 165
+        },
+        {
+          "title": "更新记录",
+          "summary": "文档版本历史，包含 MobX 响应式修复记录",
+          "lineRange": [
+            273,
+            302
+          ],
+          "estimatedTokens": 450
+        }
+      ],
+      "tags": [
+        "fee-rate",
+        "tier-system",
+        "mobx",
+        "responsive",
+        "spot",
+        "perps"
+      ],
+      "created": "2026-03-19",
+      "updated": "2026-03-22"
+    },
+    "trade-blacklist": {
+      "id": "trade-blacklist",
+      "module": "trade",
+      "type": "feature",
+      "title": "Trade 充值黑名单/白名单过滤规则",
+      "summary": "充值币种/链过滤规则，支持白名单、黑名单（整币种/链级/Regular/Flash方式）、contractWarningList 和 memoWarningList 警告显示",
+      "quickRef": {
+        "coreLogic": [
+          "parseDepositRules(depositList: DepositListItem[]): DepositFilterRules  L80-150  解析接口配置为过滤规则结构",
+          "filterTokensByRules(tokens: Token[], rules: Rules): Token[]  L160-250  四步过滤（白→黑→链→方式）",
+          "shouldShowWarning(rules: Rules, chain: string, coin: string): boolean  L260-290  合约钱包警告检查",
+          "shouldShowMemoWarning(rules: Rules, chain: string, coin: string): boolean  L300-320  Memo 警告检查"
+        ],
+        "keyComponents": [
+          "depositFilter.ts - 核心过滤逻辑模块（326行），包含解析、过滤、警告检查函数",
+          "useFundingToken.ts - 调用 parseDepositRules 和 filterTokensByRules",
+          "DepositStepByStep.tsx - 计算 showContractWarning 和 showMemoWarning",
+          "DepositAddressQR.tsx - 显示警告 UI 组件"
+        ],
+        "keyFiles": [
+          "src/pages/_components/helper/depositFilter.ts",
+          "src/pages/_components/hooks/useFundingToken.ts",
+          "src/http/futures/api.d.ts",
+          "src/pages/_components/deposit/DepositStepByStep.tsx",
+          "src/pages/_components/deposit/_components/DepositAddressQR.tsx"
+        ],
+        "relatedConcepts": [
+          "blacklist",
+          "whitelist",
+          "deposit-filter",
+          "warning-list",
+          "chain-mapping"
+        ]
+      },
+      "discovery_cost": "~2800 tokens",
+      "referencePath": "reference/trade/trade-blacklist-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "接口参数结构、从接口到 UI 的完整数据流（带代码行号）",
+          "lineRange": [
+            3,
+            104
+          ],
+          "estimatedTokens": 1530
+        },
+        {
+          "title": "参数规范",
+          "summary": "黑名单格式表格、链名映射表、链名格式规范（短格式 vs 显示名称）",
+          "lineRange": [
+            105,
+            165
+          ],
+          "estimatedTokens": 915
+        },
+        {
+          "title": "核心过滤流程",
+          "summary": "parseBlacklistEntry 和 filterTokensByRules 的完整解析流程（带代码行号）",
+          "lineRange": [
+            166,
+            274
+          ],
+          "estimatedTokens": 1635
+        },
+        {
+          "title": "警告配置",
+          "summary": "contractWarningList（链/币组合）和 memoWarningList（币种级别）的 UI 显示规则",
+          "lineRange": [
+            275,
+            319
+          ],
+          "estimatedTokens": 675
+        },
+        {
+          "title": "核心函数",
+          "summary": "parseDepositRules、filterTokensByRules、shouldShowWarning、shouldShowMemoWarning 函数签名和类型",
+          "lineRange": [
+            320,
+            400
+          ],
+          "estimatedTokens": 1215
+        },
+        {
+          "title": "文件结构",
+          "summary": "depositFilter.ts、useFundingToken.ts、DepositStepByStep.tsx 等文件目录结构",
+          "lineRange": [
+            401,
+            419
+          ],
+          "estimatedTokens": 285
+        },
+        {
+          "title": "术语表",
+          "summary": "8 个核心术语：depositWhitelist、depositBlacklist、contractWarningList、memoWarningList 等",
+          "lineRange": [
+            420,
+            434
+          ],
+          "estimatedTokens": 225
+        },
+        {
+          "title": "代码位置索引",
+          "summary": "6 个关键文件位置索引",
+          "lineRange": [
+            435,
+            447
+          ],
+          "estimatedTokens": 195
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "新增黑名单/警告类型的修改步骤、边界条件、测试用例",
+          "lineRange": [
+            448,
+            513
+          ],
+          "estimatedTokens": 990
+        },
+        {
+          "title": "更新记录",
+          "summary": "文档版本信息：v1.1 完善开发指南",
+          "lineRange": [
+            514,
+            530
+          ],
+          "estimatedTokens": 255
+        }
+      ],
+      "tags": [
+        "blacklist",
+        "whitelist",
+        "deposit-filter",
+        "warning-list",
+        "chain-mapping"
+      ],
+      "created": "2026-03-03",
+      "updated": "2026-03-03"
+    },
+    "trade-spot-orderform": {
+      "id": "trade-spot-orderform",
+      "module": "trade",
+      "type": "feature",
+      "title": "现货下单表单",
+      "summary": "现货交易下单核心模块，支持市价/限价单，买卖方向切换，基础币/计价币数量输入，价格验证，余额检测，订单签名提交",
+      "discovery_cost": "~16000 tokens",
+      "quickRef": {
+        "coreLogic": [
+          "FormSection(Props): React.FC  L93-1540  下单表单核心组件，处理价格输入、数量计算、订单验证与提交",
+          "postOrder(orderSide: DirectionEnum): Promise  L872-912  构造订单参数，调用 signNewOrderRequest 签名后通过 spotUniversalApi 提交",
+          "validateForm(type?: DirectionEnum): FormState  L669-751  表单验证，检查价格范围(multiplierUp/Down)和数量",
+          "useUserAssetsStatus(props?: Props): Status  L17-48  检测钱包连接、网络、余额状态",
+          "getAmount(_amount?: string): number  L852-871  根据币种类型和方向计算最终下单数量"
+        ],
+        "keyComponents": [
+          "formSection/index.tsx - 下单表单主体（1543行），包含价格/数量输入、验证、提交全流程",
+          "index.tsx - OrderForm 容器，组合方向选择、委托类型、表单",
+          "openPosition/index.tsx - 买入按钮，含账户开通检查",
+          "closePosition/index.tsx - 卖出按钮",
+          "entrustTypeTab/index.tsx - 市价/限价委托类型切换",
+          "direction/index.tsx - 买/卖方向切换 Tab"
+        ],
+        "keyFiles": [
+          "src/pages/spot/main/orderForm/formSection/index.tsx",
+          "src/pages/spot/main/orderForm/index.tsx",
+          "src/pages/spot/main/orderForm/formSection/useUserAssetsStatus.ts",
+          "src/pages/spot/main/orderForm/openPosition/index.tsx",
+          "src/pages/spot/main/orderForm/closePosition/index.tsx",
+          "src/pages/spot/main/orderForm/entrustTypeTab/index.tsx",
+          "src/pages/spot/main/orderForm/direction/index.tsx",
+          "src/pages/spot/main/orderForm/mode/index.tsx"
+        ],
+        "relatedConcepts": [
+          "order-signing",
+          "eventbus",
+          "mobx-store",
+          "price-validation"
+        ]
+      },
+      "referencePath": "reference/trade/trade-spot-orderform-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "组件树结构、数据依赖关系（MobX stores、签名、API）",
+          "lineRange": [
+            3,
+            43
+          ],
+          "estimatedTokens": 615
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "下单流程（tradeHandleClick→postOrder→createOrder）、数量计算、价格验证、按钮禁用、余额引导、EventBus集成",
+          "lineRange": [
+            44,
+            136
+          ],
+          "estimatedTokens": 1395
+        },
+        {
+          "title": "文件结构",
+          "summary": "8个文件的目录树与行数统计",
+          "lineRange": [
+            137,
+            152
+          ],
+          "estimatedTokens": 240
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "FormSection 巨型组件原因、BigNumber vs calculate、币种切换精度保护、SOSO特殊最小额",
+          "lineRange": [
+            153,
+            170
+          ],
+          "estimatedTokens": 270
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "新增委托类型、修改下单参数、调整按钮禁用条件的步骤",
+          "lineRange": [
+            171,
+            190
+          ],
+          "estimatedTokens": 300
+        },
+        {
+          "title": "术语表",
+          "summary": "baseCurrency/quoteCurrency、multiplier、minNotional、TimeInForce 等核心术语",
+          "lineRange": [
+            191,
+            203
+          ],
+          "estimatedTokens": 195
+        }
+      ],
+      "tags": [
+        "spot",
+        "order-form",
+        "market-order",
+        "limit-order",
+        "signing",
+        "eventbus",
+        "balance-check"
+      ],
+      "created": "2026-04-07",
+      "updated": "2026-04-07"
+    },
+    "trade-futures-orderform": {
+      "id": "trade-futures-orderform",
+      "module": "trade",
+      "type": "feature",
+      "title": "合约下单表单",
+      "summary": "合约下单表单，支持U本位/币本位双模式，限价/市价/计划委托三种委托类型，开平仓四方向，张/USDT/COIN单位切换，止盈止损，杠杆与保证金模式选择",
+      "discovery_cost": "~30100 tokens",
+      "quickRef": {
+        "coreLogic": [
+          "FormSection(props: Props): JSX  L44-1440  U本位合约下单核心表单",
+          "FormSectionCoinBased(props: Props): JSX  L44-1486  币本位合约下单核心表单",
+          "validateForm(type?: OrderSide): void  L694-915/L739-962  价格范围+数量+止盈止损校验",
+          "tradeHandleClick({orderSide, positionSide}): void  L1058-1153/L1105-1201  下单主入口",
+          "getSheetAmount(orderSide): string  L1016-1056/L1063-1103  单位转张数"
+        ],
+        "keyComponents": [
+          "formSection/index.tsx - U本位核心表单(1443行)",
+          "formSectionCoinBased/index.tsx - 币本位核心表单(1489行)",
+          "index.tsx - 容器组件，按isUBased切换U本位/币本位",
+          "openPosition/index.tsx - 开仓按钮+保证金/可开量展示",
+          "closePosition/index.tsx - 平仓按钮+可平量/持仓展示"
+        ],
+        "keyFiles": [
+          "src/pages/futures/main/orderForm/index.tsx",
+          "src/pages/futures/main/orderForm/formSection/index.tsx",
+          "src/pages/futures/main/orderForm/formSectionCoinBased/index.tsx",
+          "src/pages/futures/main/orderForm/openPosition/index.tsx",
+          "src/pages/futures/main/orderForm/closePosition/index.tsx",
+          "src/pages/futures/main/orderForm/entrustTypeTab/index.tsx",
+          "src/pages/futures/main/orderForm/mode/index.tsx",
+          "src/pages/futures/main/orderForm/percentPreview/index.tsx",
+          "src/pages/futures/main/orderForm/tradeType/index.tsx"
+        ],
+        "relatedConcepts": [
+          "futures-trading",
+          "coin-based-margin",
+          "usdt-margin",
+          "leverage",
+          "stop-limit",
+          "unit-conversion"
+        ]
+      },
+      "referencePath": "reference/trade/trade-futures-orderform-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "组件树结构、isUBased双模式分支、数据依赖（MobX stores、useUnit、useOpenPositionCalculator）",
+          "lineRange": [
+            3,
+            56
+          ],
+          "estimatedTokens": 810
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "下单流程（tradeHandleClick→createOrder）、四方向下单、单位转换、U本位vs币本位差异、价格验证、保证金计算、防重复提交",
+          "lineRange": [
+            57,
+            199
+          ],
+          "estimatedTokens": 2145
+        },
+        {
+          "title": "文件结构",
+          "summary": "9个文件的目录树与行数统计",
+          "lineRange": [
+            200,
+            216
+          ],
+          "estimatedTokens": 255
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "U本位/币本位独立组件原因、无钱包签名、UI库混用、平仓Tab注释、二次确认机制",
+          "lineRange": [
+            217,
+            238
+          ],
+          "estimatedTokens": 330
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "新增委托类型、修改单位转换、调整价格校验、启用平仓的步骤",
+          "lineRange": [
+            239,
+            261
+          ],
+          "estimatedTokens": 345
+        },
+        {
+          "title": "术语表",
+          "summary": "sheet/contractSize/positionSide/orderSide/entrustType/TimeInForce等核心术语",
+          "lineRange": [
+            262,
+            281
+          ],
+          "estimatedTokens": 300
+        }
+      ],
+      "tags": [
+        "trade",
+        "futures",
+        "leverage",
+        "stop-limit",
+        "unit-conversion",
+        "coin-based",
+        "usdt-margin",
+        "position"
+      ],
+      "created": "2026-04-07",
+      "updated": "2026-04-07"
+    },
+    "trade-futures-orderform-mobile": {
+      "id": "trade-futures-orderform-mobile",
+      "module": "trade",
+      "type": "feature",
+      "title": "移动端合约下单表单",
+      "summary": "移动端合约下单面板，采用react-hook-form+zod架构，拆分为LimitForm/MarketForm独立表单，支持Pro模式、TP/SL止盈止损、ReduceOnly，通过useBoltSigner签名+createOrders构造BoltOrder提交",
+      "discovery_cost": "~30600 tokens",
+      "quickRef": {
+        "coreLogic": [
+          "LimitForm(): JSX  L47-485  限价单表单，含价格/数量输入、滑块、TP/SL、价格警告",
+          "MarketForm(): JSX  L47-414  市价单表单，无价格输入，含滑点警告",
+          "createOrders(params): BoltOrder[]  L23-205  构造普通/Pro/TP-SL订单数组",
+          "usePostOrder(props): {postOrder}  L61-127  签名+提交订单核心hook",
+          "TakeProfitStopLoss(props): JSX  L164-754  止盈止损双向计算组件"
+        ],
+        "keyComponents": [
+          "limitForm/index.tsx - 限价单表单(488行)",
+          "marketForm/index.tsx - 市价单表单(417行)",
+          "helper.ts - createOrders订单构造+最小金额计算(261行)",
+          "TakeProfitStopLoss.tsx - TP/SL双向计算组件(756行)",
+          "TradeButton.tsx - 下单按钮+余额不足引导(159行)"
+        ],
+        "keyFiles": [
+          "src/pages/spot/main/futures/order/index.tsx",
+          "src/pages/spot/main/futures/order/orderForm/index.tsx",
+          "src/pages/spot/main/futures/order/orderForm/helper.ts",
+          "src/pages/spot/main/futures/order/orderForm/_components/forms/limitForm/index.tsx",
+          "src/pages/spot/main/futures/order/orderForm/_components/forms/limitForm/schema.ts",
+          "src/pages/spot/main/futures/order/orderForm/_components/forms/marketForm/index.tsx",
+          "src/pages/spot/main/futures/order/orderForm/_components/forms/marketForm/schema.ts",
+          "src/pages/spot/main/futures/order/orderForm/_components/forms/_hooks/usePostOrder.ts",
+          "src/pages/spot/main/futures/order/orderForm/_components/forms/_hooks/useValuesBySlider.tsx",
+          "src/pages/spot/main/futures/order/orderForm/_components/forms/_hooks/useOrderListener.ts",
+          "src/pages/spot/main/futures/order/orderForm/_components/TradeButton.tsx",
+          "src/pages/spot/main/futures/_components/TakeProfitStopLoss.tsx",
+          "src/pages/spot/main/futures/order/modals/LeverageModal.tsx",
+          "src/pages/spot/main/futures/order/modals/MarginMode.tsx"
+        ],
+        "relatedConcepts": [
+          "react-hook-form",
+          "zod-validation",
+          "bolt-order",
+          "bolt-signer",
+          "tp-sl",
+          "pro-mode"
+        ]
+      },
+      "referencePath": "reference/trade/trade-futures-orderform-mobile-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "组件树结构、entrustType路由分发、数据依赖（MobX stores、useBoltSigner）",
+          "lineRange": [
+            3,
+            56
+          ],
+          "estimatedTokens": 810
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "下单流程（handleSubmit→usePostOrder→createOrders→签名→API）、LimitForm vs MarketForm、TP/SL双向计算、Hook协作、EventBus集成",
+          "lineRange": [
+            57,
+            190
+          ],
+          "estimatedTokens": 2010
+        },
+        {
+          "title": "文件结构",
+          "summary": "34个文件的完整目录树与行数统计",
+          "lineRange": [
+            191,
+            242
+          ],
+          "estimatedTokens": 780
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "与PC端独立实现原因、签名差异、Orderbook切换逻辑、BTC特殊最小额、BoltOrder数组模式",
+          "lineRange": [
+            243,
+            264
+          ],
+          "estimatedTokens": 330
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "新增委托类型、修改下单参数、调整TP/SL计算、修改最小下单额的步骤",
+          "lineRange": [
+            265,
+            288
+          ],
+          "estimatedTokens": 360
+        },
+        {
+          "title": "与PC端合约下单的对比",
+          "summary": "架构、校验、签名、订单格式、U本位/币本位、TP/SL、数量单位的全面对比",
+          "lineRange": [
+            289,
+            301
+          ],
+          "estimatedTokens": 195
+        },
+        {
+          "title": "术语表",
+          "summary": "BoltOrder/BRACKET/ATTACHED_STOP/useBoltSigner/entrustType/Pro模式等核心术语",
+          "lineRange": [
+            302,
+            317
+          ],
+          "estimatedTokens": 240
+        }
+      ],
+      "tags": [
+        "trade",
+        "futures",
+        "signing",
+        "stop-limit",
+        "tp-sl",
+        "react-hook-form",
+        "zod",
+        "bolt-order",
+        "reduce-only",
+        "event-bus"
+      ],
+      "created": "2026-04-07",
+      "updated": "2026-04-07"
+    },
+    "trade-orderbook": {
+      "id": "trade-orderbook",
+      "module": "trade",
+      "type": "feature",
+      "title": "OrderBook 盘口深度展示",
+      "summary": "现货/合约盘口深度展示，支持三种布局模式、深度合并、币种切换、行悬停汇总Tooltip、点击填充下单表单，现货和合约各有独立实现",
+      "discovery_cost": "~11500 tokens",
+      "quickRef": {
+        "coreLogic": [
+          "OrderBook(Props): FC  L30-410  现货盘口主容器，动态计算行数、布局切换、tooltip状态管理",
+          "OrderRow(Props): FC  L40-275  盘口行组件，点击填充下单、悬停高亮、新增闪烁动画",
+          "OrderBook(): FC  L21-228  合约盘口主容器，使用sheet2CurrentUnit单位转换",
+          "NewTooltip(TooltipProps): FC  L14-85  现货悬停汇总（均价/总量/总额），fixed定位",
+          "Tooltip(TooltipProps): FC  L16-93  合约悬停汇总，U本位/币本位不同计算公式"
+        ],
+        "keyComponents": [
+          "spot/orderBook/index.tsx - 现货盘口主容器，响应式行数计算",
+          "spot/orderBook/orderRow/index.tsx - 行组件，EventBus点击填充下单",
+          "spot/orderBook/NewTooltip/index.tsx - 现货悬停汇总tooltip",
+          "futures/orderBook/index.tsx - 合约盘口主容器，sheet单位转换",
+          "futures/orderBook/tooltip/index.tsx - 合约悬停汇总，区分U/币本位"
+        ],
+        "keyFiles": [
+          "src/pages/spot/main/orderBook/index.tsx",
+          "src/pages/spot/main/orderBook/orderRow/index.tsx",
+          "src/pages/spot/main/orderBook/NewTooltip/index.tsx",
+          "src/pages/spot/main/orderBook/LayoutSelector.tsx",
+          "src/pages/spot/main/orderBook/DepthSelector.tsx",
+          "src/pages/spot/main/orderBook/CoinSelector.tsx",
+          "src/pages/spot/main/orderBook/tooltip/index.tsx",
+          "src/pages/futures/main/orderBook/index.tsx",
+          "src/pages/futures/main/orderBook/tooltip/index.tsx",
+          "src/pages/futures/main/components/orderRow/index.tsx",
+          "src/pages/spot/main/components/priceBar/index.tsx",
+          "src/pages/futures/main/components/priceBar/index.tsx",
+          "src/pages/spot/main/components/tradeRow/index.tsx"
+        ],
+        "relatedConcepts": [
+          "depth-merge",
+          "eventbus",
+          "responsive",
+          "unit-conversion",
+          "mobx"
+        ]
+      },
+      "referencePath": "reference/trade/trade-orderbook-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "现货/合约双实现架构、组件树、数据流",
+          "lineRange": [
+            3,
+            62
+          ],
+          "estimatedTokens": 900
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "深度数据处理、行数动态计算、点击填充、Tooltip汇总、U/币本位差异",
+          "lineRange": [
+            63,
+            231
+          ],
+          "estimatedTokens": 2535
+        },
+        {
+          "title": "文件结构",
+          "summary": "18个文件的职责说明（现货9+合约5+共享3）",
+          "lineRange": [
+            232,
+            265
+          ],
+          "estimatedTokens": 510
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "双实现原因、NewTooltip替代AntdTooltip、EventBus联动、背景条maxSum共享",
+          "lineRange": [
+            266,
+            285
+          ],
+          "estimatedTokens": 300
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "常见修改场景和注意事项",
+          "lineRange": [
+            286,
+            309
+          ],
+          "estimatedTokens": 360
+        },
+        {
+          "title": "术语表",
+          "summary": "盘口相关术语（depthMerge/base/sheet2CurrentUnit等）",
+          "lineRange": [
+            310,
+            323
+          ],
+          "estimatedTokens": 210
+        }
+      ],
+      "tags": [
+        "orderbook",
+        "depth",
+        "event-bus",
+        "unit-conversion",
+        "responsive",
+        "tooltip",
+        "mobx"
+      ],
+      "created": "2026-04-09",
+      "updated": "2026-04-09"
+    },
+    "trade-market-switch": {
+      "id": "trade-market-switch",
+      "module": "trade",
+      "type": "feature",
+      "title": "币对切换与市场行情栏",
+      "summary": "交易页顶部区域：币对选择器（搜索/收藏/标签分类）、行情Ticker栏（最新价/涨跌/高低/成交量/资金费率）、最新价与document.title同步，新旧版双实现",
+      "discovery_cost": "~18650 tokens",
+      "quickRef": {
+        "coreLogic": [
+          "Symbol(Props): FC  L39-322  币对选择器，Popover/Drawer切换市场面板，收藏/搜索/title同步",
+          "Market(Props): FC  L56-343  市场面板，搜索+Tab过滤+排序表格+USDT引导",
+          "useColumns(isMobile, tabKey): Column[]  L24-357  PC/移动端双列配置",
+          "Ticker(): FC  L13-43  行情栏容器，按instType切换Spot/Futures",
+          "FuturesTicker(): FC  L25-202  合约行情：标记价/指数价/OI/资金费率倒计时"
+        ],
+        "keyComponents": [
+          "spot/switch/symbol/index.tsx - 币对选择器，Popover(PC)+Drawer(移动端)",
+          "spot/switch/market/index.tsx - 市场面板，搜索/Tab分类/USDT引导",
+          "spot/switch/market/useColumns.tsx - 表格列定义，PC/移动端差异",
+          "spot/switch/market/marketCategory.ts - 子分类配置(commodities/stocks/indexes)",
+          "spot/switch/ticker/_components/FuturesTicker.tsx - 合约行情指标栏"
+        ],
+        "keyFiles": [
+          "src/pages/spot/main/switch/index.tsx",
+          "src/pages/spot/main/switch/symbol/index.tsx",
+          "src/pages/spot/main/switch/symbol/LatestPrice.tsx",
+          "src/pages/spot/main/switch/market/index.tsx",
+          "src/pages/spot/main/switch/market/marketCategory.ts",
+          "src/pages/spot/main/switch/market/useColumns.tsx",
+          "src/pages/spot/main/switch/ticker/index.tsx",
+          "src/pages/spot/main/switch/ticker/_components/SpotTicker.tsx",
+          "src/pages/spot/main/switch/ticker/_components/FuturesTicker.tsx",
+          "src/pages/spot/main/switch/ticker/_components/FoldSpotTicker.tsx",
+          "src/pages/spot/main/switch/ticker/_components/FoldFuturesTicker.tsx",
+          "src/pages/spot/main/switch/ticker/_components/FundingCountDown.tsx",
+          "src/pages/spot/main/priceRate/index.tsx",
+          "src/pages/futures/main/switch/index.tsx",
+          "src/pages/futures/main/switch/symbol/index.tsx",
+          "src/pages/futures/main/switch/market/index.tsx",
+          "src/pages/futures/main/switch/ticker/index.tsx"
+        ],
+        "relatedConcepts": [
+          "market-search",
+          "collection",
+          "responsive",
+          "event-bus",
+          "mobx",
+          "tag-category"
+        ]
+      },
+      "referencePath": "reference/trade/trade-market-switch-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "新旧版双实现架构、数据层fullMarketTickers、组件树、EventBus事件流",
+          "lineRange": [
+            3,
+            81
+          ],
+          "estimatedTokens": 1185
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "市场数据聚合、搜索过滤、标签分类、USDT引导、路由切换、键盘搜索、Ticker指标、收藏功能",
+          "lineRange": [
+            82,
+            261
+          ],
+          "estimatedTokens": 2700
+        },
+        {
+          "title": "文件结构",
+          "summary": "19个文件的职责说明（新版13+priceRate1+旧版5）",
+          "lineRange": [
+            262,
+            297
+          ],
+          "estimatedTokens": 540
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "新旧版共存原因、USDT搜索引导、标签分类系统、移动端折叠",
+          "lineRange": [
+            298,
+            315
+          ],
+          "estimatedTokens": 270
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "添加子分类/表格列/Ticker指标/币对切换行为的修改入口",
+          "lineRange": [
+            316,
+            335
+          ],
+          "estimatedTokens": 300
+        },
+        {
+          "title": "术语表",
+          "summary": "市场相关术语（instType/fullMarketTickers/underlying等）",
+          "lineRange": [
+            336,
+            350
+          ],
+          "estimatedTokens": 225
+        }
+      ],
+      "tags": [
+        "market-search",
+        "collection",
+        "responsive",
+        "event-bus",
+        "mobx",
+        "tag-category",
+        "funding-rate"
+      ],
+      "created": "2026-04-09",
+      "updated": "2026-04-09"
+    },
+    "trade-steprate": {
+      "id": "trade-steprate",
+      "module": "trade",
+      "type": "feature",
+      "title": "手续费阶梯等级页面",
+      "summary": "独立页面展示用户手续费等级、费率表、交易量进度，支持申请专业费率（上传截图+选择平台）和超级合伙人入口",
+      "discovery_cost": "~7600 tokens",
+      "quickRef": {
+        "coreLogic": [
+          "StepRate(): JSX  L17-67  页面入口：初始化数据+条件渲染Special/UserLevel",
+          "UserLevel(): JSX  L10-157  用户等级卡片：等级图标、交易量进度条、Maker/Taker费率、升级提示",
+          "ApplyModal(): JSX  L28-231  申请专业费率弹窗：选平台+选等级+上传截图+提交",
+          "StepRate.fetchStepRateTable(): Promise  L99-103  获取费率阶梯表",
+          "StepRate.fetchUserStepRate(): Promise  L106-110  获取用户当前等级和费率"
+        ],
+        "keyComponents": [
+          "stepRate/index.tsx - 页面入口，初始化3个API+根据isSpecialAccout条件渲染",
+          "user-level/index.tsx - 用户等级卡片，交易量进度条+费率展示+升级提示",
+          "user-level/TradeModal.tsx - 近期交易量明细弹窗，PC用Modal/移动端用Drawer",
+          "apply-pro-rate/ApplyModal.tsx - 申请专业费率：选平台、选等级、上传截图（≤5张≤2MB）",
+          "rate-table/index.tsx - 费率阶梯表格展示",
+          "models/stepRate.ts - MobX Store：5个API+4个computed"
+        ],
+        "keyFiles": [
+          "src/pages/futures/stepRate/index.tsx",
+          "src/pages/futures/stepRate/config.ts",
+          "src/pages/futures/stepRate/user-level/index.tsx",
+          "src/pages/futures/stepRate/user-level/Special.tsx",
+          "src/pages/futures/stepRate/user-level/TradeModal.tsx",
+          "src/pages/futures/stepRate/rate-table/index.tsx",
+          "src/pages/futures/stepRate/level-description/index.tsx",
+          "src/pages/futures/stepRate/apply-pro-rate/index.tsx",
+          "src/pages/futures/stepRate/apply-pro-rate/ApplyModal.tsx",
+          "src/pages/futures/stepRate/super-partner/index.tsx",
+          "src/models/stepRate.ts"
+        ],
+        "relatedConcepts": [
+          "fee-tier",
+          "level-system",
+          "file-upload",
+          "responsive"
+        ]
+      },
+      "referencePath": "reference/trade/trade-steprate-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "页面5区块布局、数据流（5个API→Store→UI）、Special/UserLevel分流",
+          "lineRange": [
+            3,
+            48
+          ],
+          "estimatedTokens": 690
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "页面初始化、等级展示、交易量弹窗、费率表、申请专业费率（上传+提交）、超级合伙人、Store定义",
+          "lineRange": [
+            49,
+            140
+          ],
+          "estimatedTokens": 1380
+        },
+        {
+          "title": "跨目录关联组件",
+          "summary": "StepRateGate（下单表单内嵌等级入口）和FundRateModal（费率弹窗）引用stepRate store",
+          "lineRange": [
+            141,
+            153
+          ],
+          "estimatedTokens": 195
+        },
+        {
+          "title": "文件结构",
+          "summary": "11个页面文件+1个Store的职责说明",
+          "lineRange": [
+            154,
+            177
+          ],
+          "estimatedTokens": 360
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "Special分流、响应式双容器、图片先传后提交、路由保护、等级图标配置化",
+          "lineRange": [
+            178,
+            185
+          ],
+          "estimatedTokens": 120
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "新增等级/修改申请表单/修改分页等场景的入口",
+          "lineRange": [
+            186,
+            195
+          ],
+          "estimatedTokens": 150
+        },
+        {
+          "title": "术语表",
+          "summary": "stepRate/discountLevel/specialType/StepRateGate等术语解释",
+          "lineRange": [
+            196,
+            207
+          ],
+          "estimatedTokens": 180
+        },
+        {
+          "title": "更新记录",
+          "summary": "版本历史",
+          "lineRange": [
+            208,
+            212
+          ],
+          "estimatedTokens": 75
+        }
+      ],
+      "tags": [
+        "fee-tier",
+        "level-system",
+        "file-upload",
+        "responsive",
+        "mobx"
+      ],
+      "created": "2026-04-09",
+      "updated": "2026-04-09"
+    }
+  },
+  "history": {
+    "trade-transfer": [
+      {
+        "date": "2026-03-29",
+        "type": "feat",
+        "summary": "添加 Sentry 错误上报到 handleApproveForPermit 和 executeTransfer，修正 transferAccountSwitcher 路径",
+        "files": [
+          "index.tsx"
+        ],
+        "historyPath": "history/trade/trade-transfer/2026-03-29-add-sentry-error-reporting.md"
+      }
+    ],
+    "trade-feerate": [
+      {
+        "date": "2026-03-22",
+        "type": "fix",
+        "summary": "修复 MobX 响应式失效：添加 makeObservable(this) 使装饰器生效",
+        "files": [
+          "feeRate.ts"
+        ],
+        "historyPath": "history/trade/trade-feerate/2026-03-22-fix-mobx-makeobservable.md"
+      },
+      {
+        "date": "2026-03-19",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": [
+          "FeeEntry.tsx",
+          "FeeScheduleModal.tsx",
+          "feeRate.ts",
+          "feeTiers.ts"
+        ]
+      }
+    ],
+    "trade-deposit": [
+      {
+        "date": "2026-04-08",
+        "type": "docs",
+        "summary": "完善 SOSO + ValueChain 硬编码逻辑文档：配置文件、链注入、状态检测、UI 覆盖行为",
+        "files": [
+          "trade-deposit-guide.md"
+        ],
+        "historyPath": "history/trade/trade-deposit/2026-04-08-soso-valuechain-hardcode-update.md"
+      },
+      {
+        "date": "2026-03-26",
+        "type": "feat",
+        "summary": "添加 lockedCoin/lockedChain Props 支持锁定币种和链选择",
+        "files": [
+          "DepositStepByStep.tsx",
+          "StakingHero.tsx"
+        ],
+        "historyPath": "history/trade/trade-deposit/2026-03-26-locked-selection-props.md"
+      },
+      {
+        "id": "2026-03-13-coin-priority-sort",
+        "date": "2026-03-13",
+        "type": "feat",
+        "summary": "币种优先排序 + 预设币种/链参数（coinSymbol/chainId）",
+        "path": "history/trade/trade-deposit/2026-03-13-coin-priority-sort.md"
+      }
+    ],
+    "trade-position": [
+      {
+        "date": "2026-04-15",
+        "type": "feat",
+        "summary": "移除 boost/unboost，改用 detected 轻接口轮询，仅 blockNumber 变化时调 combined_transfers",
+        "files": [
+          "useNativeTransferPolling.ts",
+          "index.ts",
+          "api.d.ts",
+          "DepositStepByStep.tsx"
+        ],
+        "historyPath": "history/trade/trade-position/2026-04-15-detected-polling-optimization.md"
+      },
+      {
+        "date": "2026-04-10",
+        "type": "feat",
+        "summary": "NativeTransferPolling boost/unboost 动态频率 + withdraw 去重 + 列表刷新解耦 + 空值防护 + baseURL 修复",
+        "files": [
+          "useNativeTransferPolling.ts",
+          "DepositStepByStep.tsx",
+          "WithdrawModal.tsx",
+          "nativeTransfer.ts",
+          "spotOrder.ts"
+        ],
+        "historyPath": "history/trade/trade-position/2026-04-10-polling-boost-and-fixes.md"
+      },
+      {
+        "date": "2026-04-08",
+        "type": "feat",
+        "summary": "Transfer History 整合 native_transfer 数据源：BC 合并接口、txHash 去重、轮询四层防护 toast 通知",
+        "files": [
+          "spotOrder.ts",
+          "useNativeTransferPolling.ts",
+          "nativeTransfer.ts",
+          "transferHistory/index.tsx"
+        ],
+        "historyPath": "history/trade/trade-position/2026-04-08-native-transfer-integration.md"
+      }
+    ],
+    "trade-spot-orderform": [
+      {
+        "date": "2026-04-07",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": [
+          "index.tsx",
+          "formSection/index.tsx",
+          "useUserAssetsStatus.ts",
+          "openPosition/index.tsx",
+          "closePosition/index.tsx",
+          "entrustTypeTab/index.tsx",
+          "direction/index.tsx",
+          "mode/index.tsx"
+        ]
+      }
+    ],
+    "trade-futures-orderform": [
+      {
+        "date": "2026-04-07",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": [
+          "index.tsx",
+          "formSection/index.tsx",
+          "formSectionCoinBased/index.tsx",
+          "openPosition/index.tsx",
+          "closePosition/index.tsx",
+          "entrustTypeTab/index.tsx",
+          "mode/index.tsx",
+          "percentPreview/index.tsx",
+          "tradeType/index.tsx"
+        ]
+      }
+    ],
+    "trade-futures-orderform-mobile": [
+      {
+        "date": "2026-04-07",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": [
+          "order/index.tsx",
+          "order/orderForm/index.tsx",
+          "order/orderForm/helper.ts",
+          "limitForm/index.tsx",
+          "marketForm/index.tsx",
+          "usePostOrder.ts",
+          "TakeProfitStopLoss.tsx",
+          "TradeButton.tsx",
+          "LeverageModal.tsx",
+          "MarginMode.tsx"
+        ]
+      }
+    ],
+    "trade-orderbook": [
+      {
+        "date": "2026-04-09",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": [
+          "spot/orderBook/index.tsx",
+          "spot/orderBook/orderRow/index.tsx",
+          "spot/orderBook/NewTooltip/index.tsx",
+          "spot/orderBook/LayoutSelector.tsx",
+          "spot/orderBook/DepthSelector.tsx",
+          "spot/orderBook/CoinSelector.tsx",
+          "futures/orderBook/index.tsx",
+          "futures/components/orderRow/index.tsx",
+          "futures/orderBook/tooltip/index.tsx"
+        ]
+      }
+    ],
+    "trade-market-switch": [
+      {
+        "date": "2026-04-09",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": [
+          "switch/symbol/index.tsx",
+          "switch/market/index.tsx",
+          "switch/market/useColumns.tsx",
+          "switch/market/marketCategory.ts",
+          "switch/ticker/FuturesTicker.tsx",
+          "switch/ticker/FundingCountDown.tsx",
+          "switch/symbol/LatestPrice.tsx",
+          "priceRate/index.tsx"
+        ]
+      }
+    ],
+    "trade-steprate": [
+      {
+        "date": "2026-04-09",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": [
+          "index.tsx",
+          "config.ts",
+          "user-level/index.tsx",
+          "Special.tsx",
+          "TradeModal.tsx",
+          "rate-table/index.tsx",
+          "level-description/index.tsx",
+          "apply-pro-rate/index.tsx",
+          "ApplyModal.tsx",
+          "super-partner/index.tsx",
+          "stepRate.ts"
+        ]
+      }
+    ]
+  }
+}

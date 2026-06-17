@@ -1,0 +1,71 @@
+{
+  "meta": {
+    "version": "2.5",
+    "project": "sodex-admin",
+    "lastUpdated": "2026-04-16T00:00:00Z",
+    "totalFeatures": 0,
+    "totalModules": 9,
+    "structureType": "module-based",
+    "indexes": {
+      "files": "indexes/files.json",
+      "tags": "indexes/tags.json"
+    }
+  },
+  "modules": [
+    {
+      "name": "announcement",
+      "description": "公告管理（CRUD + 发布/撤回），复用共享消息基础设施",
+      "paths": ["internal/handler/announcement/", "internal/logic/message/"],
+      "tags": ["announcement", "message", "publish", "revoke"]
+    },
+    {
+      "name": "notification",
+      "description": "站内信管理，与公告共享消息表",
+      "paths": ["internal/handler/notification/", "internal/logic/message/"],
+      "tags": ["notification", "message", "csv"]
+    },
+    {
+      "name": "banner",
+      "description": "Banner 横幅广告管理，URL 白名单验证",
+      "paths": ["internal/handler/banner/", "internal/logic/banner/"],
+      "tags": ["banner", "url-whitelist"]
+    },
+    {
+      "name": "risk-control",
+      "description": "风控管理（代币、用户风险等级）",
+      "paths": ["internal/handler/riskcontrol/", "internal/logic/riskcontrol/"],
+      "tags": ["risk-control", "token", "user-risk"]
+    },
+    {
+      "name": "symbol-config",
+      "description": "交易对配置管理",
+      "paths": ["internal/handler/symbolconfig/", "internal/logic/symbolconfig/"],
+      "tags": ["symbol", "config", "trading-pair"]
+    },
+    {
+      "name": "auth",
+      "description": "认证模块（Lark OAuth + JWT）",
+      "paths": ["internal/handler/auth/", "internal/logic/auth/"],
+      "tags": ["auth", "lark", "jwt", "oauth"]
+    },
+    {
+      "name": "user",
+      "description": "管理员用户 CRUD",
+      "paths": ["internal/handler/user/", "internal/logic/user/"],
+      "tags": ["user", "admin"]
+    },
+    {
+      "name": "role",
+      "description": "角色管理与权限关联",
+      "paths": ["internal/handler/role/", "internal/logic/role/"],
+      "tags": ["role", "rbac", "permission"]
+    },
+    {
+      "name": "permission",
+      "description": "权限定义与 RBAC 控制",
+      "paths": ["internal/handler/permission/", "internal/logic/permission/"],
+      "tags": ["permission", "rbac"]
+    }
+  ],
+  "recentQueue": []
+}

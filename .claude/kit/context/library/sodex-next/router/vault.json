@@ -1,0 +1,1434 @@
+{
+  "module": {
+    "id": "vault",
+    "name": "Vault",
+    "emoji": "🏦",
+    "description": "Vault SLP 流动性提供模块：deposit/withdraw/unstake/claim 4 个核心操作及通知/数据刷新基础设施"
+  },
+  "features": {
+    "vault-notification": {
+      "id": "vault-notification",
+      "module": "vault",
+      "type": "feature",
+      "title": "Vault 通知与数据刷新（Vault Notification & Data Refresh）",
+      "summary": "Vault 4 个操作（deposit/withdraw/unstake/claim）的统一 toast 通知 + 数据刷新机制。WS 推送驱动（sodex_deposit/sodex_withdraw/sodex_call_for type=1/2）+ DecompressionStream gzip 自动识别 + 17 query key 统一 invalidate（mutation 3/5/9s 兜底 + WS Success 单次刷）+ 4 set dedupe + 业务专有错误码（CALL_FOR_*→CLAIM_*/UNSTAKE_*/WITHDRAW_REDEEM_*）+ 静默 USER_REJECTED + claim success 不带金额（call_for type=2 inAmount=0 设计）。",
+      "quickRef": {
+        "entryPoint": "src/features/trade/containers/useDepositNotice.ts",
+        "viewModelPath": "src/features/trade/containers/useDepositNotice.ts",
+        "coreLogic": [
+          "useDepositNotice(): App 顶层挂载(App.tsx:138);订阅 WS sodex_deposit/sodex_withdraw/sodex_call_for + 监听 store lastEvent / lastCallForEvent → 弹 toast + invalidateVaultMutationQueries(useDepositNotice.ts:37-176)",
+          "notifyVaultDepositCompleted(amount, symbolDisplay): 关闭残留 pending + 弹 success `Deposited X MAG7.ssi into vault`,由 useSubmitVaultDeposit.onSuccess 调用(useDepositNotice.ts:190-196)",
+          "notifyVaultWithdrawSuccess(amount, coinSymbol): 关闭 pending + 弹 `Withdraw X.XX coin successfully.` (formatAmount2 ROUND_DOWN 2 位);sMAG7 mutation + WS sodex_call_for type=1 共用(useDepositNotice.ts:215-223)",
+          "notifyVaultClaimSuccess(): 无参数,固定文案 `Claimed successfully`(call_for type=2 record inAmount=0/inCoinSymbol=sMAG7 不能直显)(useDepositNotice.ts:234-237)",
+          "invalidateVaultMutationQueries(qc, address): 17 个 query key 失效(vault.* 9 + 列表 2 + 全局 4 + wagmi readContracts/readContract 2)(invalidateVaultMutationQueries.ts)",
+          "depositNoticeWs.inflateToString: magic-byte 自动识别 1f8b→gzip / 78??→zlib / else→raw deflate,DecompressionStream API 无 pako 依赖(depositNoticeWs.ts:71)",
+          "vaultClaimService.catch: CALL_FOR_FAILED→CLAIM_FAILED / CALL_FOR_TIMEOUT→CLAIM_TIMEOUT(vaultClaimService.ts:82-99);unstake/withdraw service 同模式"
+        ],
+        "usagePattern": "// vault feature 调用 trade helper\nimport { notifyVaultDepositCompleted, notifyVaultWithdrawSuccess, notifyVaultClaimSuccess } from '@/features/trade';\n\n// useSubmitVaultDeposit.onSuccess\nnotifyVaultDepositCompleted(input.amount, input.token.symbolDisplay);\nsetTimeout(() => invalidateVaultMutationQueries(qc, address), 3000);\nsetTimeout(() => invalidateVaultMutationQueries(qc, address), 5000);\nsetTimeout(() => invalidateVaultMutationQueries(qc, address), 9000);\n\n// useSubmitVaultWithdraw.onSuccess(sMAG7 路径独有)\nif (params.token === 'sMAG7') notifyVaultWithdrawSuccess(params.amount, 'sMAG7.ssi');\n// MAG7 路径不弹,等 WS sodex_call_for type=1 Success",
+        "keyFiles": [
+          "src/shared/infra/ws/depositNoticeWs.ts",
+          "src/features/trade/services/depositNoticeDataService.ts",
+          "src/features/trade/stores/depositNoticeStore.ts",
+          "src/features/trade/containers/useDepositNotice.ts",
+          "src/features/trade/index.ts",
+          "src/features/vault/containers/useSubmitVaultDeposit.ts",
+          "src/features/vault/containers/useSubmitVaultWithdraw.ts",
+          "src/features/vault/containers/useSubmitVaultUnstake.ts",
+          "src/features/vault/containers/useSubmitVaultClaim.ts",
+          "src/features/vault/containers/handleDepositServiceError.ts",
+          "src/features/vault/containers/handleWithdrawServiceError.ts",
+          "src/features/vault/containers/handleUnstakeServiceError.ts",
+          "src/features/vault/containers/handleClaimServiceError.ts",
+          "src/features/vault/services/vaultClaimService.ts",
+          "src/features/vault/services/vaultUnstakeService.ts",
+          "src/features/vault/services/vaultWithdrawService.ts",
+          "src/features/vault/services/mapInfraError.ts",
+          "src/features/vault/domain/types.ts",
+          "src/shared/utils/invalidateVaultMutationQueries.ts",
+          "src/shared/queryKeys/index.ts",
+          "src/shared/infra/notify/index.ts",
+          "src/App.tsx"
+        ],
+        "relatedConcepts": [
+          "websocket-stream",
+          "react-query-invalidate",
+          "decompression-stream",
+          "zustand-dedupe",
+          "discriminated-union-error",
+          "call-for-permit",
+          "toast-lifecycle",
+          "service-error-mapping"
+        ],
+        "keyComponents": [
+          "src/features/trade/containers/useDepositNotice.ts — App 顶层挂载,订阅 WS + 弹 toast + invalidate",
+          "src/features/trade/services/depositNoticeDataService.ts — Stream Service refCount 单例,3 个事件订阅",
+          "src/features/trade/stores/depositNoticeStore.ts — lastEvent/lastCallForEvent + 4 个 dedupe Set",
+          "src/shared/infra/ws/depositNoticeWs.ts — DecompressionStream gzip/zlib/raw deflate 自动识别",
+          "src/shared/utils/invalidateVaultMutationQueries.ts — 17 query key 统一失效 helper",
+          "src/features/vault/containers/useSubmitVault{Deposit,Withdraw,Unstake,Claim}.ts — 4 个 mutation hook,onSuccess 调 helper + 3 次延迟 invalidate",
+          "src/features/vault/containers/handle{Deposit,Withdraw,Unstake,Claim}ServiceError.ts — error.kind → toast 文案映射"
+        ],
+        "wsEventMatrix": [
+          {
+            "event": "sodex_deposit Pending",
+            "toast": "5 MAG7.ssi deposit pending",
+            "lifecycle": "autoClose: false",
+            "dedupe": "recordId(txHash)"
+          },
+          {
+            "event": "sodex_deposit Success",
+            "toast": "Deposit 5 MAG7.ssi successfully",
+            "lifecycle": "autoClose: 4s",
+            "dedupe": "需先 markPendingNotified"
+          },
+          {
+            "event": "sodex_call_for type=1 Pending",
+            "toast": "Withdrawing in progress...",
+            "lifecycle": "autoClose: false",
+            "dedupe": "callForId"
+          },
+          {
+            "event": "sodex_call_for type=1 Success",
+            "toast": "Withdraw X.XX sMAG7.ssi successfully.",
+            "lifecycle": "autoClose: 4s",
+            "dedupe": "需先 markCallForPendingNotified"
+          },
+          {
+            "event": "sodex_call_for type=2 Pending",
+            "toast": "Claiming in progress...",
+            "lifecycle": "autoClose: false",
+            "dedupe": "callForId"
+          },
+          {
+            "event": "sodex_call_for type=2 Success",
+            "toast": "Claimed successfully(无金额)",
+            "lifecycle": "autoClose: 4s",
+            "dedupe": "同上;不复用 withdraw helper"
+          },
+          {
+            "event": "sodex_call_for type=1/2 Failed",
+            "toast": "Withdraw failed / Claim failed",
+            "lifecycle": "autoClose 默认",
+            "dedupe": "标记 success Set 防重弹"
+          }
+        ],
+        "invalidateScope": {
+          "userLevel": [
+            "vault.mag7Balance",
+            "vault.investInfo",
+            "vault.cooldown",
+            "vault.slpBalance",
+            "vault.hasMyActivity",
+            "chain.evmBalances",
+            "spot.accountState",
+            "[vault, roi, user]",
+            "[vault, chartData]"
+          ],
+          "lists": [
+            "[vault, activity] 前缀",
+            "[vault, myActivity] 前缀"
+          ],
+          "global": [
+            "[vault, investInfo, global]",
+            "[vault, roi, global]",
+            "[vault, nav, global]",
+            "[vault, navCurve] 前缀",
+            "[vault, depositors] 前缀"
+          ],
+          "wagmi": [
+            "[readContracts] 前缀",
+            "[readContract] 前缀"
+          ],
+          "delayPattern": "mutation onSuccess: setTimeout 3s/5s/9s; WS sodex_call_for Success: 单次"
+        },
+        "errorKindMatrix": {
+          "common": [
+            "USER_REJECTED(静默)",
+            "NETWORK_ERROR",
+            "CHAIN_MISMATCH",
+            "UNKNOWN"
+          ],
+          "callFor通用": [
+            "CALL_FOR_FAILED",
+            "CALL_FOR_TIMEOUT (mapInfraError 输出)"
+          ],
+          "claim专有": [
+            "CLAIM_FAILED",
+            "CLAIM_TIMEOUT (vaultClaimService.catch 转换)"
+          ],
+          "unstake专有": [
+            "UNSTAKE_FAILED",
+            "UNSTAKE_TIMEOUT"
+          ],
+          "withdraw专有": [
+            "WITHDRAW_APPROVE_FAILED",
+            "WITHDRAW_REDEEM_FAILED",
+            "WITHDRAW_REDEEM_TIMEOUT",
+            "WITHDRAW_REDEEM_EVENT_MISSING"
+          ],
+          "shared": [
+            "TRANSFER_FAILED",
+            "EVM_BALANCE_TIMEOUT"
+          ],
+          "deposit专有": [
+            "DEPOSIT_AMOUNT_ZERO",
+            "DEPOSIT_INSUFFICIENT_GAS",
+            "DEPOSIT_APPROVE_FAILED",
+            "DEPOSIT_BRIDGE_FAILED",
+            "DEPOSIT_BRIDGE_TIMEOUT",
+            "DEPOSIT_PERMIT_FAILED",
+            "DEPOSIT_CONFIRM_FAILED",
+            "DEPOSIT_CONFIRM_TIMEOUT",
+            "ENABLE_TRADING_TIMEOUT"
+          ]
+        },
+        "sideEffects": {
+          "emits": [
+            "notify.loading/success/error/warning toast",
+            "closeNotify"
+          ],
+          "invalidates": [
+            "17 query keys via invalidateVaultMutationQueries"
+          ],
+          "writes": [
+            "depositNoticeStore lastEvent / lastCallForEvent / 4 dedupe Sets"
+          ]
+        },
+        "relatedFeatures": [
+          "vault-deposit / vault-withdraw / vault-unstake / vault-claim mutation hooks",
+          "trade.useSubmitTransfer (smart-transfer 自带 toast)",
+          "auth.exchangeAccountId (deposit 完成后首次链上 accountId 检测)",
+          "spot.accountUpdate WS (Spot 余额自动刷新)"
+        ],
+        "pitfalls": [
+          "WS pending autoClose:false 必须由后续 closeNotify 关闭,设计上 sodex_deposit 有两条独立路径(WS Success + vault completion)兜底防永挂",
+          "claim success 不能用 inAmount/inCoinSymbol — type=2 record inAmount=0 / inCoinSymbol=sMAG7(call_for 视角),会误导用户领到的 MAG7 数量",
+          "mapInfraErrorToServiceError 输出通用 CALL_FOR_*,Service 层 catch 内必须转为业务专有 kind(避免 unstake 流程暴露 CLAIM_TIMEOUT)",
+          "wagmi useReadContracts/useReadContract 的 React Query key 不会自动失效,必须 invalidate `[\"readContracts\"]` / `[\"readContract\"]` 前缀刷",
+          "服务端可能重复推送 sodex_call_for Success 4+ 次,dedupe 4 个 Set 保证只弹一次",
+          "withdraw sMAG7 路径无 WS 推送,mutation onSuccess 必须主动弹 toast — 唯一 vault feature 主动起 success toast 的入口",
+          "WS 解压必须按 magic byte 路由(1f8b/78xx/else),老项目 pako auto-detect 兼容,新项目 DecompressionStream 必须显式分支",
+          "useDepositNotice 必须在 App 顶层挂载一次(App.tsx:138),不能多组件 mount(refCount 单例保证)"
+        ]
+      },
+      "referencePath": "reference/vault/vault-notification-guide.md",
+      "sections": [
+        {
+          "title": "1. 业务语义：四种操作的\"完成\"含义",
+          "summary": "deposit/withdraw-sMAG7 链上即时,withdraw-MAG7/unstake/claim 等 WS sodex_call_for",
+          "lineRange": [
+            11,
+            27
+          ],
+          "estimatedTokens": 255
+        },
+        {
+          "title": "2. 架构总览",
+          "summary": "WS→ws/depositNoticeWs→service→store→useDepositNotice→vault hooks 调 helper",
+          "lineRange": [
+            28,
+            86
+          ],
+          "estimatedTokens": 885
+        },
+        {
+          "title": "3. WS 客户端实现",
+          "summary": "DecompressionStream + magic byte 1f8b/78xx/else 路由 + refCount 单例",
+          "lineRange": [
+            87,
+            128
+          ],
+          "estimatedTokens": 630
+        },
+        {
+          "title": "4. Toast 阶段映射（4 个操作）",
+          "summary": "Deposit 单信号 + Withdraw sMAG7 mutation 主动 + MAG7/Unstake/Claim WS 双信号",
+          "lineRange": [
+            129,
+            220
+          ],
+          "estimatedTokens": 1380
+        },
+        {
+          "title": "5. Notify Helper 函数（trade feature 集中维护）",
+          "summary": "3 helper + formatAmount2 ROUND_DOWN 2 位,trade re-export 给 vault import",
+          "lineRange": [
+            221,
+            263
+          ],
+          "estimatedTokens": 645
+        },
+        {
+          "title": "6. Pending Toast 关闭机制（autoClose:false 防永挂）",
+          "summary": "deposit 双路径(WS Success / vault completion) + callFor 双路径(Success / Failed)",
+          "lineRange": [
+            264,
+            297
+          ],
+          "estimatedTokens": 510
+        },
+        {
+          "title": "7. 错误码体系与 toast 映射",
+          "summary": "VaultServiceError 全集 + mapInfraError CALL_FOR_*→各业务 *_FAILED/_TIMEOUT 转换",
+          "lineRange": [
+            298,
+            425
+          ],
+          "estimatedTokens": 1920
+        },
+        {
+          "title": "8. 数据刷新：invalidateVaultMutationQueries",
+          "summary": "17 query key + mutation 3/5/9s 兜底 + WS Success 单次 + wagmi 前缀失效",
+          "lineRange": [
+            426,
+            540
+          ],
+          "estimatedTokens": 1725
+        },
+        {
+          "title": "9. Dedupe 机制（depositNoticeStore）",
+          "summary": "4 Set 按 recordId/callForId 去重,孤弹防护要求先 markPendingNotified",
+          "lineRange": [
+            541,
+            564
+          ],
+          "estimatedTokens": 360
+        },
+        {
+          "title": "10. 设计原则总结",
+          "summary": "vault 不主动起 success toast(sMAG7 例外) + 文案集中 trade + 与老项目对照",
+          "lineRange": [
+            565,
+            616
+          ],
+          "estimatedTokens": 780
+        },
+        {
+          "title": "11. 涉及文件清单",
+          "summary": "trade(WS+helper)5 + vault(hooks+错误)13 + shared(invalidate+notify+queryKeys)3 + App 顶层 1",
+          "lineRange": [
+            617,
+            662
+          ],
+          "estimatedTokens": 690
+        },
+        {
+          "title": "12. 不在统一 helper 范围内的数据源",
+          "summary": "Spot 走 WS accountUpdate,Perps/wallet ETH 与 vault helper 无关",
+          "lineRange": [
+            663,
+            672
+          ],
+          "estimatedTokens": 150
+        },
+        {
+          "title": "13. 已知缺失（按需另做）",
+          "summary": "i18n / actionText:View / 引导弹窗 / 跨业务事件 / 细粒度错误文案 / 服务端 outAmount",
+          "lineRange": [
+            673,
+            685
+          ],
+          "estimatedTokens": 195
+        },
+        {
+          "title": "14. 验证手册",
+          "summary": "5 操作 toast + 数据刷新对照表 + 异常路径(拒签/revert/超时/网络/链不匹配)",
+          "lineRange": [
+            686,
+            702
+          ],
+          "estimatedTokens": 255
+        }
+      ],
+      "tags": [
+        "vault",
+        "notification",
+        "toast",
+        "websocket",
+        "react-query",
+        "invalidate",
+        "decompression",
+        "call-for-permit",
+        "deposit",
+        "withdraw",
+        "unstake",
+        "claim",
+        "error-handling",
+        "zustand",
+        "dedupe",
+        "gzip",
+        "trade",
+        "sodex-call-for"
+      ],
+      "created": "2026-04-30",
+      "updated": "2026-04-30",
+      "lastVerified": "2026-04-30"
+    },
+    "vault-unstake": {
+      "id": "vault-unstake",
+      "module": "vault",
+      "type": "feature",
+      "title": "Vault Unstake 完整流程",
+      "summary": "Vault SLP 独立 Unstake 入口:用户把 EVM-Funding(或 Spot 兜底)的 sMAG7.ssi 转回 MAG7.ssi 进入 14 天 cooldown。Smart-transfer 在 Container 编排(boundaries 限制) + Service 走 CallForPermit(callForType=1, toClob=false)+ catch 内 CALL_FOR_*→UNSTAKE_* 转换 + signer 锁防钱包切换 + 4.5s 轮询 EVM 余额(500/1000/3000ms)+ onSuccess 不弹 toast(等 WS sodex_call_for type=1)+ 3 次延迟 invalidate(3s/5s/9s)+ 老用户 apiKey 失效独立 Enable Unstake 按钮(embedded mode 不叠 AuthStepsModal)。",
+      "discovery_cost": "~9000 tokens(代码 ~6500 + 分析写作 ~2500)",
+      "quickRef": {
+        "entryPoint": "src/features/vault/components/dialogs/VaultUnstakeDialog/index.tsx",
+        "viewModelPath": "src/features/vault/containers/useSubmitVaultUnstake.ts",
+        "coreLogic": [
+          "useSubmitVaultUnstake(): mutation 编排(onMutate 锁 signer + smart-transfer + executeUnstakePermit + onSuccess 3 次延迟 invalidate + onError 调 handler);返回 { submit, isSubmitting, isAwaitingWalletSignature, error, reset }(useSubmitVaultUnstake.ts:33-162)",
+          "executeUnstakePermit(capability, input): Service 5 步链路(getClaimNonce → buildUnstakeCmd/typedData → signCallForPermit → onSigned() → postCallForPermit → waitForClaimReceipt);catch 内 CALL_FOR_FAILED→UNSTAKE_FAILED / CALL_FOR_TIMEOUT→UNSTAKE_TIMEOUT(vaultUnstakeService.ts:42-98)",
+          "waitForEvmSmag7Balance({ walletAddress, targetAmount }): 4 次读取 t=0/0.5/1.5/4.5s,readContract balanceOf 精度 8;超时抛 TX_TIMEOUT → service catch 转 EVM_BALANCE_TIMEOUT(vaultUnstakeInfra.ts:37-57)",
+          "buildUnstakeCmd(amount): EIP-712 cmd { chain:BASE_ETH, callForType:1, toClob:false, inCoinSymbol:vsMAG7, outCoinSymbol:vMAG7, inAmount:parseUnits(amount,8), minOutAmount:0 };与 claim 差异 callForType=1+toClob=false(unstakePermit.ts:28-38)",
+          "useVaultUnstakeForm({ max }): 表单 state + helperText + isValid;最低金额 5 sMAG7.ssi 模块内常量(useVaultUnstakeForm.ts:12-60)",
+          "deriveUnstakeButtonState({ amount, min, max, isSubmitting }): 纯函数返回 { isSubmitting, disabled, helperText };与 claimFlowLogic 几乎相同(unstakeFlowLogic.ts:11-26)",
+          "handleUnstakeServiceError(error): error.kind→toast 映射(USER_REJECTED 静默 / TRANSFER_FAILED+UNSTAKE_FAILED notify.error / EVM_BALANCE_TIMEOUT+UNSTAKE_TIMEOUT notify.warning / 其他兜底 default)(handleUnstakeServiceError.ts:6-68)"
+        ],
+        "usagePattern": "// 入口(vault SLP 区域 / VaultStats)\nimport { openVaultUnstakeDialog } from '@/features/vault';\nawait openVaultUnstakeDialog();\n// → 弹窗内 form.submit({ amount }) 自动走 smart-transfer + CallForPermit\n// → onSuccess 不弹 toast,等 WS sodex_call_for type=1\n// → onError 由 handleUnstakeServiceError 弹 toast",
+        "keyFiles": [
+          "src/features/vault/components/dialogs/VaultUnstakeDialog/index.tsx",
+          "src/features/vault/components/dialogs/VaultUnstakeDialog/VaultUnstakeButton.tsx",
+          "src/features/vault/components/dialogs/VaultUnstakeDialog/VaultUnstakeSkeleton.tsx",
+          "src/features/vault/containers/useSubmitVaultUnstake.ts",
+          "src/features/vault/containers/useVaultUnstakeForm.ts",
+          "src/features/vault/containers/handleUnstakeServiceError.ts",
+          "src/features/vault/containers/unstakeFlowLogic.ts",
+          "src/features/vault/services/vaultUnstakeService.ts",
+          "src/features/vault/infra/chain/vaultUnstakeInfra.ts",
+          "src/features/vault/domain/unstakePermit.ts"
+        ],
+        "relatedConcepts": [
+          "call-for-permit",
+          "smart-transfer",
+          "cooldown",
+          "signer-lock",
+          "service-error-mapping",
+          "websocket-driven-toast",
+          "privy-embedded-wallet",
+          "boundaries-rule"
+        ],
+        "keyComponents": [
+          "src/features/vault/components/dialogs/VaultUnstakeDialog/index.tsx — UI 主入口 + opener(openVaultUnstakeDialog)",
+          "src/features/vault/components/dialogs/VaultUnstakeDialog/VaultUnstakeButton.tsx — 3 态按钮(等签名/提交中/默认)",
+          "src/features/vault/containers/useSubmitVaultUnstake.ts — mutation 编排(smart-transfer + CallForPermit)",
+          "src/features/vault/containers/useVaultUnstakeForm.ts — 表单 state + helperText + isValid",
+          "src/features/vault/services/vaultUnstakeService.ts — executeUnstakePermit(catch CALL_FOR_*→UNSTAKE_*)",
+          "src/features/vault/infra/chain/vaultUnstakeInfra.ts — waitForEvmSmag7Balance(4.5s 轮询)",
+          "src/features/vault/domain/unstakePermit.ts — EIP-712 typed data + cmd encode"
+        ],
+        "errorKinds": [
+          "USER_REJECTED(钱包拒签,静默)",
+          "TRANSFER_FAILED(smart-transfer 失败)",
+          "EVM_BALANCE_TIMEOUT(4.5s 余额未到账)",
+          "UNSTAKE_FAILED(链上 revert,catch 转换)",
+          "UNSTAKE_TIMEOUT(receipt 等待超时,catch 转换)",
+          "NETWORK_ERROR(通用网络错误)",
+          "CHAIN_MISMATCH(通用链不匹配)"
+        ],
+        "uiStates": [
+          "isAwaitingWalletSignature: vault 自身签名节点(apiKey/unstake permit)等签名中 → 按钮文案 walletAction",
+          "state.isSubmitting: 链上等待 / smart-transfer 中 → 按钮 'Submitting...'",
+          "needsStandaloneEnable: 老用户 apiKey 失效 → 独立 Enable Unstake 按钮(embedded mode)",
+          "isAccountIdProbing: 账户探测中 → 乐观视为老用户防 flash",
+          "isWatching: admin 观察其他账户 → 关闭 Enable 分支显示默认 Unstake"
+        ],
+        "callForCmdShape": {
+          "chain": "BASE_ETH",
+          "callForType": "UNSTAKE_CALL_FOR_TYPE = 1",
+          "inCoinSymbol": "vsMAG7.ssi(standardizeMag7Symbol(sMAG7))",
+          "outCoinSymbol": "vMAG7.ssi",
+          "inAmount": "parseUnits(amount, VAULT_TOKEN_DECIMAL=8)",
+          "minOutAmount": "0",
+          "toClob": "false(unstake 进 cooldown,不直达 spot)"
+        },
+        "sideEffects": {
+          "emits": [
+            "notify.error/warning toast(本地错误)"
+          ],
+          "invalidates": [
+            "mutation onSuccess: 3 次延迟 invalidateVaultMutationQueries(3s/5s/9s)"
+          ],
+          "writes": [
+            "链上 CallForPermit 提交 → 服务端启 14-day cooldown"
+          ]
+        },
+        "relatedFeatures": [
+          "vault-notification(WS sodex_call_for type=1 toast + 数据刷新 helper)",
+          "vault-claim(同样走 CallForPermit,callForType=2/toClob=true,共享 infra/domain)",
+          "vault-withdraw(MAG7 路径内嵌 unstake 步骤,共享 sodex_call_for type=1 推送通道)",
+          "trade.useSubmitTransfer(smart-transfer 子流程)",
+          "auth.useEnableTrading(老用户 Enable Unstake 走 embedded mode)"
+        ],
+        "pitfalls": [
+          "Smart-transfer 必须放 Container,不能在 Service(boundaries 硬规则禁跨 feature service import)",
+          "service catch 内 CALL_FOR_*→UNSTAKE_* 转换不能省,否则 unstake 流程会暴露 CLAIM_TIMEOUT 这种语义错位错误",
+          "isServiceError 白名单要包含 UNSTAKE_FAILED/UNSTAKE_TIMEOUT,否则 service 内已抛过的错误会被二次 map",
+          "address 用 useAuthState() 而非 useAccount() — Privy 邮箱用户的 embedded wallet 不一定立刻进 wagmi",
+          "isAccountIdProbing 期间乐观视为老用户(hasAccount = isAccountIdProbing || !!accountId),防 probe 完成时按钮 flash",
+          "watch 模式 isWatching=true 时 admin apiKey 与被观察账户不匹配,关闭 Enable Unstake 分支",
+          "EVM 余额轮询窗口 4.5s 写在 toast 文案里 — 改 RETRY_INTERVALS 时同步改 handleUnstakeServiceError 文案",
+          "VSMAG7_DECIMALS=8 在 infra 内硬编码 — 因为 boundaries 禁 infra import domain;若链上精度改变需同步 domain/constants 与 infra",
+          "onSuccess 不弹 toast — 链上 receipt confirm ≠ 真完成,服务端要启 14-day cooldown 才推 sodex_call_for type=1 Success",
+          "smart-transfer 阶段是 trade feature 的签名 UX(自带 toast),vault 的 isAwaitingWalletSignature 不覆盖此阶段"
+        ]
+      },
+      "referencePath": "reference/vault/vault-unstake-guide.md",
+      "sections": [
+        {
+          "title": "关联文档",
+          "summary": "Toast/数据刷新基础设施由 vault-notification 集中维护,本 feature 仅作为消费方;表格指向 vault-notification 9 个具体章节 + 2 份迁移 spec",
+          "lineRange": [
+            9,
+            29
+          ],
+          "estimatedTokens": 315
+        },
+        {
+          "title": "架构概览",
+          "summary": "Dialog→form→mutation→smart-transfer→CallForPermit→ws notify 完整 ASCII 图",
+          "lineRange": [
+            30,
+            109
+          ],
+          "estimatedTokens": 1200
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "6 个核心函数(useSubmitVaultUnstake/executeUnstakePermit/waitForEvmSmag7Balance/useVaultUnstakeForm/deriveUnstakeButtonState/handleUnstakeServiceError)签名 + 行号",
+          "lineRange": [
+            110,
+            232
+          ],
+          "estimatedTokens": 1845
+        },
+        {
+          "title": "关键实现",
+          "summary": "callForType=1 cmd 形态 + smart-transfer 边界 + signer 锁 + 两段 UI 状态 + 老用户 enable + Privy 兼容",
+          "lineRange": [
+            233,
+            354
+          ],
+          "estimatedTokens": 1830
+        },
+        {
+          "title": "文件结构",
+          "summary": "10 个源文件分组(dialog/container/service/infra/domain) + 复用 claim infra + 跨 feature public API",
+          "lineRange": [
+            355,
+            394
+          ],
+          "estimatedTokens": 600
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "6 项(boundaries / 错误码转换 / WS 驱动 / 延迟 invalidate / signer 锁 / 老用户 enable);WS toast 与本地错误 toast 的责任分层指向 vault-notification §4.3/§5/§6.2/§7.3",
+          "lineRange": [
+            395,
+            441
+          ],
+          "estimatedTokens": 705
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "新增错误码 / smart-transfer 触发 / 最低金额 / toast 文案 / 4.5s 窗口 / callForType 各项修改步骤;改 WS 文案前阅读 vault-notification §5",
+          "lineRange": [
+            442,
+            476
+          ],
+          "estimatedTokens": 525
+        },
+        {
+          "title": "数据更新对接",
+          "summary": "对接 invalidateVaultMutationQueries(详见 vault-notification §8) + unstake 流程对 17 query key 的具体影响表",
+          "lineRange": [
+            477,
+            503
+          ],
+          "estimatedTokens": 405
+        },
+        {
+          "title": "术语表",
+          "summary": "9 个术语(Smart-transfer / CallForPermit / cooldown / sodex_call_for type=1 / isAwaitingWalletSignature 等)",
+          "lineRange": [
+            504,
+            519
+          ],
+          "estimatedTokens": 240
+        },
+        {
+          "title": "更新记录",
+          "summary": "2026-04-30 初始版本(/k:context-learn 自动生成 + 人工补关联引用)",
+          "lineRange": [
+            520,
+            531
+          ],
+          "estimatedTokens": 180
+        }
+      ],
+      "tags": [
+        "vault",
+        "unstake",
+        "call-for-permit",
+        "smart-transfer",
+        "cooldown",
+        "signer-lock",
+        "service-error-mapping",
+        "websocket-driven-toast",
+        "react-query-invalidate",
+        "privy-embedded-wallet",
+        "boundaries-rule",
+        "eip-712",
+        "value-chain"
+      ],
+      "created": "2026-04-30",
+      "updated": "2026-04-30"
+    },
+    "vault-claim": {
+      "id": "vault-claim",
+      "module": "vault",
+      "type": "feature",
+      "title": "Vault Claim 完整流程",
+      "summary": "Vault SLP cooldown 期满后的兑现入口:用户把 cooldown 中的 sMAG7.ssi 凭证兑现为 MAG7.ssi 直达 Spot 账户。无 smart-transfer(cooldown 资产服务端管理)+ Service 走 CallForPermit(callForType=2, toClob=true, inAmount=0/minOutAmount=parseUnits)+ catch 内 CALL_FOR_*→CLAIM_* 转换 + signer 锁 + onSuccess 不弹 toast(等 WS sodex_call_for type=2)+ 3 次延迟 invalidate(3s/5s/9s)+ 老用户 apiKey 失效独立 Enable Claim 按钮(embedded mode)。本 feature 的 vaultClaimInfra/claimPermit 是基础模块,被 unstake/withdraw service 复用。",
+      "discovery_cost": "~8500 tokens(代码 ~6000 + 分析写作 ~2500)",
+      "quickRef": {
+        "entryPoint": "src/features/vault/components/dialogs/VaultClaimDialog/index.tsx",
+        "viewModelPath": "src/features/vault/containers/useSubmitVaultClaim.ts",
+        "coreLogic": [
+          "useSubmitVaultClaim(): 单层 mutation 编排(onMutate 锁 signer + executeClaim + onSuccess 3 次延迟 invalidate + onError 调 handler);返回 { submit, isSubmitting, isAwaitingWalletSignature, error, reset }(useSubmitVaultClaim.ts:30-121)",
+          "executeClaim(capability, input): Service 5 步链路(getClaimNonce → buildClaimCmd/typedData → signCallForPermit → onSigned() → postCallForPermit → waitForClaimReceipt);catch 内 CALL_FOR_FAILED→CLAIM_FAILED / CALL_FOR_TIMEOUT→CLAIM_TIMEOUT(vaultClaimService.ts:39-102)",
+          "buildClaimCmd(amount): EIP-712 cmd { chain:BASE_ETH, callForType:2, toClob:true, inCoinSymbol:vsMAG7, outCoinSymbol:vMAG7, inAmount:0, minOutAmount:parseUnits(amount,8) };与 unstake 差异 callForType=2+toClob=true+inAmount=0(claimPermit.ts:70-80)",
+          "useVaultClaimForm({ max }): 表单 state + helperText + isValid;最低金额 CLAIM_MIN_AMOUNT='4'(domain 常量)(useVaultClaimForm.ts:15-63)",
+          "deriveClaimButtonState({ amount, min, max, isSubmitting }): 纯函数返回 { isSubmitting, disabled, helperText };与 unstakeFlowLogic 几乎相同(claimFlowLogic.ts:12-27)",
+          "handleClaimServiceError(error): error.kind→toast 映射(USER_REJECTED 静默 / CLAIM_FAILED notify.error / CLAIM_TIMEOUT notify.warning / 其他兜底 default)(handleClaimServiceError.ts:11-73)",
+          "vaultClaimInfra: getClaimNonce + signCallForPermit + waitForClaimReceipt(3 confirmations) — 基础设施,被 unstake/withdraw service 复用(vaultClaimInfra.ts)"
+        ],
+        "usagePattern": "// 入口(vault SLP 区域 / VaultStats)\nimport { openVaultClaimDialog } from '@/features/vault';\nawait openVaultClaimDialog();\n// → 弹窗内 form.submit({ amount }) 自动走 CallForPermit\n// → onSuccess 不弹 toast,等 WS sodex_call_for type=2\n// → onError 由 handleClaimServiceError 弹 toast",
+        "keyFiles": [
+          "src/features/vault/components/dialogs/VaultClaimDialog/index.tsx",
+          "src/features/vault/components/dialogs/VaultClaimDialog/VaultClaimButton.tsx",
+          "src/features/vault/components/dialogs/VaultClaimDialog/VaultClaimSkeleton.tsx",
+          "src/features/vault/containers/useSubmitVaultClaim.ts",
+          "src/features/vault/containers/useVaultClaimForm.ts",
+          "src/features/vault/containers/handleClaimServiceError.ts",
+          "src/features/vault/containers/claimFlowLogic.ts",
+          "src/features/vault/services/vaultClaimService.ts",
+          "src/features/vault/infra/chain/vaultClaimInfra.ts",
+          "src/features/vault/domain/claimPermit.ts"
+        ],
+        "relatedConcepts": [
+          "call-for-permit",
+          "cooldown",
+          "signer-lock",
+          "service-error-mapping",
+          "websocket-driven-toast",
+          "privy-embedded-wallet",
+          "boundaries-rule",
+          "infrastructure-feature"
+        ],
+        "keyComponents": [
+          "src/features/vault/components/dialogs/VaultClaimDialog/index.tsx — UI 主入口 + opener(openVaultClaimDialog)",
+          "src/features/vault/components/dialogs/VaultClaimDialog/VaultClaimButton.tsx — 3 态按钮(等签名/提交中/默认+helperText)",
+          "src/features/vault/containers/useSubmitVaultClaim.ts — 单层 mutation 编排(无 smart-transfer)",
+          "src/features/vault/containers/useVaultClaimForm.ts — 表单 state + helperText + isValid",
+          "src/features/vault/services/vaultClaimService.ts — executeClaim(catch CALL_FOR_*→CLAIM_*)",
+          "src/features/vault/infra/chain/vaultClaimInfra.ts — getClaimNonce + signCallForPermit + waitForClaimReceipt(基础设施,unstake/withdraw 复用)",
+          "src/features/vault/domain/claimPermit.ts — EIP-712 typed data + cmd encode + ClaimCmd/CallForPermitTypedData/RequestBody 类型(unstake 复用)"
+        ],
+        "errorKinds": [
+          "USER_REJECTED(钱包拒签,静默)",
+          "CLAIM_FAILED(链上 revert,catch 转换)",
+          "CLAIM_TIMEOUT(receipt 等待超时,catch 转换)",
+          "NETWORK_ERROR(通用网络错误)",
+          "CHAIN_MISMATCH(通用链不匹配)"
+        ],
+        "uiStates": [
+          "isAwaitingWalletSignature: vault 自身签名节点(apiKey/claim permit)等签名中 → 按钮文案 walletAction(WC 用户提示去手机端确认)",
+          "state.isSubmitting: 链上等待 → 按钮 'Submitting...'",
+          "needsStandaloneEnable: 老用户 apiKey 失效 → 独立 Enable Claim 按钮(embedded mode)",
+          "isAccountIdProbing: 账户探测中 → 乐观视为老用户防 flash",
+          "isWatching: admin 观察其他账户 → 关闭 Enable 分支显示默认 Claim",
+          "cooldown.isLoading: 显示 VaultClaimSkeleton 占位"
+        ],
+        "callForCmdShape": {
+          "chain": "BASE_ETH",
+          "callForType": "CLAIM_CALL_FOR_TYPE = 2",
+          "inCoinSymbol": "vsMAG7.ssi(standardizeMag7Symbol(sMAG7))",
+          "outCoinSymbol": "vMAG7.ssi",
+          "inAmount": "'0'(claim 输入固定 0,cooldown 凭证抵扣)",
+          "minOutAmount": "parseUnits(amount, VAULT_TOKEN_DECIMAL=8)(用户期望领到的最少 MAG7)",
+          "toClob": "true(直达 Spot,不进 cooldown)"
+        },
+        "sideEffects": {
+          "emits": [
+            "notify.error/warning toast(本地错误)"
+          ],
+          "invalidates": [
+            "mutation onSuccess: 3 次延迟 invalidateVaultMutationQueries(3s/5s/9s)"
+          ],
+          "writes": [
+            "链上 CallForPermit 提交 → 服务端把 MAG7 转入 Spot"
+          ]
+        },
+        "relatedFeatures": [
+          "vault-notification(WS sodex_call_for type=2 toast + 数据刷新 helper)",
+          "vault-unstake(对应 callForType=1,启动 cooldown;复用本 feature 的 infra/domain)",
+          "vault-withdraw(MAG7 路径含 unstake step,也复用本 feature 的 infra)",
+          "auth.useEnableTrading(老用户 Enable Claim 走 embedded mode)"
+        ],
+        "infrastructureProvider": [
+          "infra/chain/vaultClaimInfra.ts(getClaimNonce/signCallForPermit/waitForClaimReceipt) — unstake/withdraw service 复用",
+          "domain/claimPermit.ts 类型(ClaimCmd/CallForPermitRequestBody/CallForPermitTypedData) — unstake 复用"
+        ]
+      },
+      "referencePath": "reference/vault/vault-claim-guide.md",
+      "sections": [
+        {
+          "title": "关联文档",
+          "summary": "Toast/数据刷新基础设施由 vault-notification 集中维护;表格指向 §4.4(claim 双信号文案不带金额)/§5/§6.2/§7.2/§7.3/§8/§8.6/§9 + 2 份迁移 spec",
+          "lineRange": [
+            9,
+            30
+          ],
+          "estimatedTokens": 330
+        },
+        {
+          "title": "架构概览",
+          "summary": "Dialog→form→mutation→CallForPermit→ws notify ASCII 图(无 smart-transfer 单层结构)",
+          "lineRange": [
+            31,
+            106
+          ],
+          "estimatedTokens": 1140
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "5 个核心函数(useSubmitVaultClaim/executeClaim/useVaultClaimForm/deriveClaimButtonState/handleClaimServiceError)签名 + 行号 + claim 是基础设施说明",
+          "lineRange": [
+            107,
+            213
+          ],
+          "estimatedTokens": 1605
+        },
+        {
+          "title": "关键实现",
+          "summary": "callForType=2/toClob=true/inAmount=0 cmd 形态 + 与 unstake 差异对照表 + cooldown 数据源 + signer 锁 + 两段 UI 状态 + 老用户 enable + Fees 纯派生 + Privy 兼容",
+          "lineRange": [
+            214,
+            346
+          ],
+          "estimatedTokens": 1995
+        },
+        {
+          "title": "文件结构",
+          "summary": "9 个源文件分组 + claim 是基础设施被 unstake/withdraw 复用的边界说明 + 跨 feature public API",
+          "lineRange": [
+            347,
+            388
+          ],
+          "estimatedTokens": 630
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "6 项(无 smart-transfer / 错误码转换 / WS 驱动 + claim success 不带金额 / 延迟 invalidate / signer 锁 / 老用户 enable)",
+          "lineRange": [
+            389,
+            437
+          ],
+          "estimatedTokens": 735
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "新增错误码 / 最低金额 / toast 文案 / callForType / confirmations 各项修改步骤;改 WS 文案前阅读 vault-notification §5",
+          "lineRange": [
+            438,
+            468
+          ],
+          "estimatedTokens": 465
+        },
+        {
+          "title": "数据更新对接",
+          "summary": "对接 invalidateVaultMutationQueries(详见 vault-notification §8) + claim 流程对 17 query key 的具体影响表",
+          "lineRange": [
+            469,
+            495
+          ],
+          "estimatedTokens": 405
+        },
+        {
+          "title": "术语表",
+          "summary": "11 个术语(CallForPermit / cooldown / withdrawable / sodex_call_for type=2 / CLAIM_MIN_AMOUNT / CLAIM_CALL_FOR_TYPE 等)",
+          "lineRange": [
+            496,
+            513
+          ],
+          "estimatedTokens": 270
+        },
+        {
+          "title": "更新记录",
+          "summary": "2026-04-30 初始版本(/k:context-learn 自动生成 + 人工补关联引用)",
+          "lineRange": [
+            514,
+            525
+          ],
+          "estimatedTokens": 180
+        }
+      ],
+      "tags": [
+        "vault",
+        "claim",
+        "call-for-permit",
+        "cooldown",
+        "signer-lock",
+        "service-error-mapping",
+        "websocket-driven-toast",
+        "react-query-invalidate",
+        "privy-embedded-wallet",
+        "boundaries-rule",
+        "eip-712",
+        "value-chain",
+        "infrastructure-feature"
+      ],
+      "created": "2026-04-30",
+      "updated": "2026-04-30"
+    },
+    "vault-withdraw": {
+      "id": "vault-withdraw",
+      "module": "vault",
+      "type": "feature",
+      "title": "Vault Withdraw 完整流程(sMAG7/MAG7 两路分支)",
+      "summary": "Vault SLP 提取入口,用户用 sMAG7.SLP 凭证从 Vault 提取 MAG7.ssi 或 sMAG7.ssi。**两个 token 走完全不同代码分支**:sMAG7 路径单步 executeVaultRedeem(链上即时落账,mutation 主动弹 toast);MAG7 路径串联 executeVaultRedeem + executeUnstakePermit(进 14-day cooldown,等 WS sodex_call_for type=1)。两次签名(SLP ERC20 Permit + outer CallForPermit VaultRedeemWithPermit cmdType key=4)+ Redeem 事件解析 assetsBigInt 作 unstake 输入 + cooldown 二次确认走 Radix Dialog 不走 modalManager + WithdrawPhase 状态机驱动 Progress View 替换表单 + 7 个 share query 数据源(Max/NAV/preview/min/cooldown/cooldownSeconds)。",
+      "discovery_cost": "~13000 tokens(代码 ~10000 + 分析写作 ~3000)",
+      "quickRef": {
+        "entryPoint": "src/features/vault/components/dialogs/VaultWithdrawDialog/index.tsx",
+        "viewModelPath": "src/features/vault/containers/useSubmitVaultWithdraw.ts",
+        "coreLogic": [
+          "useSubmitVaultWithdraw(): 两路分支 mutation 编排;mutationFn 内 executeVaultRedeem → if sMAG7 return / else executeUnstakePermit;onSuccess sMAG7 主动弹 toast,MAG7 等 WS;返回 { submit, isSubmitting, isAwaitingWalletSignature, phase, error, reset }(useSubmitVaultWithdraw.ts:41-172)",
+          "executeVaultRedeem(capability, input): Service 5 步两次签名(SlpPermit→onSigned()→outer CallForPermit→postCallForPermit→waitAndParseRedeemAssets);onSigned 在第 1 次签完触发推进 phase 'approving'→'redeeming';catch CALL_FOR_FAILED→WITHDRAW_REDEEM_FAILED / TIMEOUT(vaultWithdrawService.ts:45-141)",
+          "waitAndParseRedeemAssets(txHash): 等 3 confirmations + 解析 Redeem 事件 topic 0x3f69... data 第 4 段 32 字节(slice 192-256)取 assetsBigInt(8 位精度);找不到事件抛 UNKNOWN(vaultWithdrawInfra.ts:209-254)",
+          "useVaultWithdrawForm({ max, min?, initialToken? }): 表单 state 含 token + 动态 min;onTokenChange 切换时自动 reset amount;helperText 文案'Minimum withdraw is ${min} sMAG7.SLP'(useVaultWithdrawForm.ts:13-83)",
+          "deriveWithdrawButtonState + computeWithdrawFee: 纯派生函数,fee = NAV * amount - previewRedeem(amount),≤0 兜底 '--'(withdrawFlowLogic.ts:7-77)",
+          "useVaultMinWithdrawAmountQuery(token): 按 token 切换 queryKey 重新读链上 callForMinAmounts(BASE_ETH, coinSymbol),staleTime 5min(useVaultMinWithdrawAmountQuery.ts)",
+          "handleWithdrawServiceError(error): error.kind→toast 映射(USER_REJECTED 静默 / WITHDRAW_REDEEM_* + UNSTAKE_* notify.error/warning / 兜底 default);UNSTAKE_FAILED 特定文案'sMAG7 is in your wallet. Retry from Unstake'(handleWithdrawServiceError.ts:6-80)"
+        ],
+        "usagePattern": "// 入口(VaultHeader)\nimport { openVaultWithdrawDialog } from '@/features/vault';\nawait openVaultWithdrawDialog();\n// → form.submit({ token: 'MAG7'|'sMAG7', amount, slpDecimals })\n// → MAG7+cooldown 弹 Confirmation Dialog 二次确认\n// → Step A executeVaultRedeem(2 次签名) → if sMAG7 done / else Step B executeUnstakePermit\n// → onSuccess: sMAG7 主动 notifyVaultWithdrawSuccess + 3 次延迟 invalidate\n//             MAG7 不弹,等 WS sodex_call_for type=1",
+        "keyFiles": [
+          "src/features/vault/components/dialogs/VaultWithdrawDialog/index.tsx",
+          "src/features/vault/components/dialogs/VaultWithdrawDialog/VaultWithdrawButton.tsx",
+          "src/features/vault/components/dialogs/VaultWithdrawDialog/VaultWithdrawCooldownBanner.tsx",
+          "src/features/vault/components/dialogs/VaultWithdrawDialog/VaultWithdrawProgressView.tsx",
+          "src/features/vault/components/dialogs/VaultWithdrawDialog/VaultWithdrawSkeleton.tsx",
+          "src/features/vault/containers/useSubmitVaultWithdraw.ts",
+          "src/features/vault/containers/useVaultWithdrawForm.ts",
+          "src/features/vault/containers/handleWithdrawServiceError.ts",
+          "src/features/vault/containers/withdrawFlowLogic.ts",
+          "src/features/vault/containers/shared/useSlpBalanceQuery.ts",
+          "src/features/vault/containers/shared/useVaultNavQuery.ts",
+          "src/features/vault/containers/shared/useVaultPreviewRedeemQuery.ts",
+          "src/features/vault/containers/shared/useVaultCooldownSecondsQuery.ts",
+          "src/features/vault/containers/shared/useVaultCooldown.ts",
+          "src/features/vault/containers/shared/useVaultMinWithdrawAmountQuery.ts",
+          "src/features/vault/services/vaultWithdrawService.ts",
+          "src/features/vault/services/vaultUnstakeService.ts",
+          "src/features/vault/infra/chain/vaultWithdrawInfra.ts",
+          "src/features/vault/domain/withdrawPermit.ts"
+        ],
+        "relatedConcepts": [
+          "two-step-signing",
+          "cross-service-orchestration",
+          "call-for-permit",
+          "erc20-permit",
+          "redeem-event-parsing",
+          "phase-state-machine",
+          "cooldown-confirmation",
+          "websocket-driven-toast",
+          "service-error-mapping"
+        ],
+        "keyComponents": [
+          "src/features/vault/components/dialogs/VaultWithdrawDialog/index.tsx — 384 行 UI 主入口 + opener + InfoRow/CoinSelectRow 内联子组件 + cooldown 二次确认 Radix Dialog",
+          "src/features/vault/components/dialogs/VaultWithdrawDialog/VaultWithdrawProgressView.tsx — 提交期间替换表单的进度视图(2 步 sMAG7 / 3 步 MAG7)",
+          "src/features/vault/components/dialogs/VaultWithdrawDialog/VaultWithdrawCooldownBanner.tsx — 顶部 cooldown 状态条(自定义橙色 spinner + 解锁时间)",
+          "src/features/vault/containers/useSubmitVaultWithdraw.ts — 跨 service 编排 mutation(vault → unstake)",
+          "src/features/vault/services/vaultWithdrawService.ts — executeVaultRedeem 两次签名 + Redeem 事件解析",
+          "src/features/vault/infra/chain/vaultWithdrawInfra.ts — SLP nonce/balance + NAV/preview/min/cooldown 链上读 + waitAndParseRedeemAssets",
+          "src/features/vault/domain/withdrawPermit.ts — SLP Permit + outer CallForPermit typed data + parseSignatureVrs"
+        ],
+        "branchDifferences": [
+          "sMAG7: 1 步 executeVaultRedeem,链上即时落账,mutation 主动弹 toast,2 步进度视图,无 Warning/ETA/二次确认",
+          "MAG7: 2 步 executeVaultRedeem + executeUnstakePermit,等 WS sodex_call_for type=1,3 步进度视图,显示 14-day Warning + ETA + cooldown 二次确认"
+        ],
+        "errorKinds": [
+          "USER_REJECTED(钱包拒签,静默)",
+          "WITHDRAW_APPROVE_FAILED(SLP Permit 失败)",
+          "WITHDRAW_REDEEM_FAILED(redeem 链上 revert,catch 转换)",
+          "WITHDRAW_REDEEM_TIMEOUT(receipt 等待超时,catch 转换)",
+          "WITHDRAW_REDEEM_EVENT_MISSING(Redeem 事件解析失败)",
+          "UNSTAKE_FAILED(MAG7 路径 Step B 失败,透传自 unstake service,特定文案'sMAG7 is in your wallet. Retry from Unstake')",
+          "UNSTAKE_TIMEOUT(MAG7 路径 Step B 超时)",
+          "NETWORK_ERROR / CHAIN_MISMATCH(通用)"
+        ],
+        "uiStates": [
+          "WithdrawPhase: idle | approving | redeeming | unstaking — 驱动 ProgressView currentStep",
+          "isAwaitingWalletSignature: 4 个签名节点(apiKey / SLP Permit / outer CallForPermit / unstake permit)",
+          "showCooldownBanner: cooldownPendingAmount > 0 || isCooldownActive 时顶部显示",
+          "shouldShowCooldownConfirm: MAG7 + cooldown 中 → 弹 Radix Confirmation Dialog",
+          "isSubmitting: true → 替换原表单为 VaultWithdrawProgressView",
+          "balance.isLoading || slpBalance.isLoading: 显示 VaultWithdrawSkeleton"
+        ],
+        "callForCmdShape": {
+          "cmdType": "VaultRedeemWithPermit(不是 CreateBridgeCallFor)",
+          "permitNonceKey": "key=4(VAULT_REDEEM_PERMIT_KEY,vs claim/unstake key=1)",
+          "innerSignature": "SLP ERC20 Permit (EIP-2612) → 拆 v/r/s",
+          "outerSignature": "CallForPermit 包裹 v/r/s + token/amount/permitDeadline",
+          "cmdData": "encodeAbiParameters(token,amount,deadline,v,r,s)",
+          "redeemEventTopic": "0x3f693fff038bb8a046aa76d9516190ac7444f7d69cf952c4cbdc086fdef2d6fc"
+        },
+        "sideEffects": {
+          "emits": [
+            "sMAG7 主动 notifyVaultWithdrawSuccess",
+            "notify.error/warning toast(本地错误)"
+          ],
+          "invalidates": [
+            "mutation onSuccess: 3 次延迟 invalidateVaultMutationQueries(3s/5s/9s)"
+          ],
+          "writes": [
+            "链上 redeem tx + (MAG7) unstake CallForPermit 提交"
+          ]
+        },
+        "relatedFeatures": [
+          "vault-notification(WS sodex_call_for type=1 toast + 数据刷新 helper + sMAG7/MAG7 双信号说明)",
+          "vault-unstake(MAG7 路径 Step B 直接调用其 service,errors 透传)",
+          "vault-claim(共享 vaultClaimInfra 的 signCallForPermit/waitForClaimReceipt)",
+          "auth.useConnection(wagmi 3.x address;dialog 用此而非 useAuthState)"
+        ],
+        "infrastructureDependencies": [
+          "infra/chain/vaultClaimInfra.ts(signCallForPermit + waitForClaimReceipt) — 跨 service 复用",
+          "services/vaultUnstakeService.ts(executeUnstakePermit) — MAG7 路径 Step B 调用",
+          "domain/claimPermit 类型(参考)"
+        ]
+      },
+      "referencePath": "reference/vault/vault-withdraw-guide.md",
+      "sections": [
+        {
+          "title": "关联文档",
+          "summary": "Toast/数据刷新基础设施由 vault-notification 集中维护;表格指向 §4.2(sMAG7 单信号)/§4.3(MAG7 双信号)/§5/§6.2/§7.2/§7.3/§8/§8.6 + 2 份迁移 spec",
+          "lineRange": [
+            7,
+            26
+          ],
+          "estimatedTokens": 345
+        },
+        {
+          "title": "核心分支差异:sMAG7 vs MAG7",
+          "summary": "12 维差异对照表(mutation 步骤/链上行为/真完成信号/Toast 来源/后续等待/Phase/签名次数/进度视图/Warning/ETA/二次确认)",
+          "lineRange": [
+            27,
+            45
+          ],
+          "estimatedTokens": 285
+        },
+        {
+          "title": "架构概览",
+          "summary": "Dialog→form→mutation→Step A executeVaultRedeem→分支(sMAG7 return / MAG7 Step B executeUnstakePermit)→ws notify ASCII 图",
+          "lineRange": [
+            46,
+            150
+          ],
+          "estimatedTokens": 1575
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "7 个核心函数(useSubmitVaultWithdraw 两路分支/executeVaultRedeem 两次签名/waitAndParseRedeemAssets 事件解析/useVaultWithdrawForm token 切换/computeWithdrawFee/useVaultMinWithdrawAmountQuery/handleWithdrawServiceError)签名 + 行号",
+          "lineRange": [
+            151,
+            331
+          ],
+          "estimatedTokens": 2715
+        },
+        {
+          "title": "关键实现",
+          "summary": "8 个关键设计(两次签名 onSigned 时机 / token 切换动态 min / cooldown 二次确认走 Radix / Progress View 替换表单 / cooldown banner / 7 share query / signer 锁 useConnection 而非 useAuthState / 不实现 Enable Withdraw)",
+          "lineRange": [
+            332,
+            507
+          ],
+          "estimatedTokens": 2625
+        },
+        {
+          "title": "文件结构",
+          "summary": "19 个源文件分组(dialog 5 + container 4 + shared query 6 + service 1 + infra 1 + domain 1)+ 复用关系(vaultClaimInfra + vaultUnstakeService)+ 跨 feature public API",
+          "lineRange": [
+            508,
+            554
+          ],
+          "estimatedTokens": 705
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "8 项(两路分支 / 跨 service 编排 / 双重错误码 / sMAG7 主动弹 toast / Confirmation 走 Radix 不走 modalManager / onSigned 时机推进 phase / signer 锁 / 未实现 Enable Withdraw 已知差异)",
+          "lineRange": [
+            555,
+            616
+          ],
+          "estimatedTokens": 930
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "新增错误码 / 分支条件 / 最低金额 / 二次确认条件 / 进度视图步骤 / toast 文案 / onSigned 时机 / Redeem 事件解析 各项修改步骤",
+          "lineRange": [
+            617,
+            657
+          ],
+          "estimatedTokens": 600
+        },
+        {
+          "title": "数据更新对接",
+          "summary": "对接 invalidateVaultMutationQueries(详见 vault-notification §8) + sMAG7/MAG7 各自对 17 query key 的具体影响表",
+          "lineRange": [
+            658,
+            685
+          ],
+          "estimatedTokens": 405
+        },
+        {
+          "title": "术语表",
+          "summary": "13 个术语(VaultRedeemWithPermit / SLP Permit / sMAG7.SLP / vsMAG7.ssi / assetsBigInt / REDEEM_EVENT_TOPIC / VAULT_REDEEM_PERMIT_KEY / WithdrawPhase / WITHDRAW_MIN_AMOUNT / shouldShowCooldownConfirm / previewRedeem / onSigned 语义)",
+          "lineRange": [
+            686,
+            705
+          ],
+          "estimatedTokens": 300
+        },
+        {
+          "title": "更新记录",
+          "summary": "2026-04-30 初始版本(/k:context-learn 自动生成 + 人工补关联引用)",
+          "lineRange": [
+            706,
+            720
+          ],
+          "estimatedTokens": 225
+        }
+      ],
+      "tags": [
+        "vault",
+        "withdraw",
+        "two-step-signing",
+        "cross-service-orchestration",
+        "call-for-permit",
+        "erc20-permit",
+        "redeem-event-parsing",
+        "phase-state-machine",
+        "cooldown-confirmation",
+        "websocket-driven-toast",
+        "service-error-mapping",
+        "react-query-invalidate",
+        "boundaries-rule",
+        "eip-712",
+        "value-chain",
+        "nested-dialog"
+      ],
+      "created": "2026-04-30",
+      "updated": "2026-04-30"
+    },
+    "vault-deposit": {
+      "id": "vault-deposit",
+      "module": "vault",
+      "type": "feature",
+      "title": "Vault Deposit 完整流程(3 层 reducer + 跨阶段编排)",
+      "summary": "vault module **最复杂 feature**(~5870 行,11 个源文件)。3 层 reducer 状态机(top/base/value)+ effect driver 防重入(prevKindRef/unmounted/AbortController)+ 不建 Service 的 Container 直接编排架构 + 11 个 atomic infra + 跨 feature callback 桥接(trade.useSubmitTransfer / auth.waitForAccountReady+ensureExchangeCapability)+ 3 屏切换(idle/preview/trading)+ 双 ref 防 Auto-fill 误报 + RETRY 缓存复用签名 + isNewUser 锁定快照 + enable_trading 两阶段拆分(Phase1 静默 polling + Phase2 单次签名)+ CallForPermit to=SLP_TOKEN_ADDRESS(deposit 唯一与其他操作不同)。",
+      "discovery_cost": "~30000 tokens(代码 ~22000 + 分析写作 ~8000)",
+      "quickRef": {
+        "entryPoint": "src/features/vault/components/dialogs/VaultDepositDialog/index.tsx",
+        "viewModelPath": "src/features/vault/containers/useSubmitVaultDeposit.ts",
+        "coreLogic": [
+          "useSubmitVaultDeposit(): 外层编排;持 useVaultDepositMachine(input, callbacks);提供 5 个 callbacks 桥接跨 feature(trade.useSubmitTransfer / auth.waitForAccountReady + ensureExchangeCapability / notifyVaultDepositCompleted / handleDepositServiceError);派生 isAwaitingWalletSignature(approving/confirm_signing);submit/retry/reset/showTryAgain;closeNotify 兜底防 WS pending 残留(useSubmitVaultDeposit.ts:43-291)",
+          "useVaultDepositMachine(input, callbacks): 3 个 useReducer(top/base/value)+ 3 个 effect driver + 6 个 useRef 防重入(prev*KindRef/isUnmountedRef/abortRef/resolvedBridgeAddrRef/approveSignatureRef/confirmPayloadRef);runBaseChainState 7 个 case + runValueChainState 7 个 case + runEnableTradingAsync;mapCauseToDepositError 按 state.kind 推断 error.kind(useVaultDepositMachine.ts:122-778)",
+          "topReducer/baseChainReducer/valueChainReducer: 3 层纯函数;TopState 6 kind / BaseChainState 9 kind / ValueChainState 9 kind;RETRY 缓存复用规则(Base 保留 approveTxHash 跳到 approve_completed / Value cache.approveSignature+approveDeadline 在 deadline 内复用签名跳到 approve_completed)(depositStateMachine.ts:46/166/362)",
+          "useVaultDepositForm({tradingStatus,isNewUser,defaultChain,defaultToken,defaultFrom}): 表单 state + 三路余额查询(Base wagmi useReadContract / Value spot 与 evm BalancesQuery)+ 双 ref 防 Auto-fill 误报(userHasEditedRef/hasUserInputtedRef);切 chain/token/from 自动 reset userHasEdited 触发 auto-fill(useVaultDepositForm.ts:84-323)",
+          "validateDepositAmount({amount,balance,minAmount,hasUserInputted,userHasEdited,isBalanceLoading}): 三重校验(空/min/max)+ 错误抑制规则(余额加载中 / hasUserInputted 控制 min 提示 / userHasEdited 控制 'Not enough' 提示);返回 {isValid,canSubmit,errorText?}(depositFlowLogic.ts:330-398)",
+          "decideValueChainConfig({chain,from,isStake}): chain=BASE_ETH → {needsTransfer:true,needsStake:false}(force SPOT);VALUE_CHAIN → {needsTransfer: from!=='EVM_FUNDING', needsStake:false};needsStake 恒 false(vault 内部处理 stake)(depositFlowLogic.ts:30-44)",
+          "buildVaultDepositCallForPermitTypedData({cmd,to,nonce,deadline,...}): EIP-712 typed data;cmdType=VaultDepositWithPermit2;to=SLP_TOKEN_ADDRESS(**deposit 唯一与其他操作不同**;claim/unstake/withdraw to=VAULT_CALLER_ADDRESS)(depositPermit.ts:147-186)",
+          "onEnableTradingCallback: 两阶段拆分;Phase 1 waitForAccountReady 静默 polling 链上 accountId(无 UI);Phase 2 ensureExchangeCapability single call(成功=已签/失败=USER_REJECTED);避免旧设计循环弹签名烦扰用户(useSubmitVaultDeposit.ts:100-143)",
+          "handleDepositServiceError(error): error.kind→toast 映射 13 case(USER_REJECTED→error 'Transaction Canceled' / DEPOSIT_*→error/warning by kind / TRANSFER_FAILED/EVM_BALANCE_TIMEOUT 等)(handleDepositServiceError.ts:10-122)",
+          "shouldShowDepositTryAgain(error,phase): USER_REJECTED → true / phase==='value_chain' → true / phase==='base_chain' 非拒签 → false(bridge 已上链)(handleDepositServiceError.ts:131-138)"
+        ],
+        "usagePattern": "// 入口(VaultStats/Header/SLPViewModel)\nimport { openVaultDepositDialog } from '@/features/vault';\nawait openVaultDepositDialog({ defaultChain: 'BASE_ETH', defaultToken: ..., defaultFrom: 'SPOT' });\n\n// 流程: idle <Form/> → handleSubmit(检查 chainId,切链)→ tradingStatus='preview' <Preview/>\n//      → handleConfirmDeposit → submission.submit({chain,token,from,amount,account,isNewUser})\n//      → tradingStatus='trading' <Trading/>\n//      → machine.start() 走 3 层 reducer 状态机\n//      → topState='completed' → notifyVaultDepositCompleted + 3 次延迟 invalidate(3s/5s/9s)\n//      → 1s 后 modalClose()",
+        "keyFiles": [
+          "src/features/vault/components/dialogs/VaultDepositDialog/index.tsx",
+          "src/features/vault/components/dialogs/VaultDepositDialog/BaseAccountInput.tsx",
+          "src/features/vault/components/dialogs/VaultDepositDialog/AccountSelector.tsx",
+          "src/features/vault/components/dialogs/VaultDepositDialog/CollapsiblePanel.tsx",
+          "src/features/vault/components/dialogs/VaultDepositDialog/DepositToSodexStep.tsx",
+          "src/features/vault/components/dialogs/VaultDepositDialog/DepositToVaultStep.tsx",
+          "src/features/vault/components/dialogs/VaultDepositDialog/Preview.tsx",
+          "src/features/vault/components/dialogs/VaultDepositDialog/Trading.tsx",
+          "src/features/vault/components/dialogs/VaultDepositDialog/VaultPreTradeButton.tsx",
+          "src/features/vault/components/dialogs/VaultDepositDialog/WarningText.tsx",
+          "src/features/vault/containers/deposit/useVaultDepositMachine.ts",
+          "src/features/vault/containers/useSubmitVaultDeposit.ts",
+          "src/features/vault/containers/useVaultDepositForm.ts",
+          "src/features/vault/containers/depositFlowLogic.ts",
+          "src/features/vault/containers/handleDepositServiceError.ts",
+          "src/features/vault/domain/depositStateMachine.ts",
+          "src/features/vault/domain/depositPermit.ts",
+          "src/features/vault/infra/chain/vaultDepositInfra.ts"
+        ],
+        "relatedConcepts": [
+          "three-layer-reducer-machine",
+          "effect-driver-pattern",
+          "no-service-architecture",
+          "cross-feature-callback-bridge",
+          "call-for-permit",
+          "erc20-permit",
+          "auto-fill-double-ref",
+          "retry-cache-reuse",
+          "isnewuser-snapshot",
+          "phase-split-enable-trading",
+          "strict-mode-reentrancy-guard",
+          "websocket-driven-toast",
+          "service-error-mapping"
+        ],
+        "keyComponents": [
+          "src/features/vault/components/dialogs/VaultDepositDialog/index.tsx — 1023 行 Container 包装(VaultDepositDialogContainer + VaultDepositDialog UI + Skeleton + 3 屏切换 + opener)",
+          "src/features/vault/containers/deposit/useVaultDepositMachine.ts — 860 行 Reducer + Effect Driver 核心",
+          "src/features/vault/containers/useSubmitVaultDeposit.ts — 291 行 外层编排 + 跨 feature callbacks",
+          "src/features/vault/containers/useVaultDepositForm.ts — 347 行 表单 + Auto-fill + 双 ref 防误报",
+          "src/features/vault/containers/depositFlowLogic.ts — 408 行 纯派生(StepStatus/PanelSlotData/validation/buttonState)",
+          "src/features/vault/domain/depositStateMachine.ts — 520 行 3 个 reducer 纯函数",
+          "src/features/vault/domain/depositPermit.ts — 308 行 EIP-712 typed data + cmd encode",
+          "src/features/vault/infra/chain/vaultDepositInfra.ts — 736 行 11 个 atomic async 函数"
+        ],
+        "businessPaths": [
+          "新用户 Base 链: Base(approve+bridge+settle) → EnableTrading(Phase1 polling + Phase2 sign) → Value(transfer+approve+confirm)",
+          "老用户 Base 链: Base(approve+bridge+settle) → Value(transfer+approve+confirm)",
+          "Value 链 Spot: Value(transfer+approve+confirm)",
+          "Value 链 EVM-Funding: Value(approve+confirm)"
+        ],
+        "errorKinds": [
+          "USER_REJECTED(钱包拒签 / EXCHANGE_CAPABILITY_MISSING / SIGNATURE_REJECTED/TIMEOUT 通通归此,error toast 'Transaction Canceled')",
+          "DEPOSIT_AMOUNT_ZERO(parseUnits → 0n)",
+          "DEPOSIT_APPROVE_FAILED(approve tx revert / sign reject)",
+          "DEPOSIT_BRIDGE_FAILED(bridge tx revert)",
+          "DEPOSIT_BRIDGE_TIMEOUT(pollBridgeSettle 超时,warning 不阻塞)",
+          "DEPOSIT_INSUFFICIENT_GAS(insufficient funds/gas 字串)",
+          "DEPOSIT_PERMIT_FAILED(approve/confirm 签名失败,含 'permit' 字串)",
+          "DEPOSIT_CONFIRM_FAILED(submitDepositPermit / waitValueReceipt)",
+          "DEPOSIT_CONFIRM_TIMEOUT(waitValueReceipt 超时,warning)",
+          "ENABLE_TRADING_TIMEOUT(waitForAccountReady 超时 / ensureExchangeCapability 异常)",
+          "TRANSFER_FAILED(trade.useSubmitTransfer 失败)",
+          "EVM_BALANCE_TIMEOUT(EVM 余额未及时同步)",
+          "NETWORK_ERROR / CHAIN_MISMATCH(通用)"
+        ],
+        "stateModelKey": {
+          "TopState": "idle / base_chain_phase / enable_trading / value_chain_phase / completed / failed(phase)",
+          "BaseChainState": "idle / checking_allowance / approving / approve_confirming / approve_completed / bridging / bridge_confirming / bridge_settling / completed / failed",
+          "ValueChainState": "idle / transferring / staking / stake_confirming / approving / approve_completed / confirm_signing / confirm_proceeding / completed / failed",
+          "retryReuseRules": [
+            "Base step=approve failed → 回 checking_allowance 完整重跑",
+            "Base step=confirm failed → 回 approve_completed 复用 approveTxHash 跳过 approve",
+            "Value transfer failed → 回 transferring",
+            "Value stake failed → 回 staking 不回 transfer",
+            "Value approve failed → 回 approving 重签",
+            "Value confirm failed + approveDeadline 内 → 回 approve_completed 复用 approveSignature",
+            "Value confirm failed + approveDeadline 过期 → 回 approving 重签"
+          ]
+        },
+        "callForCmdShape": {
+          "cmdType": "VaultDepositWithPermit2(不是 CreateBridgeCallFor / VaultRedeemWithPermit)",
+          "to": "SLP_TOKEN_ADDRESS(**deposit 唯一与其他操作不同**;其他 to=VAULT_CALLER_ADDRESS)",
+          "innerSignature": "vault token ERC2612 Permit (vMAG7 或 vsMAG7) → 拆 v/r/s",
+          "outerSignature": "CallForPermit 包裹 v/r/s + token/amount/permitDeadline",
+          "depositTokenSelection": "isStake=true → vMAG7(vault 内部 stake);isStake=false → vsMAG7(直接 deposit vsMAG7)",
+          "DEPOSIT_TO_CLOB": "true(bridge 资金到 Spot,Value 子机 from 强制 SPOT)"
+        },
+        "uiStates": [
+          "tradingStatus: 'idle'|'preview'|'trading' — 3 屏切换",
+          "isAwaitingWalletSignature: base.approving / value.approving / value.confirm_signing",
+          "isFirstTimeUser: isAccountIdProbing || !accountId — probe 中乐观视为新用户;isNewUser 锁定快照防 WS 推送后变化",
+          "needsStandaloneEnableDeposit: 老用户 apiKey 失效 → Enable Deposit 独立按钮(embedded mode)",
+          "isInitialLoading: 首次余额加载;后续切 chain/token 不重新显示 Skeleton",
+          "isMustKnowExpanded / isSodexExpanded / isEnableTradingExpanded / isVaultExpanded: 4 个独立面板展开 state;Vault active/failed 时强制展开;completed 后 1s 关闭弹窗"
+        ],
+        "sideEffects": {
+          "emits": [
+            "submit 时 closeNotify 清残留 WS toast",
+            "completed → notifyVaultDepositCompleted 'Deposited X MAG7.ssi into vault'",
+            "failed → handleDepositServiceError 弹本地错误",
+            "reset / unmount → closeNotify 兜底"
+          ],
+          "invalidates": [
+            "onSuccess: 3 次延迟 invalidateVaultMutationQueries(3s/5s/9s)",
+            "WS sodex_deposit Success: 局部 invalidate vault.investInfo/mag7Balance/slpBalance/hasMyActivity/activity/myActivity",
+            "WS sodex_deposit Success: invalidate auth.exchangeAccountId(deposit 完成首次链上创建 accountId,deposit 特有)"
+          ],
+          "writes": [
+            "Base 链: approveErc20 + bridgeToValueChain tx",
+            "Value 链: submitDepositPermit(VaultDepositWithPermit2) tx → vault.deposit",
+            "trade.useSubmitTransfer(Spot→Funding) tx",
+            "Phase 2 ensureExchangeCapability: enable trading 签名"
+          ]
+        },
+        "relatedFeatures": [
+          "vault-notification(WS sodex_deposit toast + notifyVaultDepositCompleted helper + 数据刷新 17 query keys)",
+          "trade.useSubmitTransfer(value chain transferring 步骤)",
+          "trade.useEvmBalancesQuery / useBalancesQuery(form 余额来源)",
+          "trade.notifyVaultDepositCompleted(顶层完成 toast)",
+          "auth.waitForAccountReady(enable_trading Phase 1 静默 polling)",
+          "auth.ensureExchangeCapability(enable_trading Phase 2 签名)",
+          "auth.useEnableTrading(老用户 Enable Deposit 独立按钮)",
+          "auth.openConnectWalletDialog(未连钱包入口)",
+          "wagmi.useReadContract(Base ERC20 余额) / useChainId / useSwitchChain(切链)"
+        ],
+        "designDecisions": [
+          "不建 vault deposit Service - 状态机 + 跨 feature 编排无法塞进单一 Service,Container 直接编排 infra atomic",
+          "3 层 reducer 拆分 - top 协调阶段 / base+value 各自管 step,RETRY 复用规则各自独立",
+          "enable_trading 两阶段拆分 - Phase 1 静默 polling + Phase 2 单次签名,修复旧设计循环弹签名烦扰用户 bug",
+          "signer 锁用 requireOnChain call-time(vs 其他 vault feature onMutate 快照) - reducer 没 mutation context,call-time 仍能感知钱包切换",
+          "双 ref 防 Auto-fill 误报 - userHasEdited 阻挡 auto-fill / hasUserInputted 控制提示显示,余额 RQ refetch 不闪烁红字",
+          "isNewUser 锁定快照 - currentInput.isNewUser 防 WS 推送后 accountId 变化让 EnableTrading 面板消失",
+          "3 屏切换 in 单 dialog(idle/preview/trading) - 不用 3 独立弹窗,关弹窗即清整子树",
+          "CallForPermit to=SLP_TOKEN_ADDRESS - deposit 唯一与其他操作不同(其他 to=VAULT_CALLER_ADDRESS)",
+          "SoDEX panel 自动折叠 + Vault panel 自动展开 - UX 推进用户视线",
+          "completed 后 1s 延迟关闭 - 让用户看完所有绿色完成状态再关弹窗",
+          "Privy 邮箱用户用 useAuthState().address 而非 useAccount() - embedded wallet 不一定立刻进 wagmi"
+        ],
+        "infrastructureProvider": [
+          "11 个 atomic infra 函数(vaultDepositInfra.ts) - 不被其他 feature 复用(独立链路)",
+          "depositPermit.ts EIP-712 类型 - 与 claim/unstake/withdrawPermit 类型对称但互不依赖",
+          "depositStateMachine.ts - 仅 deposit feature 使用"
+        ]
+      },
+      "referencePath": "reference/vault/vault-deposit-guide.md",
+      "sections": [
+        {
+          "title": "关联文档",
+          "summary": "Toast/数据刷新基础设施由 vault-notification 集中维护;表格指向 §4.1 deposit 单信号 + §5/§6.1/§7.1/§7.3/§8/§9 + 2 份 toast/data-refresh spec + 3 段 05a/b/c 设计 spec",
+          "lineRange": [
+            9,
+            30
+          ],
+          "estimatedTokens": 360
+        },
+        {
+          "title": "业务路径",
+          "summary": "4 种场景对照(新用户 Base / 老用户 Base / Value Spot / Value EVM-Funding)+ needsStake 恒 false / Base 强制 SPOT / isNewUser 锁定快照",
+          "lineRange": [
+            31,
+            46
+          ],
+          "estimatedTokens": 240
+        },
+        {
+          "title": "架构总览",
+          "summary": "Container 包装 + Outer 外层编排(callbacks 跨 feature 桥接)+ Inner machine(3 reducer + effect driver + 防重入 6 ref)+ Reducers + Infra atomic 15 函数 + WS/链上完整 ASCII 流程图",
+          "lineRange": [
+            47,
+            150
+          ],
+          "estimatedTokens": 1560
+        },
+        {
+          "title": "状态机模型(3 层 reducer)",
+          "summary": "Top/Base/Value 各 reducer 完整状态 union + 转换矩阵 + RETRY 缓存复用规则(Base 保留 approveTxHash / Value approveSignature 在 deadline 内复用)+ deriveValueChainSteps",
+          "lineRange": [
+            151,
+            250
+          ],
+          "estimatedTokens": 1500
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "9 个核心函数(useVaultDepositMachine 3 effect drivers / runBaseChainState 7 case / runValueChainState 7 case / runEnableTradingAsync / mapCauseToDepositError / useSubmitVaultDeposit 5 callbacks / onTransferNeeded smart-transfer / onEnableTradingCallback Phase 1+2 拆分 / useVaultDepositForm 4 项核心机制 / validateDepositAmount 三重校验 + 错误抑制 / deriveDepositButtonState / handleDepositServiceError 13 case / shouldShowDepositTryAgain)",
+          "lineRange": [
+            251,
+            560
+          ],
+          "estimatedTokens": 4635
+        },
+        {
+          "title": "关键实现",
+          "summary": "14 项实现细节(防重入硬规则 / RETRY 缓存复用 / Bridge address 懒加载 / isNewUser 锁定快照 / 3 屏切换 / Trading panel 状态派生 + Failed 视觉保留 / Trading 数字圆圈布局 4 场景 / Trading 标题动态切换 useWalletSigningText / DepositToVaultStep 文案常量 / computeVaultCurrentStep stake 兜底 / SoDEX 自动折叠+Vault 自动展开 / CallForPermit to=SLP_TOKEN_ADDRESS / Permit token=Deposit token / MetaMask 缓冲 + Bridge 同步 sleep / signer 锁 requireOnChain + Privy 兼容)",
+          "lineRange": [
+            561,
+            939
+          ],
+          "estimatedTokens": 5685
+        },
+        {
+          "title": "文件结构",
+          "summary": "11 个源文件分组(dialog 10 + container 5 + domain 2 + infra 1)+ 跨 feature public API + 不依赖其他 vault service 的独立链路说明 + infra 15 个 atomic 函数清单",
+          "lineRange": [
+            940,
+            995
+          ],
+          "estimatedTokens": 825
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "11 项(不建 Service / 3 层 reducer / enable_trading 两阶段拆分修复用户烦扰 / signer 锁 call-time / 双 ref 防 Auto-fill 误报 / isNewUser 快照 / 3 屏切换 / to=SLP_TOKEN_ADDRESS / panel 折叠展开 / 1s 延迟关闭 / Privy 兼容)",
+          "lineRange": [
+            996,
+            1083
+          ],
+          "estimatedTokens": 1305
+        },
+        {
+          "title": "错误码 → 阶段映射",
+          "summary": "13 个错误码按 phase(base_chain/enable_trading/value_chain) 分组映射 + Try Again 显示规则",
+          "lineRange": [
+            1084,
+            1110
+          ],
+          "estimatedTokens": 405
+        },
+        {
+          "title": "数据更新对接",
+          "summary": "对接 invalidateVaultMutationQueries(详见 vault-notification §8) + deposit 不走 sodex_call_for + auth.exchangeAccountId invalidate 是 deposit 特有(首次链上 accountId 创建)",
+          "lineRange": [
+            1111,
+            1142
+          ],
+          "estimatedTokens": 480
+        },
+        {
+          "title": "关键常量",
+          "summary": "16 个常量(全部含实际数值)— DEPOSIT_BASE_TX_CONFIRMATIONS=2 / DEPOSIT_VALUE_TX_CONFIRMATIONS=3 / DEPOSIT_APPROVE_POST_DELAY_MS=500 / DEPOSIT_BRIDGE_SYNC_DELAY_MS=2000 / DEPOSIT_APPROVE_DEADLINE_SEC=1800 / CALL_FOR_PERMIT_DEADLINE_SECONDS=3600 / DEPOSIT_ENABLE_TRADING_MAX_ATTEMPTS=15 / DEPOSIT_SETTLE_MAX_ATTEMPTS=15 + INTERVAL_MS=5000 等",
+          "lineRange": [
+            1143,
+            1167
+          ],
+          "estimatedTokens": 375
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "8 类常见修改步骤(新增错误码 / 新增 Base/Value 子 step / RETRY 复用规则 / 默认值 / enable_trading 轮询 / toast 文案 / panel 折叠 / fee 比例)",
+          "lineRange": [
+            1168,
+            1215
+          ],
+          "estimatedTokens": 720
+        },
+        {
+          "title": "术语表",
+          "summary": "20 个术语(VaultDepositWithPermit2 / SLP_TOKEN_ADDRESS / vMAG7 vs vsMAG7 / isStake / DEPOSIT_TO_CLOB / TopPhase / needsTransfer/needsStake / isFirstTimeUser / isAwaitingWalletSignature / needsStandaloneEnableDeposit / 6 个 Ref 用途 / DEPOSIT_FEE_RATE / userHasEdited vs hasUserInputted / bridge_settling 超时 / WS sodex_deposit)",
+          "lineRange": [
+            1216,
+            1241
+          ],
+          "estimatedTokens": 390
+        },
+        {
+          "title": "更新记录",
+          "summary": "2026-04-30 初始版本(/k:context-learn)+ 2026-04-30 补充验证(/k:context-update 补读 5 个文件,常量值修正 + Trading 数字圆圈布局 + 标题动态切换 + DepositToVaultStep 文案 + computeVaultCurrentStep stake 兜底 + infra 15 函数清单)",
+          "lineRange": [
+            1242,
+            1267
+          ],
+          "estimatedTokens": 390
+        }
+      ],
+      "tags": [
+        "vault",
+        "deposit",
+        "three-layer-reducer-machine",
+        "effect-driver-pattern",
+        "no-service-architecture",
+        "cross-feature-callback-bridge",
+        "call-for-permit",
+        "erc20-permit",
+        "auto-fill-double-ref",
+        "retry-cache-reuse",
+        "isnewuser-snapshot",
+        "phase-split-enable-trading",
+        "strict-mode-reentrancy-guard",
+        "websocket-driven-toast",
+        "service-error-mapping",
+        "react-query-invalidate",
+        "boundaries-rule",
+        "eip-712",
+        "value-chain",
+        "base-chain",
+        "bridge",
+        "smart-transfer",
+        "enable-trading",
+        "complex-feature"
+      ],
+      "created": "2026-04-30",
+      "updated": "2026-04-30"
+    }
+  },
+  "history": {
+    "vault-unstake": [
+      {
+        "date": "2026-04-30",
+        "type": "feat",
+        "summary": "初始版本,通过 /k:context-learn 从代码自动生成",
+        "files": [
+          "VaultUnstakeDialog/index.tsx",
+          "useSubmitVaultUnstake.ts",
+          "vaultUnstakeService.ts",
+          "vaultUnstakeInfra.ts",
+          "unstakePermit.ts"
+        ]
+      },
+      {
+        "date": "2026-04-30",
+        "type": "docs",
+        "summary": "补强关联文档:新增「关联文档」章节明确指向 vault-notification 9 个章节 + 2 份迁移 spec,数据更新对接 + 设计决策处加交叉引用",
+        "files": [
+          "vault-unstake-guide.md"
+        ]
+      }
+    ],
+    "vault-claim": [
+      {
+        "date": "2026-04-30",
+        "type": "feat",
+        "summary": "初始版本,通过 /k:context-learn 从代码自动生成 + 人工补关联引用",
+        "files": [
+          "VaultClaimDialog/index.tsx",
+          "useSubmitVaultClaim.ts",
+          "vaultClaimService.ts",
+          "vaultClaimInfra.ts",
+          "claimPermit.ts"
+        ]
+      }
+    ],
+    "vault-withdraw": [
+      {
+        "date": "2026-04-30",
+        "type": "feat",
+        "summary": "初始版本,通过 /k:context-learn 从代码自动生成 + 人工补关联引用",
+        "files": [
+          "VaultWithdrawDialog/index.tsx",
+          "useSubmitVaultWithdraw.ts",
+          "vaultWithdrawService.ts",
+          "vaultWithdrawInfra.ts",
+          "withdrawPermit.ts"
+        ]
+      }
+    ],
+    "vault-deposit": [
+      {
+        "date": "2026-04-30",
+        "type": "feat",
+        "summary": "初始版本,通过 /k:context-learn 从代码自动生成 + 人工补关联引用",
+        "files": [
+          "VaultDepositDialog/index.tsx",
+          "useVaultDepositMachine.ts",
+          "useSubmitVaultDeposit.ts",
+          "useVaultDepositForm.ts",
+          "depositStateMachine.ts",
+          "depositPermit.ts",
+          "vaultDepositInfra.ts"
+        ]
+      },
+      {
+        "date": "2026-04-30",
+        "type": "docs",
+        "summary": "/k:context-update 验证补充:常量值修正(BASE_TX_CONFIRMATIONS 3→2 + 7 个常量补实际值)+ Trading 屏数字圆圈布局 + 标题动态切换 + DepositToVaultStep 文案常量 + computeVaultCurrentStep stake 兜底 + infra 15 个 atomic 函数清单",
+        "files": [
+          "vault-deposit-guide.md"
+        ]
+      }
+    ]
+  }
+}

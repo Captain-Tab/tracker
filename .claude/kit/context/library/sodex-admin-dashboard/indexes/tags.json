@@ -1,0 +1,20 @@
+{
+  "overview": ["summary/overview.md"],
+  "architecture": ["summary/overview.md"],
+  "navigation": ["summary/agent-nav.md"],
+  "guide": ["summary/agent-nav.md"],
+  "router": ["router/routes.md"],
+  "permissions": ["router/routes.md", "reference/auth-flow.md"],
+  "pages": ["router/routes.md"],
+  "http": ["reference/http-patterns.md"],
+  "axios": ["reference/http-patterns.md"],
+  "api": ["reference/http-patterns.md"],
+  "auth": ["reference/auth-flow.md"],
+  "jwt": ["reference/auth-flow.md"],
+  "mfa": ["reference/auth-flow.md"],
+  "component": ["reusable/pro-table-pattern.md", "reusable/pro-form-pattern.md", "reusable/dialog-pattern.md"],
+  "table": ["reusable/pro-table-pattern.md"],
+  "form": ["reusable/pro-form-pattern.md"],
+  "dialog": ["reusable/dialog-pattern.md"],
+  "pattern": ["reusable/pro-table-pattern.md", "reusable/pro-form-pattern.md", "reusable/dialog-pattern.md"]
+}

@@ -1,0 +1,118 @@
+{
+  "module": "core",
+  "name": "Core",
+  "description": "核心基础 Hooks 与工具函数",
+  "emoji": "⚙️",
+
+  "features": {
+    "core-usefundingtoken": {
+      "id": "core-usefundingtoken",
+      "module": "core",
+      "type": "feature",
+      "title": "useFundingToken 币种数据源",
+      "summary": "充值/提现功能的币种数据源 Hook，负责从合约获取币种列表、注入 SOSO、注入余额、应用过滤规则",
+
+      "quickRef": {
+        "coreLogic": [
+          "useFundingToken(options: FundingTokenOptions): FundingTokenResult  L1-280  充值/提现币种数据源主 Hook",
+          "getAllCoins(): Promise<CoinInfo[]>  L50-80  合约调用获取所有币种（不含 SOSO）",
+          "injectDepositBalance(tokens: Token[], address: string): Promise<Token[]>  L120-180  批量读取链上余额 + 过滤",
+          "getChainIdByChainKey(chainKey: string): number  L200-220  链 ID 映射（BASE_ETH→8453）"
+        ],
+        "keyComponents": [
+          "useFundingToken.ts - 主 Hook",
+          "depositFilter.ts - 过滤规则处理",
+          "ISoDexTokenQuery.json - getAllCoins ABI",
+          "ISosoDepositQuery.json - listRemoteNativeTokens ABI"
+        ],
+        "keyFiles": [
+          "src/pages/_components/hooks/useFundingToken.ts",
+          "src/pages/_components/helper/depositFilter.ts",
+          "src/pages/_components/type.ts",
+          "src/config/contracts.ts"
+        ],
+        "relatedConcepts": ["contract-read", "batch-query", "balance", "filter", "soso"]
+      },
+
+      "discovery_cost": "~3600 tokens",
+      "referencePath": "reference/core/usefundingtoken-guide.md",
+
+      "sections": [
+        {
+          "title": "概述",
+          "summary": "useFundingToken 功能说明：充值/提现的币种数据源，合约读取、余额注入、过滤规则应用",
+          "lineRange": [3, 13],
+          "estimatedTokens": 170
+        },
+        {
+          "title": "数据流",
+          "summary": "完整数据处理流程：getAllCoins → 合并 SOSO → 注入 logo → injectDepositBalance → getDecimals → tokenList",
+          "lineRange": [14, 45],
+          "estimatedTokens": 480
+        },
+        {
+          "title": "合约调用",
+          "summary": "四个核心合约调用：getAllCoins、listRemoteNativeTokens、批量 readContracts (decimals+balanceOf)、getTokenInfo",
+          "lineRange": [46, 123],
+          "estimatedTokens": 1200
+        },
+        {
+          "title": "关键处理逻辑",
+          "summary": "SOSO 特殊注入、MAG7 强制禁用 Regular、enableFlash 默认逻辑、SOSO 余额 4 位精度",
+          "lineRange": [124, 170],
+          "estimatedTokens": 700
+        },
+        {
+          "title": "链 ID 映射",
+          "summary": "getChainIdByChainKey: BASE_ETH→8453, ETH→1, ARBITRUM_ETH→42161",
+          "lineRange": [171, 191],
+          "estimatedTokens": 320
+        },
+        {
+          "title": "加载状态判断",
+          "summary": "isLoading 四个条件：tokenList 空、getAllCoins 未完成、listRemoteNativeTokens 未完成、仅 SOSO 但 originalTokenList 有数据",
+          "lineRange": [192, 214],
+          "estimatedTokens": 350
+        },
+        {
+          "title": "过滤规则应用",
+          "summary": "depositRules 参数：depositBlacklist、depositWhitelist、contractWarningList、memoWarningList",
+          "lineRange": [215, 232],
+          "estimatedTokens": 270
+        },
+        {
+          "title": "返回值",
+          "summary": "Hook 返回：tokenList、isLoading、updateDepositBalance、fetchTokenList 等 8 个属性",
+          "lineRange": [233, 251],
+          "estimatedTokens": 290
+        },
+        {
+          "title": "常见问题定位",
+          "summary": "7 个常见问题排查点：币种为空、SOSO 不显示、余额为 0、币种被过滤、Flash/Regular 不可用、一直 loading",
+          "lineRange": [252, 265],
+          "estimatedTokens": 210
+        },
+        {
+          "title": "相关文件",
+          "summary": "6 个相关文件位置：主 Hook、过滤工具、类型定义、合约配置、ABI 文件",
+          "lineRange": [266, 279],
+          "estimatedTokens": 210
+        },
+        {
+          "title": "创建记录",
+          "summary": "文档版本信息：2026-02-24 创建",
+          "lineRange": [280, 283],
+          "estimatedTokens": 60
+        }
+      ],
+
+      "tags": ["core", "hook", "contract", "balance", "filter", "soso", "funding"],
+      "created": "2026-02-24",
+      "updated": "2026-02-24"
+    }
+  },
+
+  "history": {
+    "core-usefundingtoken": []
+  }
+}

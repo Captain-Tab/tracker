@@ -1,0 +1,9 @@
+{
+  "module": {
+    "id": "trade",
+    "name": "Trade",
+    "emoji": "📈",
+    "description": "Trade 页业务：币种信息 tabs（chart/intro/news/opinion/research/announcement/data）+ News 资讯模块（News/Opinion/Research/Announcement）+ 详情弹窗 + 分享 URL 重定向 + 埋点"
+  },
+  "features": {}
+}

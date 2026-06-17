@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ln:*)",
+      "Bash(sudo ln:*)",
+      "Bash(sosokit-install:*)",
+      "Bash(bash .claude/skills/git-worktree-new-folder/scripts/init-worktree.sh --help)",
+      "Bash(bash .claude/skills/git-worktree-new-folder/scripts/init-worktree.sh feature/test-worktree --skip-cursor)",
+      "Bash(git worktree remove:*)",
+      "Bash(git branch:*)",
+      "Bash(bash /Users/soso/Documents/code/soso-kit/.claude/skills/git-worktree-new-folder/scripts/init-worktree.sh feature/test-worktree2 --skip-cursor)",
+      "Bash(bash .claude/kit/cli/sync.sh --dry-run)",
+      "Read(//Users/soso/Documents/code/sodex-web/**)",
+      "Bash(bash /Users/soso/Documents/code/soso-kit/.claude/kit/cli/sync.sh --dry-run)",
+      "Read(//Users/soso/Documents/prompt/sodex-web/vault-deposit/**)",
+      "Read(//Users/soso/Documents/code/sodex-web-feature/src/pages/points/newPoints/userPoints/**)",
+      "Bash(for skill:*)",
+      "Bash(do echo:*)",
+      "Read(//Users/soso/Documents/code/soso-kit/**)",
+      "Edit(/.claude/skills/document-to-spec/**)",
+      "Edit(/.claude/skills/soso-kit-standards-agent/**)",
+      "Edit(/.claude/kit/figma/**)",
+      "Edit(/.claude/skills/soso-translation/**)",
+      "Edit(/.claude/skills/git-worktree-new-folder/**)",
+      "WebFetch(domain:cursor.com)",
+      "Bash(bash .claude/kit/debug/scripts/start-server.sh check /private/tmp)",
+      "Bash(bash .claude/kit/debug/scripts/start-server.sh start /private/tmp)"
+    ],
+    "additionalDirectories": [
+      "/Users/soso/Documents/code/soso-kit/.claude/kit/debug"
+    ]
+  }
+}

@@ -1,0 +1,800 @@
+{
+  "module": "vault",
+  "name": "Vault",
+  "description": "Vault 充值提现与流动性功能",
+  "emoji": "🏦",
+  "features": {
+    "vault-deposit": {
+      "id": "vault-deposit",
+      "module": "vault",
+      "type": "feature",
+      "title": "Vault Deposit 完整流程",
+      "summary": "Base Chain + Value Chain 双层状态机，支持新老用户差异化流程，包含 Bridge Settling 和 Enable Trading 机制",
+      "quickRef": {
+        "coreLogic": [
+          "useVaultDeposit(depositAmount: BigNumber, chainId: number): VaultDepositState  L1-180  顶层状态机协调器，管理 Base/Value Chain 切换",
+          "useBaseChainDeposit(params: BaseDepositParams): BaseChainState  L1-250  Base Chain 桥接逻辑，Approve → Bridge → Settling",
+          "useValueChainDeposit(params: ValueChainParams): ValueChainState  L1-200  Value Chain 充值，Transfer → Stake → Confirm",
+          "getStepStatus(step: Step, status: Status): StepStatus  L45-80  失败状态判断，支持 Try Again 重试"
+        ],
+        "keyComponents": [
+          "useVaultDeposit.ts - 顶层状态机协调器",
+          "useBaseChainDeposit.ts - Base Chain 桥接逻辑",
+          "useValueChainDeposit.tsx - Value Chain 充值逻辑",
+          "Trading.tsx - 交易流程主 UI 组件"
+        ],
+        "keyFiles": [
+          "src/pages/vault/components/modals/funding/deposit/_hooks/useVaultDeposit.ts",
+          "src/pages/vault/components/modals/funding/deposit/_hooks/useBaseChainDeposit.ts",
+          "src/pages/vault/components/modals/funding/deposit/_hooks/useValueChainDeposit.tsx",
+          "src/pages/vault/components/modals/funding/deposit/transaction/Trading.tsx"
+        ],
+        "relatedConcepts": [
+          "state-machine",
+          "bridge",
+          "staking",
+          "multi-chain",
+          "enable-trading",
+          "polling"
+        ]
+      },
+      "discovery_cost": "~4800 tokens",
+      "referencePath": "reference/vault/vault-deposit-guide.md",
+      "sections": [
+        {
+          "title": "币种体系说明",
+          "summary": "Base Chain vs Value Chain 币种映射（MAG7.ssi/vMAG7.ssi 等）、Stake/Unstake 操作、统一 toClob=true 资金流向、Value Chain 存款账户选择逻辑",
+          "lineRange": [
+            3,
+            58
+          ],
+          "estimatedTokens": 600
+        },
+        {
+          "title": "架构概览",
+          "summary": "分层状态机设计（Base Chain + Value Chain 双层协调），关键特性包括 Base 阶段内聚、智能 Try Again、统一桥接入账机制",
+          "lineRange": [
+            61,
+            95
+          ],
+          "estimatedTokens": 400
+        },
+        {
+          "title": "状态转换",
+          "summary": "完整的状态转换表和流转图，覆盖所有阶段（idle → base_chain → enable_trading/value_chain → completed/failed）",
+          "lineRange": [
+            98,
+            135
+          ],
+          "estimatedTokens": 400
+        },
+        {
+          "title": "核心流程",
+          "summary": "3 个完整场景：老用户（Base Chain → Value Chain）、新用户（Base Chain → Enable Trading → Value Chain）、Value Chain 直接存款",
+          "lineRange": [
+            138,
+            200
+          ],
+          "estimatedTokens": 700
+        },
+        {
+          "title": "关键实现",
+          "summary": "Bridge settle 合约轮询逻辑（最多15次×3秒）、Try Again 完整错误检测（5个关键词字段）、双层状态机协调重试、getStepStatus 失败状态处理",
+          "lineRange": [
+            203,
+            275
+          ],
+          "estimatedTokens": 1000
+        },
+        {
+          "title": "文件结构",
+          "summary": "项目文件组织，包含 hooks（useMag7Balance、useVaultDeposit、useBaseChainDeposit、useValueChainDeposit）和 UI 组件层级",
+          "lineRange": [
+            278,
+            305
+          ],
+          "estimatedTokens": 300
+        },
+        {
+          "title": "UI 结构",
+          "summary": "Deposit 弹窗（链选择、账户、金额输入）和 Trading 流程（CollapsiblePanel、ProcessIndicator、步骤状态反馈）、失败状态 UI 规范表",
+          "lineRange": [
+            308,
+            365
+          ],
+          "estimatedTokens": 700
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "三个核心决策：settle 放在 Base 阶段的理由（避免依赖 userId）、资金去向统一逻辑（toClob=true）、MetaMask 交易冲突处理（500ms 延迟 + 智能重试）",
+          "lineRange": [
+            392,
+            416
+          ],
+          "estimatedTokens": 400
+        },
+        {
+          "title": "术语表",
+          "summary": "12 个核心术语：Base Chain、Value Chain、toClob、Spot 账户、EVM-Funding、Perps、Stake/Unstake、Enable Trading、Permit、Confirm 签名/执行、bridge_settling",
+          "lineRange": [
+            417,
+            436
+          ],
+          "estimatedTokens": 300
+        },
+        {
+          "title": "修改记录",
+          "summary": "历史修改：#4 Value Chain 失败状态 UI 优化（getStepStatus）、#3 UI 反馈优化（Confirm 文案细化、Try Again 超时）、#2 统一桥接逻辑（toClob=true）、#1 引入 bridge_settling",
+          "lineRange": [
+            437,
+            505
+          ],
+          "estimatedTokens": 1000
+        },
+        {
+          "title": "代码位置索引",
+          "summary": "21 个关键代码位置索引：状态机、hooks、组件、合约调用等",
+          "lineRange": [
+            506,
+            534
+          ],
+          "estimatedTokens": 450
+        },
+        {
+          "title": "更新记录",
+          "summary": "新用户 Enable Trading 跳过修复（isNewUser 快照 + user.id 重试）、sMAG7 SLP 余额更新修复（waitForTransactionReceipt）",
+          "lineRange": [
+            535,
+            567
+          ],
+          "estimatedTokens": 500
+        }
+      ],
+      "tags": [
+        "vault",
+        "deposit",
+        "bridge",
+        "state-machine",
+        "multi-chain",
+        "enable-trading",
+        "polling"
+      ],
+      "created": "2025-12-05",
+      "updated": "2026-03-06"
+    },
+    "vault-unstake": {
+      "id": "vault-unstake",
+      "module": "vault",
+      "type": "feature",
+      "title": "Vault Unstake 智能转账流程",
+      "summary": "封装 sMAG7 代币 Unstake 逻辑，当用户输入金额超过 EVM 余额时，自动从 Spot 账户转账差额到 EVM-Funding，再执行链上 unstake 操作",
+      "quickRef": {
+        "coreLogic": [
+          "snapshotBalance 余额快照 L56-91",
+          "executeUnstakeWithRetry 重试机制 L205-240",
+          "diff.lte(0.0001) 滑点容差 L223-224"
+        ],
+        "keyComponents": [
+          "index.tsx - Unstake 弹窗 UI 入口，表单输入与提交",
+          "VaultUnstakeButton.tsx - 按钮组件，处理钱包连接/白名单/私钥刷新前置逻辑",
+          "schema.ts - Zod 表单校验，最小/最大金额限制"
+        ],
+        "keyFiles": [
+          "src/pages/vault/components/modals/funding/unstake/_hooks/useUnstakeWithTransfer.ts",
+          "src/pages/vault/components/modals/funding/unstake/index.tsx",
+          "src/pages/vault/components/modals/funding/unstake/VaultUnstakeButton.tsx",
+          "src/pages/vault/components/modals/funding/unstake/schema.ts"
+        ],
+        "relatedConcepts": [
+          "smart-transfer",
+          "bigint-precision",
+          "wallet-signing",
+          "eip712"
+        ]
+      },
+      "discovery_cost": "~4200 tokens",
+      "referencePath": "reference/vault/vault-unstake-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "用户 sMAG7 余额分布（Spot + EVM-Funding），智能转账逻辑判断",
+          "lineRange": [
+            3,
+            28
+          ],
+          "estimatedTokens": 390
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "useUnstakeWithTransfer Hook：MobX 依赖、余额快照、重试机制（4.5s）、滑点容差判断",
+          "lineRange": [
+            29,
+            142
+          ],
+          "estimatedTokens": 1710
+        },
+        {
+          "title": "关键实现",
+          "summary": "精度处理、滑点容差 transfer 判断、TOKEN_DECIMAL、重试等待策略",
+          "lineRange": [
+            143,
+            310
+          ],
+          "estimatedTokens": 2520
+        },
+        {
+          "title": "文件结构",
+          "summary": "模块文件组织与依赖关系图",
+          "lineRange": [
+            311,
+            342
+          ],
+          "estimatedTokens": 480
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "floorToDecimal、原始余额、滑点容差方案、TOKEN_DECIMAL",
+          "lineRange": [
+            343,
+            395
+          ],
+          "estimatedTokens": 795
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "调整最小/最大金额、修改链调用参数、添加错误提示",
+          "lineRange": [
+            396,
+            419
+          ],
+          "estimatedTokens": 360
+        },
+        {
+          "title": "术语表",
+          "summary": "sMAG7、MAG7、EVM-Funding、Spot、floorToDecimal、TOKEN_DECIMAL",
+          "lineRange": [
+            420,
+            432
+          ],
+          "estimatedTokens": 195
+        },
+        {
+          "title": "更新记录",
+          "summary": "滑点容差 + 重试优化、逻辑简化、余额快照、初始版本",
+          "lineRange": [
+            433,
+            465
+          ],
+          "estimatedTokens": 495
+        }
+      ],
+      "tags": [
+        "vault",
+        "unstake",
+        "smart-transfer",
+        "bigint-precision",
+        "wallet-signing",
+        "form-validation"
+      ],
+      "created": "2026-03-25",
+      "updated": "2026-03-25"
+    },
+    "vault-withdraw": {
+      "id": "vault-withdraw",
+      "module": "vault",
+      "type": "feature",
+      "title": "Vault Withdraw 提现完整流程",
+      "summary": "sMAG7.SLP 赎回流程，支持双路径（sMAG7.ssi 2步 / MAG7.ssi 3步），含冷却期二次确认、网络切换、Permit 链上签名（Approve + Redeem），选择 MAG7.ssi 时额外执行 Unstake",
+      "discovery_cost": "~9009 tokens",
+      "quickRef": {
+        "coreLogic": [
+          "getSLPMag7Data(address: Address): BalancesWithSpotAsset  L63-78  读取 SLP Token 链上余额和 decimals",
+          "WithDraw(props: Props): React.FC  L79-544  主表单组件，含 NAV/previewRedeem/费用计算/冷却期逻辑",
+          "toSubmit(data: FormSchema): Promise<void>  L327-366  提交：钱包检查→网络切换→冷却期确认→交易流程",
+          "useProcessOptions(props: Props): DepositProcessOption[]  L55-265  动态生成 2-3 步骤（approve + withdraw + optional unstake）",
+          "executeActions(): Promise<void>  L61-113  顺序执行 options，previousData 步骤间传递",
+          "calculateFee: useMemo  L237-267  NAV × amount - previewAmount 计算手续费"
+        ],
+        "keyComponents": [
+          "index.tsx - Withdraw 主组件，金额输入 + Token 选择 + 费用预览",
+          "useProcessOptions.tsx - 动态步骤配置（2步或3步，取决于 token 类型）",
+          "Trading.tsx - 链上交易执行组件，顺序驱动 ProcessIndicator",
+          "VaultWithdrawButton.tsx - 三态按钮（Connect/Enable/Withdraw）",
+          "schema.ts - Zod 校验（最小提现金额 + SLP 余额上限）",
+          "Confirm.tsx - 冷却期二次确认弹窗"
+        ],
+        "keyFiles": [
+          "src/pages/vault/components/modals/funding/withdraw/index.tsx",
+          "src/pages/vault/components/modals/funding/withdraw/transaction/useProcessOptions.tsx",
+          "src/pages/vault/components/modals/funding/withdraw/transaction/Trading.tsx",
+          "src/pages/vault/components/modals/funding/withdraw/VaultWithdrawButton.tsx",
+          "src/pages/vault/components/modals/funding/withdraw/schema.ts",
+          "src/pages/vault/components/modals/funding/withdraw/Confirm.tsx"
+        ],
+        "relatedConcepts": [
+          "multi-step-tx",
+          "cooldown",
+          "permit",
+          "redeem",
+          "network-switch",
+          "unstake",
+          "parse-event-log"
+        ]
+      },
+      "referencePath": "reference/vault/vault-withdraw-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "sMAG7.SLP 赎回流程图，双路径（sMAG7.ssi 2步/MAG7.ssi 3步），关键设计说明",
+          "lineRange": [
+            3,
+            39
+          ],
+          "estimatedTokens": 555
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "toSubmit/shouldShowCooldownConfirm/useProcessOptions/executeActions/calculateFee 实现",
+          "lineRange": [
+            40,
+            143
+          ],
+          "estimatedTokens": 1560
+        },
+        {
+          "title": "关键实现",
+          "summary": "SLP 余额链上查询、最小提现金额动态获取、骨架屏逻辑",
+          "lineRange": [
+            144,
+            186
+          ],
+          "estimatedTokens": 645
+        },
+        {
+          "title": "文件结构",
+          "summary": "withdraw 目录及相关 hook 文件路径清单",
+          "lineRange": [
+            187,
+            213
+          ],
+          "estimatedTokens": 405
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "parseRedeemEvent 必要性、冷却期四场景逻辑、步骤数选择、防抖设计",
+          "lineRange": [
+            214,
+            230
+          ],
+          "estimatedTokens": 255
+        },
+        {
+          "title": "术语表",
+          "summary": "sMAG7.SLP/sMAG7.ssi/MAG7.ssi/NAV/previewRedeem 等 11 个术语",
+          "lineRange": [
+            231,
+            248
+          ],
+          "estimatedTokens": 270
+        },
+        {
+          "title": "更新记录",
+          "summary": "版本历史：2026-03-29 初始版本",
+          "lineRange": [
+            249,
+            253
+          ],
+          "estimatedTokens": 75
+        }
+      ],
+      "tags": [
+        "vault",
+        "withdraw",
+        "multi-step-tx",
+        "cooldown",
+        "permit",
+        "network-switch",
+        "form-validation",
+        "parse-event-log"
+      ],
+      "created": "2026-03-29",
+      "updated": "2026-03-29"
+    },
+    "vault-claim": {
+      "id": "vault-claim",
+      "module": "vault",
+      "type": "feature",
+      "title": "Vault Claim 领取弹窗",
+      "summary": "sMAG7 解锁后的领取弹窗，用户输入领取金额（最小4 MAG7.ssi），通过 createBridgeCallFor 调用链上合约将 sMAG7 赎回为 MAG7.ssi，依赖 useProxyAndCooldown 获取代理地址和冷却期可领取金额",
+      "discovery_cost": "~3200 tokens",
+      "quickRef": {
+        "coreLogic": [
+          "Claim(props: Props): JSX.Element  L35-191  主领取弹窗，表单 + 链上交易流程",
+          "handleClaim(): Promise<void>  L75-119  核心领取逻辑：createBridgeCallFor → waitForTransactionReceipt → updateMag7RelatedBalance",
+          "getFormSchema(formattedInfo): ZodSchema  L11-37  动态 Zod schema，最小4MAG7.ssi + 不超过 cooldownAmount",
+          "VaultClaimButton(props: Props): JSX.Element  L32-136  三态按钮：未连接/需要Enable/可Claim",
+          "useProxyAndCooldown(): CooldownState  L10-79  组合 Hook：代理地址 + cooldown 信息 + cooldown 时长"
+        ],
+        "keyComponents": [
+          "index.tsx - Claim 主弹窗，金额输入 + 链上领取",
+          "VaultClaimButton.tsx - 三态按钮（连接钱包/Enable Trading/Claim）",
+          "schema.ts - Zod 校验，最小金额 + 不超过 cooldownAmount",
+          "useProxyAndCooldown.ts - 代理地址 + cooldown 可领取量"
+        ],
+        "keyFiles": [
+          "src/pages/vault/components/modals/funding/claim/index.tsx",
+          "src/pages/vault/components/modals/funding/claim/VaultClaimButton.tsx",
+          "src/pages/vault/components/modals/funding/claim/schema.ts",
+          "src/hooks/useProxyAndCooldown.ts",
+          "src/pages/vault/components/modals/funding/_hooks/useCallForPermit.ts"
+        ],
+        "relatedConcepts": [
+          "cooldown",
+          "bridge-call-for",
+          "form-validation",
+          "enable-trading",
+          "viem"
+        ]
+      },
+      "referencePath": "reference/vault/vault-claim-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "领取流程：cooldown 解锁 → 金额输入 → createBridgeCallFor → 链上确认",
+          "lineRange": [
+            3,
+            35
+          ],
+          "estimatedTokens": 495
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "handleClaim 实现、Zod schema 校验规则、VaultClaimButton 三态逻辑",
+          "lineRange": [
+            36,
+            102
+          ],
+          "estimatedTokens": 1005
+        },
+        {
+          "title": "关键 Hooks",
+          "summary": "useProxyAndCooldown 三 Hook 组合 + 组件内使用方式，useCallForPermit 初始化",
+          "lineRange": [
+            103,
+            147
+          ],
+          "estimatedTokens": 675
+        },
+        {
+          "title": "文件结构",
+          "summary": "claim 目录结构及相关 hook 文件路径",
+          "lineRange": [
+            148,
+            166
+          ],
+          "estimatedTokens": 285
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "inAmount: 0n 原因、3次确认原因、8位精度原因",
+          "lineRange": [
+            167,
+            179
+          ],
+          "estimatedTokens": 195
+        },
+        {
+          "title": "术语表",
+          "summary": "sMAG7/MAG7.ssi/cooldownAmount/callForType: 2 等7个术语",
+          "lineRange": [
+            180,
+            193
+          ],
+          "estimatedTokens": 210
+        },
+        {
+          "title": "更新记录",
+          "summary": "版本历史：2026-03-29 初始版本",
+          "lineRange": [
+            194,
+            198
+          ],
+          "estimatedTokens": 75
+        }
+      ],
+      "tags": [
+        "vault",
+        "claim",
+        "smag7",
+        "mag7",
+        "cooldown",
+        "bridge",
+        "form-validation",
+        "enable-trading"
+      ],
+      "created": "2026-03-29",
+      "updated": "2026-03-29"
+    },
+    "vault-page": {
+      "id": "vault-page",
+      "module": "vault",
+      "type": "feature",
+      "title": "Vault SLP 页面",
+      "summary": "SLP Vault 页面框架：指标面板（TVL/NAV/1Y Return）、4个Tab（My Position/Overview/Activity/Depositors）、事件驱动刷新",
+      "discovery_cost": "~22600 tokens",
+      "quickRef": {
+        "coreLogic": [
+          "SLP(): JSX  L140-569  头部面板：全局指标+操作按钮+状态栏+事件监听",
+          "Tabs(): JSX  L83-465  Tab容器：数据获取+智能默认Tab+分享功能",
+          "MyPosition(): JSX  L105-291  我的持仓：存款/PNL/ROI+图表",
+          "Overview(): JSX  L38-197  全局概览：TVL/NAV双图表",
+          "Activity(): JSX  L72+  操作记录：All/My双表格+action着色"
+        ],
+        "keyComponents": [
+          "SLP.tsx - 头部面板，全局指标+操作按钮+余额状态提示（572行）",
+          "tabs/index.tsx - Tab容器，数据获取+智能默认+分享（468行）",
+          "tabs/MyPosition.tsx - 我的持仓Tab，存款/PNL/ROI+图表",
+          "tabs/Overview.tsx - 全局概览Tab，TVL/NAV图表",
+          "tabs/Activity.tsx - 操作记录Tab，All/My双表格（492行）",
+          "tabs/Chart.tsx - ECharts折线图（tvl/pnl/nav三模式）",
+          "constant.ts - token symbol、精度、合约地址常量"
+        ],
+        "keyFiles": [
+          "src/pages/vault/index.tsx",
+          "src/pages/vault/constant.ts",
+          "src/pages/vault/components/SLP.tsx",
+          "src/pages/vault/components/DataView.tsx",
+          "src/pages/vault/components/modals/index.tsx",
+          "src/pages/vault/components/tabs/index.tsx",
+          "src/pages/vault/components/tabs/MyPosition.tsx",
+          "src/pages/vault/components/tabs/Overview.tsx",
+          "src/pages/vault/components/tabs/Activity.tsx",
+          "src/pages/vault/components/tabs/Depositors.tsx",
+          "src/pages/vault/components/tabs/Chart.tsx",
+          "src/pages/vault/components/tabs/TimeSelection.tsx",
+          "src/pages/vault/components/tabs/useTable.tsx",
+          "src/pages/vault/components/helper/numbers.ts"
+        ],
+        "relatedConcepts": [
+          "vault",
+          "liquidity-provider",
+          "echarts",
+          "event-bus"
+        ]
+      },
+      "referencePath": "reference/vault/vault-page-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "页面布局（SLP+Tabs）、数据流（6个API）、事件驱动刷新机制",
+          "lineRange": [
+            3,
+            60
+          ],
+          "estimatedTokens": 870
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "SLP头部面板、Tabs容器、MyPosition/Overview/Activity/Depositors/Chart组件、弹窗注册、常量",
+          "lineRange": [
+            61,
+            156
+          ],
+          "estimatedTokens": 1440
+        },
+        {
+          "title": "文件结构",
+          "summary": "14个页面文件的目录结构和职责",
+          "lineRange": [
+            157,
+            181
+          ],
+          "estimatedTokens": 375
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "智能默认Tab、事件驱动刷新、URL参数触发弹窗、双链余额提示、图表三模式复用",
+          "lineRange": [
+            182,
+            189
+          ],
+          "estimatedTokens": 120
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "修改指标/按钮/图表/时间范围/Tab/Activity类型等场景入口",
+          "lineRange": [
+            190,
+            201
+          ],
+          "estimatedTokens": 180
+        },
+        {
+          "title": "术语表",
+          "summary": "SLP/MAG7/sMAG7/NAV/TVL/CoolDown等术语",
+          "lineRange": [
+            202,
+            214
+          ],
+          "estimatedTokens": 195
+        },
+        {
+          "title": "更新记录",
+          "summary": "版本历史",
+          "lineRange": [
+            215,
+            219
+          ],
+          "estimatedTokens": 75
+        }
+      ],
+      "tags": [
+        "vault",
+        "liquidity-provider",
+        "echarts",
+        "event-bus",
+        "responsive",
+        "share"
+      ],
+      "created": "2026-04-10",
+      "updated": "2026-04-10"
+    }
+  },
+  "history": {
+    "vault-unstake": [
+      {
+        "date": "2026-03-25",
+        "type": "fix",
+        "summary": "滑点容差判断 transfer 必要性（差值 > 0.0001 才 transfer），重试配置优化（总等待 4.5s），新增 TOKEN_DECIMAL 常量",
+        "files": [
+          "useUnstakeWithTransfer.ts",
+          "constant.ts"
+        ],
+        "historyPath": "history/vault/vault-unstake/2026-03-25-balance-snapshot-retry.md"
+      },
+      {
+        "date": "2026-03-25",
+        "type": "refactor",
+        "summary": "简化 needTransfer 判断逻辑，统一使用 calculate 库；修复 useMemo 依赖项，提取 evmSmag7/spotSmag7",
+        "files": [
+          "useUnstakeWithTransfer.ts"
+        ],
+        "historyPath": "history/vault/vault-unstake/2026-03-25-balance-snapshot-retry.md"
+      },
+      {
+        "date": "2026-03-25",
+        "type": "fix",
+        "summary": "添加余额快照机制防止 UI 抖动，添加重试机制 + 滑点容差处理精度损失",
+        "files": [
+          "useUnstakeWithTransfer.ts"
+        ],
+        "historyPath": "history/vault/vault-unstake/2026-03-25-balance-snapshot-retry.md"
+      },
+      {
+        "date": "2026-03-25",
+        "type": "feat",
+        "summary": "初始版本，实现智能转账逻辑（Spot → EVM → Unstake）及精度修复",
+        "files": [
+          "useUnstakeWithTransfer.ts",
+          "index.tsx",
+          "VaultUnstakeButton.tsx",
+          "schema.ts"
+        ]
+      }
+    ],
+    "vault-deposit": [
+      {
+        "date": "2026-03-06",
+        "type": "fix",
+        "summary": "修复表单金额被 useEffect 覆盖问题（OKX 钱包交易失败、Enable Trading 后金额变 0）",
+        "files": [
+          "deposit/index.tsx",
+          "useBaseChainDeposit.ts"
+        ],
+        "historyPath": "history/vault/vault-deposit/20260306-autofill-amount-override-fix.md"
+      },
+      {
+        "date": "2026-02-05",
+        "type": "fix",
+        "summary": "修复新用户 Enable Trading 跳过问题（isNewUser 快照 + user.id 重试机制）",
+        "files": [
+          "useVaultDeposit.ts",
+          "useBaseChainDeposit.ts"
+        ],
+        "historyPath": "history/vault/vault-deposit/20260205-newuser-enabletrading-fix.md"
+      },
+      {
+        "date": "2025-12-19",
+        "type": "fix",
+        "summary": "Value Chain 失败状态 UI 优化（getStepStatus 修复 + RETRY 直接重试当前步骤）",
+        "files": [
+          "useValueChainDeposit.tsx",
+          "Trading.tsx"
+        ],
+        "historyPath": "history/vault/vault-deposit/20251219-value-chain-ui-fix.md"
+      },
+      {
+        "date": "2025-12-05",
+        "type": "feat",
+        "summary": "UI 反馈优化：Base Chain Confirm 文案三阶段细化、Try Again 3秒超时、失败状态面板可折叠",
+        "files": [
+          "DepositToSodexStep.tsx",
+          "Trading.tsx",
+          "CollapsiblePanel.tsx",
+          "useBaseChainDeposit.ts"
+        ],
+        "historyPath": "history/vault/vault-deposit/20251205-ui-feedback-optimization.md"
+      },
+      {
+        "date": "2025-11-07",
+        "type": "refactor",
+        "summary": "统一 Base Chain 桥接逻辑（toClob=true），sMAG7 新增 Transfer 步骤",
+        "files": [
+          "useBaseChainDeposit.ts",
+          "useVaultDeposit.ts"
+        ],
+        "historyPath": "history/vault/vault-deposit/20251107-unified-toclob-logic.md"
+      },
+      {
+        "date": "2025-01-07",
+        "type": "fix",
+        "summary": "修复 sMAG7 充值后 SLP 余额不更新（添加 waitForTransactionReceipt 等待链上确认）",
+        "files": [
+          "useValueChainDeposit.tsx",
+          "SLP.tsx"
+        ],
+        "historyPath": "history/vault/vault-deposit/20250107-smag7-slp-balance-fix.md"
+      }
+    ],
+    "vault-claim": [
+      {
+        "date": "2026-03-29",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": [
+          "index.tsx",
+          "VaultClaimButton.tsx",
+          "schema.ts"
+        ]
+      }
+    ],
+    "vault-withdraw": [
+      {
+        "date": "2026-03-29",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": [
+          "index.tsx",
+          "useProcessOptions.tsx",
+          "Trading.tsx",
+          "VaultWithdrawButton.tsx",
+          "schema.ts",
+          "Confirm.tsx"
+        ]
+      }
+    ],
+    "vault-page": [
+      {
+        "date": "2026-04-10",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": [
+          "vault/index.tsx",
+          "constant.ts",
+          "SLP.tsx",
+          "DataView.tsx",
+          "modals/index.tsx",
+          "tabs/index.tsx",
+          "MyPosition.tsx",
+          "Overview.tsx",
+          "Activity.tsx",
+          "Depositors.tsx",
+          "Chart.tsx",
+          "TimeSelection.tsx",
+          "useTable.tsx",
+          "numbers.ts"
+        ]
+      }
+    ]
+  }
+}

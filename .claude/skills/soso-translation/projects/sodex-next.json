@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "projectName": "sodex-next",
+  "projectRoot": "/Users/soso/Documents/code/sodex-next",
+  "detectedAt": "2026-05-30",
+  "targets": [
+    {
+      "name": "default",
+      "localesDir": "public/assets/locales",
+      "srcDir": "src",
+      "namespaceRoots": ["features", "shared"],
+      "namespaceMap": {
+        "features/trade": "spot",
+        "features/staking": "stake",
+        "features/apikeys": "apikey",
+        "features/auth": "common",
+        "features/market": "common",
+        "features/link-mobile-device": "common",
+        "shared/components": "common"
+      },
+      "fallbackNamespace": "common",
+      "manualNamespaces": ["manual", "aicustomer", "announcement", "maintenance"]
+    }
+  ]
+}

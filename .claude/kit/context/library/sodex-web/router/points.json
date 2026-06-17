@@ -1,0 +1,88 @@
+{
+  "module": "points",
+  "name": "Points",
+  "description": "积分与奖励系统",
+  "emoji": "⭐",
+  "features": {
+    "points-page": {
+      "id": "points-page",
+      "module": "points",
+      "type": "feature",
+      "title": "Points 积分页面",
+      "summary": "SoPoints Season 1 积分页面：Guest/User 双视图、Tier 等级卡片（6级样式）、Weekly Performance 表格（排序+折叠）、分享弹窗（total/weekly 双模式）、倒计时快照",
+      "discovery_cost": "~18100 tokens",
+      "quickRef": {
+        "coreLogic": [
+          "Points(): JSX  L16-86  入口组件，usePageAuth 鉴权 → Guest/User 视图切换",
+          "UserPoints({ timeLeft, weekNumber, weekPoolPoints }): JSX  L41-331  已鉴权视图，getUserSummary + getWeeklyPointsList 数据获取",
+          "WeeklyPerformance({ data, loading, userSummary }): JSX  L115-237  周表现表格，PC排序+Mobile折叠，8列数据展示",
+          "UserPointsCard({ tier, points, rank, ... }): JSX  L350-358  等级卡片，6级渐变样式+Shine动画+进度条",
+          "PointsDashboard({ timeLeft, connected, ... }): JSX  L339-374  Guest 主面板，积分池+Hero+三功能卡片"
+        ],
+        "keyComponents": [
+          "UserPointsCard.tsx - 等级卡片：6级渐变+纹理+Shine动画+进度条",
+          "WeeklyPerformance.tsx - 周表现：PC表格排序+Mobile折叠面板",
+          "UserSharePointContent.tsx - 分享弹窗：total/weekly双模式+html-to-image",
+          "PointsDashboard.tsx - Guest面板：积分池倒计时+三功能引导卡片",
+          "FAQSection.tsx - FAQ折叠面板：7个常见问题"
+        ],
+        "keyFiles": [
+          "src/pages/points/newPoints/index.tsx",
+          "src/pages/points/newPoints/userPoints/index.tsx",
+          "src/pages/points/newPoints/userPoints/UserPointsCard.tsx",
+          "src/pages/points/newPoints/userPoints/WeeklyPerformance.tsx",
+          "src/pages/points/newPoints/userPoints/UserSharePointContent.tsx",
+          "src/pages/points/newPoints/guestPoints/PointsDashboard.tsx",
+          "src/pages/points/newPoints/userPoints/modals/index.ts"
+        ],
+        "relatedConcepts": ["tier-system", "weekly-snapshot", "share-poster", "rate-limit-retry", "page-auth"]
+      },
+      "referencePath": "reference/points/points-page-guide.md",
+      "sections": [
+        {
+          "title": "架构概览",
+          "summary": "双视图切换、组件层级、数据流总览",
+          "lineRange": [3, 45],
+          "estimatedTokens": 645
+        },
+        {
+          "title": "核心逻辑",
+          "summary": "入口鉴权、UserPoints 数据获取、Tier 等级体系、WeeklyPerformance 排序、分享系统",
+          "lineRange": [46, 130],
+          "estimatedTokens": 1275
+        },
+        {
+          "title": "文件结构",
+          "summary": "目录布局与各文件职责",
+          "lineRange": [131, 156],
+          "estimatedTokens": 390
+        },
+        {
+          "title": "关键设计决策",
+          "summary": "新旧版共存、限流重试、分享数据选择、鉴权复用",
+          "lineRange": [157, 177],
+          "estimatedTokens": 315
+        },
+        {
+          "title": "开发修改指南",
+          "summary": "添加积分方式、修改等级样式、修改表格列",
+          "lineRange": [178, 197],
+          "estimatedTokens": 300
+        }
+      ],
+      "tags": ["tier-system", "weekly-snapshot", "share-poster", "rate-limit-retry", "page-auth", "responsive", "countdown"],
+      "created": "2026-04-10",
+      "updated": "2026-04-10"
+    }
+  },
+  "history": {
+    "points-page": [
+      {
+        "date": "2026-04-10",
+        "type": "feat",
+        "summary": "初始版本，通过 /k/context learn 从代码自动生成",
+        "files": ["index.tsx", "userPoints/index.tsx", "UserPointsCard.tsx", "WeeklyPerformance.tsx", "UserSharePointContent.tsx", "PointsDashboard.tsx", "modals/index.ts"]
+      }
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "meta": {
+    "lastUpdated": "2026-04-16",
+    "totalFiles": 0,
+    "description": "文件反向索引：file-path -> features[]，用于快速查询「这个文件涉及哪些功能」"
+  },
+  "index": {}
+}

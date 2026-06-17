@@ -1,0 +1,115 @@
+{
+  "meta": {
+    "version": "2.5",
+    "project": "sodex-next",
+    "lastUpdated": "2026-04-30T15:04:57Z",
+    "totalFeatures": 5,
+    "totalModules": 2,
+    "structureType": "module-based",
+    "indexes": {
+      "files": "indexes/files.json",
+      "tags": "indexes/tags.json"
+    }
+  },
+  "modules": [
+    {
+      "id": "global",
+      "name": "Global",
+      "emoji": "🌍",
+      "description": "全局组件与跨页面功能",
+      "router": "router/global.json",
+      "featureCount": 3,
+      "features": [
+        {
+          "id": "global-restrict",
+          "title": "地区限制系统（Region Restrict）",
+          "summary": "基于 IP 检测的地区限制系统，从 sodex-web 完整迁移。涵盖 5 份 spec（a/b/c/d/e）共 18 个生效使用点 + ConnectedDeposit lockedToken/lockedChain 能力扩展。",
+          "type": "feat",
+          "lastUpdated": "2026-04-28"
+        },
+        {
+          "id": "global-maintenance",
+          "title": "全局维护系统（Global Maintenance）",
+          "summary": "两级维护系统（全量 + 链维护）从 sodex-web 完整迁移。5 份 spec + 7 个 PR 实施 + 9 状态跳转矩阵 + 12 状态 Banner 优先级矩阵 + 48 个生效点。",
+          "type": "feat",
+          "lastUpdated": "2026-04-28"
+        },
+        {
+          "id": "global-banner",
+          "title": "全局公告 Banner（Global Banner）",
+          "summary": "对齐老项目 sodex-web 单消费者架构：useGlobalBanner 渲染 type 2/3/4（24h TTL + URL 校验 + isChainMaintenanceOnTrade/isRestricted 守卫），MaintenanceBanner 仅在维护期 + 后端无 type 2 时兜底硬编码英文。包含 18 行场景决策矩阵。",
+          "type": "feat",
+          "lastUpdated": "2026-04-30"
+        }
+      ]
+    },
+    {
+      "id": "stake",
+      "name": "Stake",
+      "emoji": "💎",
+      "description": "SOSO 质押页面与 Stake SOSO 弹窗",
+      "router": "router/stake.json",
+      "featureCount": 2,
+      "features": [
+        {
+          "id": "stake-page",
+          "title": "SOSO 质押页面（Staking Page）",
+          "summary": "Staking 页面入口与展示层（Header / StatsRow / Tiers / Utilities / 移动端浮动按钮）。聚合 useStakingBalancesQuery + useTotalStakedQuery，提供 7 档 tier 系统。监听 ?action=stake 自动打开 stake-soso 弹窗。全程 useAuthState().address，邮箱用户兼容。",
+          "type": "feat",
+          "lastUpdated": "2026-04-30"
+        },
+        {
+          "id": "stake-soso",
+          "title": "Stake SOSO 弹窗（StakeSosoDialog）",
+          "summary": "Stake SOSO 质押弹窗，含 4 区块：(1) My Total SSI Value 全局聚合（4 代币 cooldown × wallet+proxy + LP lockDatas + ValueChain SLP×NAV）；(2) Trading Fee Discount 实时档位预览；(3) SSI Boost coefficient floor(stakeUsd/totalSsi×100) clamp[0,1000] 最大 11x；(4) Amount 输入区（4位 ROUND_DOWN + Max + 扣 0.001 gas）。5 档按钮状态机。由 stake-page 触发。",
+          "type": "feat",
+          "lastUpdated": "2026-04-30"
+        }
+      ]
+    }
+  ],
+  "recentQueue": [
+    {
+      "id": "vault-notification",
+      "module": "vault",
+      "date": "2026-04-30",
+      "type": "feat",
+      "summary": "Vault 4 操作通知 + 数据刷新基础设施(WS sodex_deposit/withdraw/call_for + 17 query 统一失效 + 4 set dedupe + 业务专有错误码 + claim 不带金额)"
+    },
+    {
+      "featureId": "stake-soso",
+      "module": "stake",
+      "type": "feat",
+      "summary": "Stake SOSO 弹窗独立入库：4 区块完整算法（My Total SSI / Boost / Discount / Amount）+ 4 代币 cooldown 聚合 + LP lockDatas + 5 档按钮状态机",
+      "timestamp": "2026-04-30T13:30:00Z"
+    },
+    {
+      "featureId": "stake-page",
+      "module": "stake",
+      "type": "feat",
+      "summary": "Staking 页面 + Stake SOSO 弹窗完整迁移：4 代币 cooldown × wallet+proxy / LP lockDatas / VC SLP×NAV 四分量 My Total SSI Value，对齐老项目精度",
+      "timestamp": "2026-04-30T13:00:00Z"
+    },
+    {
+      "featureId": "global-banner",
+      "module": "global",
+      "type": "fix",
+      "summary": "global-banner 架构修正 v2：对齐老项目 sodex-web 单消费者，删除 useGlobalBanner 错误的 !isInMaintenance 守卫，MaintenanceBanner 退回纯 fallback，新增 18 行场景决策矩阵",
+      "timestamp": "2026-04-30T12:00:00Z"
+    },
+    {
+      "featureId": "global-maintenance",
+      "module": "global",
+      "type": "feat",
+      "summary": "从 sodex-web 完整迁移 global-maintenance：两级维护 + 9 状态矩阵 + Banner 优先级 + T-Rex",
+      "timestamp": "2026-04-28T00:00:00Z"
+    },
+    {
+      "featureId": "global-restrict",
+      "module": "global",
+      "type": "feat",
+      "summary": "从 sodex-web 完整迁移 region-restrict",
+      "timestamp": "2026-04-28T00:00:00Z"
+    }
+  ]
+}

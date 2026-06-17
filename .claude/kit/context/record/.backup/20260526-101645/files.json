@@ -1,0 +1,494 @@
+{
+  "meta": {
+    "lastUpdated": "2026-05-12T00:00:00Z",
+    "totalFiles": 156,
+    "description": "文件反向索引：file-path -> features[]，用于快速查询「这个文件涉及哪些功能」"
+  },
+  "index": {
+    "src/features/staking/pages/StakingPage.tsx": [
+      "stake-page"
+    ],
+    "src/features/staking/containers/useStakingPageViewModel.ts": [
+      "stake-page"
+    ],
+    "src/features/staking/containers/useStakingBalancesQuery.ts": [
+      "stake-page"
+    ],
+    "src/features/staking/containers/useTotalStakedQuery.ts": [
+      "stake-page"
+    ],
+    "src/features/staking/containers/useBoostTotalQuery.ts": [
+      "stake-soso"
+    ],
+    "src/features/staking/containers/useSubmitStake.ts": [
+      "stake-soso"
+    ],
+    "src/features/staking/containers/useStakingBoostCalc.ts": [
+      "stake-soso"
+    ],
+    "src/features/staking/containers/useSpotRefetchAfterTransfer.ts": [
+      "stake-soso"
+    ],
+    "src/features/trade/containers/useSpotAccountSync.ts": [
+      "stake-soso"
+    ],
+    "src/features/staking/containers/stakeFlowLogic.ts": [
+      "stake-page"
+    ],
+    "src/features/staking/components/StakingHeader.tsx": [
+      "stake-page"
+    ],
+    "src/features/staking/components/StakingStatsRow.tsx": [
+      "stake-page"
+    ],
+    "src/features/staking/components/TotalStakedCard.tsx": [
+      "stake-page"
+    ],
+    "src/features/staking/components/StakingTiersSection.tsx": [
+      "stake-page"
+    ],
+    "src/features/staking/components/StakingTiersTable.tsx": [
+      "stake-page"
+    ],
+    "src/features/staking/components/SosoUtilitiesSection.tsx": [
+      "stake-page"
+    ],
+    "src/features/staking/components/SosoUtilityCard.tsx": [
+      "stake-page"
+    ],
+    "src/features/staking/components/TagStatus.tsx": [
+      "stake-page"
+    ],
+    "src/features/staking/components/YouBadge.tsx": [
+      "stake-page"
+    ],
+    "src/features/staking/components/MobileStakeButton.tsx": [
+      "stake-page"
+    ],
+    "src/features/staking/components/StakeSosoDialog/index.tsx": [
+      "stake-soso"
+    ],
+    "src/features/staking/components/StakeSosoDialog/StakeSosoContent.tsx": [
+      "stake-soso"
+    ],
+    "src/features/staking/components/StakeSosoDialog/StakeReviewStep.tsx": [
+      "stake-soso"
+    ],
+    "src/features/staking/components/StakeSosoDialog/StakeSosoSkeleton.tsx": [
+      "stake-soso"
+    ],
+    "src/features/staking/domain/types.ts": [
+      "stake-page"
+    ],
+    "src/features/staking/domain/constants.ts": [
+      "stake-page",
+      "stake-soso"
+    ],
+    "src/features/staking/domain/stakingTierCompute.ts": [
+      "stake-page",
+      "stake-soso"
+    ],
+    "src/features/staking/infra/chain/stakingChainInfra.ts": [
+      "stake-page"
+    ],
+    "src/features/staking/infra/chain/valueChainStake.ts": [
+      "stake-soso"
+    ],
+    "src/features/staking/infra/api/ssiGwApi.ts": [
+      "stake-soso"
+    ],
+    "src/features/staking/infra/api/sosoTransferInfra.ts": [
+      "stake-soso"
+    ],
+    "src/features/staking/index.ts": [
+      "stake-page"
+    ],
+    "src/features/market/containers/useGlobalBanner.ts": [
+      "global-banner"
+    ],
+    "src/features/market/containers/useBannerQuery.ts": [
+      "global-banner"
+    ],
+    "src/features/market/components/GlobalBanner/index.tsx": [
+      "global-banner"
+    ],
+    "src/features/market/domain/types.ts": [
+      "global-banner"
+    ],
+    "src/features/market/domain/normalize.ts": [
+      "global-banner"
+    ],
+    "src/features/market/infra/api/configApi.ts": [
+      "global-banner"
+    ],
+    "src/features/maintenance/components/MaintenanceBanner.tsx": [
+      "global-banner"
+    ],
+    "src/features/region-restrict/index.ts": [
+      "global-restrict"
+    ],
+    "src/features/region-restrict/containers/useInitRegionRestrict.ts": [
+      "global-restrict"
+    ],
+    "src/features/region-restrict/containers/useRegionRestrict.ts": [
+      "global-restrict"
+    ],
+    "src/features/region-restrict/stores/regionStore.ts": [
+      "global-restrict"
+    ],
+    "src/features/region-restrict/infra/api/regionApi.ts": [
+      "global-restrict"
+    ],
+    "src/features/region-restrict/domain/types.ts": [
+      "global-restrict"
+    ],
+    "src/features/region-restrict/domain/normalize.ts": [
+      "global-restrict"
+    ],
+    "src/features/region-restrict/components/RegionRestrictWrapper.tsx": [
+      "global-restrict"
+    ],
+    "src/features/region-restrict/components/RegionRestrictBanner.tsx": [
+      "global-restrict"
+    ],
+    "src/features/region-restrict/__tests__/normalize.test.ts": [
+      "global-restrict"
+    ],
+    "src/App.tsx": [
+      "global-restrict",
+      "global-banner",
+      "vault-notification"
+    ],
+    "src/shared/queryKeys/index.ts": [
+      "global-restrict",
+      "vault-notification"
+    ],
+    "src/features/auth/components/HeaderConnectWallet/index.tsx": [
+      "global-restrict"
+    ],
+    "src/features/trade/components/BalancePanel/FundingActions.tsx": [
+      "global-restrict"
+    ],
+    "src/features/portfolio/components/FundingActions.tsx": [
+      "global-restrict"
+    ],
+    "src/features/trade/components/PositionTabs/PositionTable.tsx": [
+      "global-restrict"
+    ],
+    "src/features/trade/components/PositionTabs/BalancesTable.tsx": [
+      "global-restrict"
+    ],
+    "src/features/trade/components/TickerBar/MarketTable/UsdtSwapPromo.tsx": [
+      "global-restrict"
+    ],
+    "src/features/trade/components/FundWalletDialog.tsx": [
+      "global-restrict"
+    ],
+    "src/features/trade/components/OrderForm/Spot/OrderForm.tsx": [
+      "global-restrict"
+    ],
+    "src/features/trade/components/OrderForm/Futures/OrderForm.tsx": [
+      "global-restrict"
+    ],
+    "src/features/trade/containers/spotOrderFormLogic.ts": [
+      "global-restrict"
+    ],
+    "src/features/trade/containers/perpsOrderFormLogic.ts": [
+      "global-restrict"
+    ],
+    "src/features/trade/containers/useSpotOrderFormViewModel.ts": [
+      "global-restrict"
+    ],
+    "src/features/trade/containers/usePerpsOrderFormViewModel.ts": [
+      "global-restrict"
+    ],
+    "src/features/trade/__tests__/spotOrderFormLogic.test.ts": [
+      "global-restrict"
+    ],
+    "src/features/trade/__tests__/perpsOrderFormLogic.test.ts": [
+      "global-restrict"
+    ],
+    "src/features/vault/components/VaultHeader/index.tsx": [
+      "global-restrict"
+    ],
+    "src/features/vault/components/VaultStats/index.tsx": [
+      "global-restrict"
+    ],
+    "src/features/referrals/components/ReferralHero/index.tsx": [
+      "global-restrict"
+    ],
+    "src/features/referrals/components/ReferralAssetsCard/index.tsx": [
+      "global-restrict"
+    ],
+    "src/shared/components/features/Deposit/type.ts": [
+      "global-restrict"
+    ],
+    "src/shared/components/features/Deposit/index.tsx": [
+      "global-restrict"
+    ],
+    "src/shared/components/features/Deposit/_components/TokenSelector.tsx": [
+      "global-restrict"
+    ],
+    "src/shared/components/features/Deposit/_components/ChainSelector.tsx": [
+      "global-restrict"
+    ],
+    "src/features/trade/components/ConnectedDeposit/index.tsx": [
+      "global-restrict"
+    ],
+    "src/features/staking/components/YourStakedCard.tsx": [
+      "global-restrict",
+      "stake-page"
+    ],
+    "src/features/trade/containers/useDepositNotice.ts": [
+      "vault-notification"
+    ],
+    "src/features/trade/index.ts": [
+      "vault-notification"
+    ],
+    "src/features/trade/services/depositNoticeDataService.ts": [
+      "vault-notification"
+    ],
+    "src/features/trade/stores/depositNoticeStore.ts": [
+      "vault-notification"
+    ],
+    "src/features/vault/containers/handleClaimServiceError.ts": [
+      "vault-notification",
+      "vault-claim"
+    ],
+    "src/features/vault/containers/handleDepositServiceError.ts": [
+      "vault-notification",
+      "vault-deposit"
+    ],
+    "src/features/vault/containers/handleUnstakeServiceError.ts": [
+      "vault-notification",
+      "vault-unstake"
+    ],
+    "src/features/vault/containers/handleWithdrawServiceError.ts": [
+      "vault-notification",
+      "vault-withdraw"
+    ],
+    "src/features/vault/containers/useSubmitVaultClaim.ts": [
+      "vault-notification",
+      "vault-claim"
+    ],
+    "src/features/vault/containers/useSubmitVaultDeposit.ts": [
+      "vault-notification",
+      "vault-deposit"
+    ],
+    "src/features/vault/containers/useSubmitVaultUnstake.ts": [
+      "vault-notification",
+      "vault-unstake"
+    ],
+    "src/features/vault/containers/useSubmitVaultWithdraw.ts": [
+      "vault-notification",
+      "vault-withdraw"
+    ],
+    "src/features/vault/domain/types.ts": [
+      "vault-notification"
+    ],
+    "src/features/vault/services/mapInfraError.ts": [
+      "vault-notification"
+    ],
+    "src/features/vault/services/vaultClaimService.ts": [
+      "vault-notification",
+      "vault-claim"
+    ],
+    "src/features/vault/services/vaultUnstakeService.ts": [
+      "vault-notification",
+      "vault-unstake"
+    ],
+    "src/features/vault/services/vaultWithdrawService.ts": [
+      "vault-notification",
+      "vault-withdraw"
+    ],
+    "src/shared/infra/notify/index.ts": [
+      "vault-notification"
+    ],
+    "src/shared/infra/ws/depositNoticeWs.ts": [
+      "vault-notification"
+    ],
+    "src/shared/utils/invalidateVaultMutationQueries.ts": [
+      "vault-notification"
+    ],
+    "src/features/vault/components/dialogs/VaultUnstakeDialog/index.tsx": [
+      "vault-unstake"
+    ],
+    "src/features/vault/components/dialogs/VaultUnstakeDialog/VaultUnstakeButton.tsx": [
+      "vault-unstake"
+    ],
+    "src/features/vault/components/dialogs/VaultUnstakeDialog/VaultUnstakeSkeleton.tsx": [
+      "vault-unstake"
+    ],
+    "src/features/vault/containers/useVaultUnstakeForm.ts": [
+      "vault-unstake"
+    ],
+    "src/features/vault/containers/unstakeFlowLogic.ts": [
+      "vault-unstake"
+    ],
+    "src/features/vault/infra/chain/vaultUnstakeInfra.ts": [
+      "vault-unstake"
+    ],
+    "src/features/vault/domain/unstakePermit.ts": [
+      "vault-unstake"
+    ],
+    "src/features/vault/components/dialogs/VaultClaimDialog/index.tsx": [
+      "vault-claim"
+    ],
+    "src/features/vault/components/dialogs/VaultClaimDialog/VaultClaimButton.tsx": [
+      "vault-claim"
+    ],
+    "src/features/vault/components/dialogs/VaultClaimDialog/VaultClaimSkeleton.tsx": [
+      "vault-claim"
+    ],
+    "src/features/vault/containers/useVaultClaimForm.ts": [
+      "vault-claim"
+    ],
+    "src/features/vault/containers/claimFlowLogic.ts": [
+      "vault-claim"
+    ],
+    "src/features/vault/infra/chain/vaultClaimInfra.ts": [
+      "vault-claim"
+    ],
+    "src/features/vault/domain/claimPermit.ts": [
+      "vault-claim"
+    ],
+    "src/features/vault/components/dialogs/VaultWithdrawDialog/index.tsx": [
+      "vault-withdraw"
+    ],
+    "src/features/vault/components/dialogs/VaultWithdrawDialog/VaultWithdrawButton.tsx": [
+      "vault-withdraw"
+    ],
+    "src/features/vault/components/dialogs/VaultWithdrawDialog/VaultWithdrawCooldownBanner.tsx": [
+      "vault-withdraw"
+    ],
+    "src/features/vault/components/dialogs/VaultWithdrawDialog/VaultWithdrawProgressView.tsx": [
+      "vault-withdraw"
+    ],
+    "src/features/vault/components/dialogs/VaultWithdrawDialog/VaultWithdrawSkeleton.tsx": [
+      "vault-withdraw"
+    ],
+    "src/features/vault/containers/useVaultWithdrawForm.ts": [
+      "vault-withdraw"
+    ],
+    "src/features/vault/containers/withdrawFlowLogic.ts": [
+      "vault-withdraw"
+    ],
+    "src/features/vault/containers/shared/useSlpBalanceQuery.ts": [
+      "vault-withdraw"
+    ],
+    "src/features/vault/containers/shared/useVaultNavQuery.ts": [
+      "vault-withdraw"
+    ],
+    "src/features/vault/containers/shared/useVaultPreviewRedeemQuery.ts": [
+      "vault-withdraw"
+    ],
+    "src/features/vault/containers/shared/useVaultCooldownSecondsQuery.ts": [
+      "vault-withdraw"
+    ],
+    "src/features/vault/containers/shared/useVaultCooldown.ts": [
+      "vault-withdraw"
+    ],
+    "src/features/vault/containers/shared/useVaultMinWithdrawAmountQuery.ts": [
+      "vault-withdraw"
+    ],
+    "src/features/vault/infra/chain/vaultWithdrawInfra.ts": [
+      "vault-withdraw"
+    ],
+    "src/features/vault/domain/withdrawPermit.ts": [
+      "vault-withdraw"
+    ],
+    "src/features/vault/components/dialogs/VaultDepositDialog/index.tsx": [
+      "vault-deposit"
+    ],
+    "src/features/vault/components/dialogs/VaultDepositDialog/BaseAccountInput.tsx": [
+      "vault-deposit"
+    ],
+    "src/features/vault/components/dialogs/VaultDepositDialog/AccountSelector.tsx": [
+      "vault-deposit"
+    ],
+    "src/features/vault/components/dialogs/VaultDepositDialog/CollapsiblePanel.tsx": [
+      "vault-deposit"
+    ],
+    "src/features/vault/components/dialogs/VaultDepositDialog/DepositToSodexStep.tsx": [
+      "vault-deposit"
+    ],
+    "src/features/vault/components/dialogs/VaultDepositDialog/DepositToVaultStep.tsx": [
+      "vault-deposit"
+    ],
+    "src/features/vault/components/dialogs/VaultDepositDialog/Preview.tsx": [
+      "vault-deposit"
+    ],
+    "src/features/vault/components/dialogs/VaultDepositDialog/Trading.tsx": [
+      "vault-deposit"
+    ],
+    "src/features/vault/components/dialogs/VaultDepositDialog/VaultPreTradeButton.tsx": [
+      "vault-deposit"
+    ],
+    "src/features/vault/components/dialogs/VaultDepositDialog/WarningText.tsx": [
+      "vault-deposit"
+    ],
+    "src/features/vault/containers/deposit/useVaultDepositMachine.ts": [
+      "vault-deposit"
+    ],
+    "src/features/vault/containers/useVaultDepositForm.ts": [
+      "vault-deposit"
+    ],
+    "src/features/vault/containers/depositFlowLogic.ts": [
+      "vault-deposit"
+    ],
+    "src/features/vault/domain/depositStateMachine.ts": [
+      "vault-deposit"
+    ],
+    "src/features/vault/domain/depositPermit.ts": [
+      "vault-deposit"
+    ],
+    "src/features/vault/infra/chain/vaultDepositInfra.ts": [
+      "vault-deposit"
+    ],
+    "src/shared/track/index.ts": [
+      "global-track"
+    ],
+    "src/shared/track/containers/useTrackInit.ts": [
+      "global-track"
+    ],
+    "src/shared/track/services/saTrackService.ts": [
+      "global-track"
+    ],
+    "src/shared/track/services/identityService.ts": [
+      "global-track"
+    ],
+    "src/shared/track/infra/sensorsSink.ts": [
+      "global-track"
+    ],
+    "src/shared/track/infra/datasinkSink.ts": [
+      "global-track"
+    ],
+    "src/shared/track/infra/gtagSink.ts": [
+      "global-track"
+    ],
+    "src/shared/track/infra/encrypt.ts": [
+      "global-track"
+    ],
+    "src/shared/track/domain/publicParams.ts": [
+      "global-track"
+    ],
+    "src/shared/track/domain/types.ts": [
+      "global-track"
+    ],
+    "src/features/auth/containers/useTrackConnectWallet.ts": [
+      "global-track"
+    ],
+    "src/features/auth/containers/useTrackWalletLogin.ts": [
+      "global-track"
+    ],
+    "index.html": [
+      "global-track"
+    ],
+    "vite.config.ts": [
+      "global-track"
+    ],
+    "src/vite-env.d.ts": [
+      "global-track"
+    ]
+  }
+}

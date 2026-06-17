@@ -1,0 +1,1451 @@
+{
+  "meta": {
+    "lastUpdated": "2026-04-17",
+    "totalFiles": 236,
+    "description": "文件反向索引：file-path → features[]，用于快速查询「这个文件涉及哪些功能」"
+  },
+  "index": {
+    "src/global/RegionRestrictWrapper.tsx": {
+      "features": [
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-04-17"
+    },
+    "src/hooks/restriction/useRegionRestrict.ts": {
+      "features": [
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-04-17"
+    },
+    "src/hooks/restriction/index.ts": {
+      "features": [
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-03-24"
+    },
+    "src/models/restriction.ts": {
+      "features": [
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-04-17"
+    },
+    "src/http/restriction/index.ts": {
+      "features": [
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-04-17"
+    },
+    "src/components/header/components/regionRestrictBanner/index.tsx": {
+      "features": [
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-04-17"
+    },
+    "src/components/header/components/sign/index.tsx": {
+      "features": [
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-03-24"
+    },
+    "src/pages/spot/main/asset/actions/index.tsx": {
+      "features": [
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-03-24"
+    },
+    "src/pages/spot/main/orderForm/openPosition/index.tsx": {
+      "features": [
+        "global-restrict",
+        "trade-spot-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/switch/market/index.tsx": {
+      "features": [
+        "global-restrict",
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-03-24"
+    },
+    "src/pages/spot/main/futures/order/orderForm/_components/TradeButton.tsx": {
+      "features": [
+        "global-restrict",
+        "trade-futures-orderform-mobile"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/futures/main/orderForm/openPosition/index.tsx": {
+      "features": [
+        "global-restrict",
+        "trade-futures-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/stake/StakingHero.tsx": {
+      "features": [
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-03-24"
+    },
+    "src/pages/vault/components/SLP.tsx": {
+      "features": [
+        "global-restrict",
+        "vault-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/m/trade/index.tsx": {
+      "features": [
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-03-24"
+    },
+    "src/components_tw/FeeEntry.tsx": {
+      "features": [
+        "trade-feerate"
+      ],
+      "lastUpdate": "2026-03-22"
+    },
+    "src/components_tw/modals/spot/FeeScheduleModal.tsx": {
+      "features": [
+        "trade-feerate"
+      ],
+      "lastUpdate": "2026-03-22"
+    },
+    "src/models/feeRate.ts": {
+      "features": [
+        "trade-feerate"
+      ],
+      "lastUpdate": "2026-03-22"
+    },
+    "src/config/feeTiers.ts": {
+      "features": [
+        "trade-feerate"
+      ],
+      "lastUpdate": "2026-03-22"
+    },
+    "src/http/spot/index.ts": {
+      "features": [
+        "trade-feerate"
+      ],
+      "lastUpdate": "2026-03-22"
+    },
+    "src/http/spot/api.d.ts": {
+      "features": [
+        "trade-feerate"
+      ],
+      "lastUpdate": "2026-03-22"
+    },
+    "src/components/header/components/depositBanner/index.tsx": {
+      "features": [
+        "global-banner",
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-03-24"
+    },
+    "src/components/header/components/globalBanner/index.tsx": {
+      "features": [
+        "global-banner"
+      ],
+      "lastUpdate": "2026-03-18"
+    },
+    "src/http/banner/index.ts": {
+      "features": [
+        "global-banner"
+      ],
+      "lastUpdate": "2026-03-18"
+    },
+    "src/http/banner/api.d.ts": {
+      "features": [
+        "global-banner"
+      ],
+      "lastUpdate": "2026-03-18"
+    },
+    "src/components_tw/modals/stakeSoso/StakeSoso.tsx": {
+      "features": [
+        "stake-soso"
+      ],
+      "lastUpdate": "2026-03-18"
+    },
+    "src/components_tw/modals/stakeSoso/StakeReview.tsx": {
+      "features": [
+        "stake-soso"
+      ],
+      "lastUpdate": "2026-03-18"
+    },
+    "src/components_tw/modals/stakeSoso/index.ts": {
+      "features": [
+        "stake-soso"
+      ],
+      "lastUpdate": "2026-03-18"
+    },
+    "src/utils/web3/valueChainStake.ts": {
+      "features": [
+        "stake-soso"
+      ],
+      "lastUpdate": "2026-03-18"
+    },
+    "src/pages/vault/components/modals/funding/deposit/_hooks/useVaultDeposit.ts": {
+      "features": [
+        "vault-deposit"
+      ],
+      "lastUpdate": "2026-02-05"
+    },
+    "src/pages/vault/components/modals/funding/deposit/_hooks/useBaseChainDeposit.ts": {
+      "features": [
+        "vault-deposit"
+      ],
+      "lastUpdate": "2026-02-05"
+    },
+    "src/pages/vault/components/modals/funding/deposit/_hooks/useValueChainDeposit.tsx": {
+      "features": [
+        "vault-deposit"
+      ],
+      "lastUpdate": "2026-02-05"
+    },
+    "src/pages/vault/components/modals/funding/deposit/transaction/Trading.tsx": {
+      "features": [
+        "vault-deposit"
+      ],
+      "lastUpdate": "2026-02-05"
+    },
+    "src/models/chainAsset.ts": {
+      "features": [
+        "transfer-evm-sync"
+      ],
+      "lastUpdate": "2026-02-13"
+    },
+    "src/components_tw/modals/spot/transfer/index.tsx": {
+      "features": [
+        "trade-transfer",
+        "transfer-evm-sync",
+        "network-switch",
+        "wallet-mobileApprove"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/components_tw/modals/spot/transfer/types.ts": {
+      "features": [
+        "trade-transfer"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/components_tw/modals/spot/transfer/helper.ts": {
+      "features": [
+        "trade-transfer"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/components_tw/modals/spot/transfer/constants.ts": {
+      "features": [
+        "trade-transfer"
+      ],
+      "lastUpdate": "2026-02-25"
+    },
+    "src/components_tw/modals/spot/transfer/_components/SymbolSelector.tsx": {
+      "features": [
+        "trade-transfer"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/components_tw/modals/spot/transfer/_components/transferAccountSwitcher/index.tsx": {
+      "features": [
+        "trade-transfer"
+      ],
+      "lastUpdate": "2026-02-25"
+    },
+    "src/components_tw/modals/spot/transfer/_components/process/index.tsx": {
+      "features": [
+        "trade-transfer"
+      ],
+      "lastUpdate": "2026-02-25"
+    },
+    "src/hooks/useAutoSwitchNetwork.ts": {
+      "features": [
+        "network-switch"
+      ],
+      "lastUpdate": "2026-02-06"
+    },
+    "src/config/chainConfig.ts": {
+      "features": [
+        "network-switch"
+      ],
+      "lastUpdate": "2026-02-06"
+    },
+    "src/pages/_components/withdraw/WithdrawModal.tsx": {
+      "features": [
+        "network-switch",
+        "trade-withdraw"
+      ],
+      "lastUpdate": "2026-03-03"
+    },
+    "src/pages/_components/withdraw/schema.ts": {
+      "features": [
+        "trade-withdraw"
+      ],
+      "lastUpdate": "2026-03-03"
+    },
+    "src/pages/_components/withdraw/AccountAmountSelector.tsx": {
+      "features": [
+        "trade-withdraw"
+      ],
+      "lastUpdate": "2026-03-03"
+    },
+    "src/pages/_components/withdraw/TransferProcess.tsx": {
+      "features": [
+        "trade-withdraw"
+      ],
+      "lastUpdate": "2026-03-03"
+    },
+    "src/pages/_components/hooks/useWithdraw.ts": {
+      "features": [
+        "trade-withdraw"
+      ],
+      "lastUpdate": "2026-03-03"
+    },
+    "src/pages/_components/helper/depositFilter.ts": {
+      "features": [
+        "trade-blacklist",
+        "trade-deposit"
+      ],
+      "lastUpdate": "2026-03-26"
+    },
+    "src/pages/_components/hooks/useFundingToken.ts": {
+      "features": [
+        "trade-blacklist",
+        "trade-deposit"
+      ],
+      "lastUpdate": "2026-03-26"
+    },
+    "src/pages/_components/deposit/DepositStepByStep.tsx": {
+      "features": [
+        "network-switch",
+        "trade-blacklist",
+        "trade-deposit"
+      ],
+      "lastUpdate": "2026-03-26"
+    },
+    "src/pages/spot/main/position/index.tsx": {
+      "features": [
+        "trade-position"
+      ],
+      "lastUpdate": "2026-04-15"
+    },
+    "src/pages/spot/main/position/tab/order/useAggList.ts": {
+      "features": [
+        "trade-position"
+      ],
+      "lastUpdate": "2026-04-15"
+    },
+    "src/pages/spot/main/position/tab/positionTab/index.tsx": {
+      "features": [
+        "trade-position",
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-04-15"
+    },
+    "src/pages/spot/main/position/tab/asset/index.tsx": {
+      "features": [
+        "trade-position",
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-04-15"
+    },
+    "src/pages/futures/main/position/tab/current/index.tsx": {
+      "features": [
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-03-24"
+    },
+    "src/pages/spot/main/components/preTradeButton/MainnetPreTradeButton.tsx": {
+      "features": [
+        "global-restrict",
+        "wallet-mobileApprove"
+      ],
+      "lastUpdate": "2026-03-25"
+    },
+    "src/pages/leaderboard/index.tsx": {
+      "features": [
+        "leaderboard-ranking"
+      ],
+      "lastUpdate": "2026-03-02"
+    },
+    "src/pages/leaderboard/hooks/useLeaderboardData.ts": {
+      "features": [
+        "leaderboard-ranking"
+      ],
+      "lastUpdate": "2026-03-02"
+    },
+    "src/pages/leaderboard/hooks/useShareData.ts": {
+      "features": [
+        "leaderboard-ranking"
+      ],
+      "lastUpdate": "2026-03-02"
+    },
+    "src/pages/leaderboard/hooks/useShareText.ts": {
+      "features": [
+        "leaderboard-ranking"
+      ],
+      "lastUpdate": "2026-03-02"
+    },
+    "src/pages/leaderboard/components/modal/ShareLeaderboardContent.tsx": {
+      "features": [
+        "leaderboard-ranking"
+      ],
+      "lastUpdate": "2026-03-02"
+    },
+    "src/pages/leaderboard/components/modal/PosterDom.tsx": {
+      "features": [
+        "leaderboard-ranking"
+      ],
+      "lastUpdate": "2026-03-02"
+    },
+    "src/pages/leaderboard/const/index.tsx": {
+      "features": [
+        "leaderboard-ranking"
+      ],
+      "lastUpdate": "2026-03-02"
+    },
+    "src/hooks/useAuthTokenValidation.ts": {
+      "features": [
+        "user-auth-core"
+      ],
+      "lastUpdate": "2026-03-04"
+    },
+    "src/hooks/usePageAuth.ts": {
+      "features": [
+        "user-auth-core",
+        "user-auth-referrals"
+      ],
+      "lastUpdate": "2026-04-08"
+    },
+    "src/http/auth/index.ts": {
+      "features": [
+        "user-auth-core"
+      ],
+      "lastUpdate": "2026-03-04"
+    },
+    "src/utils/storage/local.ts": {
+      "features": [
+        "user-auth-core"
+      ],
+      "lastUpdate": "2026-03-04"
+    },
+    "src/contexts/login/index.tsx": {
+      "features": [
+        "user-auth-core",
+        "user-auth-enable",
+        "global-sentry"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/components/baseInfoRequester/index.tsx": {
+      "features": [
+        "user-auth-core"
+      ],
+      "lastUpdate": "2026-03-04"
+    },
+    "src/pages/referrals/index.tsx": {
+      "features": [
+        "user-auth-referrals"
+      ],
+      "lastUpdate": "2026-04-08"
+    },
+    "src/pages/referrals/components/NewReferralHeader.tsx": {
+      "features": [
+        "user-auth-referrals",
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-04-08"
+    },
+    "src/components_tw/modals/spot/FundWallet.tsx": {
+      "features": [
+        "global-restrict"
+      ],
+      "lastUpdate": "2026-03-24"
+    },
+    "src/pages/account/assets/components/btnNav/index.tsx": {
+      "features": [
+        "global-restrict",
+        "wallet-mobileApprove"
+      ],
+      "lastUpdate": "2026-03-25"
+    },
+    "src/pages/referrals/components/ReferralConnectWalletStepsModal.tsx": {
+      "features": [
+        "user-auth-referrals"
+      ],
+      "lastUpdate": "2026-04-08"
+    },
+    "src/components_tw/modals/spot/transfer/_components/transferAccountSwitcher.tsx": {
+      "features": [
+        "trade-transfer"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/hooks/useWalletApproveText.tsx": {
+      "features": [
+        "wallet-mobileApprove"
+      ],
+      "lastUpdate": "2026-03-25"
+    },
+    "src/hooks/useEnableTrading.ts": {
+      "features": [
+        "wallet-mobileApprove",
+        "user-auth-enable",
+        "global-sentry"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/components_tw/modals/spot/WalletConnectSigningHint.tsx": {
+      "features": [
+        "wallet-mobileApprove"
+      ],
+      "lastUpdate": "2026-03-25"
+    },
+    "src/components_tw/modals/spot/TermsUse.tsx": {
+      "features": [
+        "wallet-mobileApprove"
+      ],
+      "lastUpdate": "2026-03-25"
+    },
+    "src/components_tw/modals/spot/index.tsx": {
+      "features": [
+        "wallet-mobileApprove",
+        "trade-deposit",
+        "user-auth-enable"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/_components/common/DepositProcessIndicator.tsx": {
+      "features": [
+        "wallet-mobileApprove"
+      ],
+      "lastUpdate": "2026-03-25"
+    },
+    "src/pages/referrals/components/CreateReferralCodeModal.tsx": {
+      "features": [
+        "wallet-mobileApprove"
+      ],
+      "lastUpdate": "2026-03-25"
+    },
+    "src/pages/referrals/components/InviteToSoDEXModal.tsx": {
+      "features": [
+        "wallet-mobileApprove"
+      ],
+      "lastUpdate": "2026-03-25"
+    },
+    "src/pages/vault/components/modals/funding/deposit/VaultPreTradeButton.tsx": {
+      "features": [
+        "wallet-mobileApprove"
+      ],
+      "lastUpdate": "2026-03-25"
+    },
+    "src/pages/vault/components/modals/funding/unstake/_hooks/useUnstakeWithTransfer.ts": {
+      "features": [
+        "vault-unstake"
+      ],
+      "lastUpdate": "2026-03-25"
+    },
+    "src/pages/vault/components/modals/funding/unstake/index.tsx": {
+      "features": [
+        "vault-unstake"
+      ],
+      "lastUpdate": "2026-03-25"
+    },
+    "src/pages/vault/components/modals/funding/unstake/VaultUnstakeButton.tsx": {
+      "features": [
+        "vault-unstake"
+      ],
+      "lastUpdate": "2026-03-25"
+    },
+    "src/pages/vault/components/modals/funding/unstake/schema.ts": {
+      "features": [
+        "vault-unstake"
+      ],
+      "lastUpdate": "2026-03-25"
+    },
+    "src/pages/_components/deposit/_hooks/useDeposit.ts": {
+      "features": [
+        "trade-deposit"
+      ],
+      "lastUpdate": "2026-03-26"
+    },
+    "src/pages/vault/components/modals/funding/claim/index.tsx": {
+      "features": [
+        "vault-claim"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/pages/vault/components/modals/funding/claim/VaultClaimButton.tsx": {
+      "features": [
+        "vault-claim"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/pages/vault/components/modals/funding/claim/schema.ts": {
+      "features": [
+        "vault-claim"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/hooks/useProxyAndCooldown.ts": {
+      "features": [
+        "vault-claim"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/pages/vault/components/modals/funding/_hooks/useCallForPermit.ts": {
+      "features": [
+        "vault-claim"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/pages/vault/components/modals/funding/withdraw/index.tsx": {
+      "features": [
+        "vault-withdraw"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/pages/vault/components/modals/funding/withdraw/transaction/useProcessOptions.tsx": {
+      "features": [
+        "vault-withdraw"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/pages/vault/components/modals/funding/withdraw/transaction/Trading.tsx": {
+      "features": [
+        "vault-withdraw"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/pages/vault/components/modals/funding/withdraw/VaultWithdrawButton.tsx": {
+      "features": [
+        "vault-withdraw"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/pages/vault/components/modals/funding/withdraw/schema.ts": {
+      "features": [
+        "vault-withdraw"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/pages/vault/components/modals/funding/withdraw/Confirm.tsx": {
+      "features": [
+        "vault-withdraw"
+      ],
+      "lastUpdate": "2026-03-29"
+    },
+    "src/components_tw/modals/tradingProcess/StaySignedIn.tsx": {
+      "features": [
+        "user-auth-enable"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/components_tw/drawers/index.tsx": {
+      "features": [
+        "user-auth-enable"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/utils/sentry.ts": {
+      "features": [
+        "global-sentry"
+      ],
+      "lastUpdate": "2026-03-30"
+    },
+    "src/axios.config.ts": {
+      "features": [
+        "global-sentry"
+      ],
+      "lastUpdate": "2026-03-30"
+    },
+    "src/App.tsx": {
+      "features": [
+        "global-sentry"
+      ],
+      "lastUpdate": "2026-03-30"
+    },
+    "src/utils/walletLogger.ts": {
+      "features": [
+        "global-sentry"
+      ],
+      "lastUpdate": "2026-03-30"
+    },
+    "src/pages/spot/main/orderForm/formSection/index.tsx": {
+      "features": [
+        "trade-spot-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/orderForm/index.tsx": {
+      "features": [
+        "trade-spot-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/orderForm/formSection/useUserAssetsStatus.ts": {
+      "features": [
+        "trade-spot-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/orderForm/closePosition/index.tsx": {
+      "features": [
+        "trade-spot-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/orderForm/entrustTypeTab/index.tsx": {
+      "features": [
+        "trade-spot-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/orderForm/direction/index.tsx": {
+      "features": [
+        "trade-spot-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/orderForm/mode/index.tsx": {
+      "features": [
+        "trade-spot-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/futures/main/orderForm/index.tsx": {
+      "features": [
+        "trade-futures-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/futures/main/orderForm/formSection/index.tsx": {
+      "features": [
+        "trade-futures-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/futures/main/orderForm/formSectionCoinBased/index.tsx": {
+      "features": [
+        "trade-futures-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/futures/main/orderForm/closePosition/index.tsx": {
+      "features": [
+        "trade-futures-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/futures/main/orderForm/entrustTypeTab/index.tsx": {
+      "features": [
+        "trade-futures-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/futures/main/orderForm/mode/index.tsx": {
+      "features": [
+        "trade-futures-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/futures/main/orderForm/percentPreview/index.tsx": {
+      "features": [
+        "trade-futures-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/futures/main/orderForm/tradeType/index.tsx": {
+      "features": [
+        "trade-futures-orderform"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/futures/order/index.tsx": {
+      "features": [
+        "trade-futures-orderform-mobile"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/futures/order/orderForm/index.tsx": {
+      "features": [
+        "trade-futures-orderform-mobile"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/futures/order/orderForm/helper.ts": {
+      "features": [
+        "trade-futures-orderform-mobile"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/futures/order/orderForm/_components/forms/limitForm/index.tsx": {
+      "features": [
+        "trade-futures-orderform-mobile"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/futures/order/orderForm/_components/forms/limitForm/schema.ts": {
+      "features": [
+        "trade-futures-orderform-mobile"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/futures/order/orderForm/_components/forms/marketForm/index.tsx": {
+      "features": [
+        "trade-futures-orderform-mobile"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/futures/order/orderForm/_components/forms/marketForm/schema.ts": {
+      "features": [
+        "trade-futures-orderform-mobile"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/futures/order/orderForm/_components/forms/_hooks/usePostOrder.ts": {
+      "features": [
+        "trade-futures-orderform-mobile"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/futures/order/orderForm/_components/forms/_hooks/useValuesBySlider.tsx": {
+      "features": [
+        "trade-futures-orderform-mobile"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/futures/order/orderForm/_components/forms/_hooks/useOrderListener.ts": {
+      "features": [
+        "trade-futures-orderform-mobile"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/futures/_components/TakeProfitStopLoss.tsx": {
+      "features": [
+        "trade-futures-orderform-mobile"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/futures/order/modals/LeverageModal.tsx": {
+      "features": [
+        "trade-futures-orderform-mobile"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/futures/order/modals/MarginMode.tsx": {
+      "features": [
+        "trade-futures-orderform-mobile"
+      ],
+      "lastUpdate": "2026-04-07"
+    },
+    "src/pages/spot/main/orderBook/index.tsx": {
+      "features": [
+        "trade-orderbook"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/orderBook/orderRow/index.tsx": {
+      "features": [
+        "trade-orderbook"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/orderBook/NewTooltip/index.tsx": {
+      "features": [
+        "trade-orderbook"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/orderBook/LayoutSelector.tsx": {
+      "features": [
+        "trade-orderbook"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/orderBook/DepthSelector.tsx": {
+      "features": [
+        "trade-orderbook"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/orderBook/CoinSelector.tsx": {
+      "features": [
+        "trade-orderbook"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/orderBook/tooltip/index.tsx": {
+      "features": [
+        "trade-orderbook"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/main/orderBook/index.tsx": {
+      "features": [
+        "trade-orderbook"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/main/orderBook/tooltip/index.tsx": {
+      "features": [
+        "trade-orderbook"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/main/components/orderRow/index.tsx": {
+      "features": [
+        "trade-orderbook"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/components/priceBar/index.tsx": {
+      "features": [
+        "trade-orderbook"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/main/components/priceBar/index.tsx": {
+      "features": [
+        "trade-orderbook"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/components/tradeRow/index.tsx": {
+      "features": [
+        "trade-orderbook"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/switch/index.tsx": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/switch/symbol/index.tsx": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/switch/symbol/LatestPrice.tsx": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/switch/market/marketCategory.ts": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/switch/market/useColumns.tsx": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/switch/ticker/index.tsx": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/switch/ticker/_components/SpotTicker.tsx": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/switch/ticker/_components/FuturesTicker.tsx": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/switch/ticker/_components/FoldSpotTicker.tsx": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/switch/ticker/_components/FoldFuturesTicker.tsx": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/switch/ticker/_components/FundingCountDown.tsx": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/spot/main/priceRate/index.tsx": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/main/switch/index.tsx": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/main/switch/symbol/index.tsx": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/main/switch/market/index.tsx": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/main/switch/ticker/index.tsx": {
+      "features": [
+        "trade-market-switch"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/stepRate/index.tsx": {
+      "features": [
+        "trade-steprate"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/stepRate/config.ts": {
+      "features": [
+        "trade-steprate"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/stepRate/user-level/index.tsx": {
+      "features": [
+        "trade-steprate"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/stepRate/user-level/Special.tsx": {
+      "features": [
+        "trade-steprate"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/stepRate/user-level/TradeModal.tsx": {
+      "features": [
+        "trade-steprate"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/stepRate/rate-table/index.tsx": {
+      "features": [
+        "trade-steprate"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/stepRate/level-description/index.tsx": {
+      "features": [
+        "trade-steprate"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/stepRate/apply-pro-rate/index.tsx": {
+      "features": [
+        "trade-steprate"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/stepRate/apply-pro-rate/ApplyModal.tsx": {
+      "features": [
+        "trade-steprate"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/futures/stepRate/super-partner/index.tsx": {
+      "features": [
+        "trade-steprate"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/models/stepRate.ts": {
+      "features": [
+        "trade-steprate"
+      ],
+      "lastUpdate": "2026-04-09"
+    },
+    "src/pages/apiKey/index.tsx": {
+      "features": [
+        "apikey-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/apiKey/hooks/useApiKeyGenerator.ts": {
+      "features": [
+        "apikey-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/apiKey/components/ApiKeyGenerateModal.tsx": {
+      "features": [
+        "apikey-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/apiKey/components/ApiKeySaveResultModal.tsx": {
+      "features": [
+        "apikey-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/apiKey/components/ApiKeyDeleteStepsModal.tsx": {
+      "features": [
+        "apikey-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/apiKey/components/ApiKeyListState.tsx": {
+      "features": [
+        "apikey-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/apiKey/components/modals/index.ts": {
+      "features": [
+        "apikey-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/apiKey/components/PageHeader.tsx": {
+      "features": [
+        "apikey-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/apiKey/components/ApiKeySectionTypes.ts": {
+      "features": [
+        "apikey-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/points/newPoints/index.tsx": {
+      "features": [
+        "points-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/points/newPoints/userPoints/index.tsx": {
+      "features": [
+        "points-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/points/newPoints/userPoints/UserPointsCard.tsx": {
+      "features": [
+        "points-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/points/newPoints/userPoints/WeeklyPerformance.tsx": {
+      "features": [
+        "points-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/points/newPoints/userPoints/UserSharePointContent.tsx": {
+      "features": [
+        "points-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/points/newPoints/guestPoints/PointsDashboard.tsx": {
+      "features": [
+        "points-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/points/newPoints/userPoints/modals/index.ts": {
+      "features": [
+        "points-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/index.tsx": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/Dashboard/index.tsx": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/BlocksPage/index.tsx": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/BlockDetailPage/index.tsx": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/BlockDetailPage/type.ts": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/TxsPage/index.tsx": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/TransactionDetailsPage/index.tsx": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/TransactionDetailsPage/PayloadDetails.tsx": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/TransactionDetailsPage/types.ts": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/AddressTransactionsPage/index.tsx": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/AddressTransactionsPage/type.ts": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/components/SearchNotFound/index.tsx": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/components/blockTypeTab/index.tsx": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/components/blocksTable/index.tsx": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/components/transactionsTable/index.tsx": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/explorer/components/transactionsTableHttp/index.tsx": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/http/explorer/index.ts": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/hooks/useChainAssetByAddress.ts": {
+      "features": [
+        "explorer-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/vault/index.tsx": {
+      "features": [
+        "vault-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/vault/constant.ts": {
+      "features": [
+        "vault-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/vault/components/DataView.tsx": {
+      "features": [
+        "vault-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/vault/components/modals/index.tsx": {
+      "features": [
+        "vault-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/vault/components/tabs/index.tsx": {
+      "features": [
+        "vault-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/vault/components/tabs/MyPosition.tsx": {
+      "features": [
+        "vault-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/vault/components/tabs/Overview.tsx": {
+      "features": [
+        "vault-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/vault/components/tabs/Activity.tsx": {
+      "features": [
+        "vault-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/vault/components/tabs/Depositors.tsx": {
+      "features": [
+        "vault-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/vault/components/tabs/Chart.tsx": {
+      "features": [
+        "vault-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/vault/components/tabs/TimeSelection.tsx": {
+      "features": [
+        "vault-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/vault/components/tabs/useTable.tsx": {
+      "features": [
+        "vault-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/pages/vault/components/helper/numbers.ts": {
+      "features": [
+        "vault-page"
+      ],
+      "lastUpdate": "2026-04-10"
+    },
+    "src/track/index.ts": {
+      "features": [
+        "global-track"
+      ],
+      "lastUpdate": "2026-04-14"
+    },
+    "src/track/sosovalue.ts": {
+      "features": [
+        "global-track"
+      ],
+      "lastUpdate": "2026-04-14"
+    },
+    "src/track/encrypt.ts": {
+      "features": [
+        "global-track"
+      ],
+      "lastUpdate": "2026-04-14"
+    },
+    "src/track/hooks.tsx": {
+      "features": [
+        "global-track"
+      ],
+      "lastUpdate": "2026-04-14"
+    },
+    "src/track/pageMapping.ts": {
+      "features": [
+        "global-track"
+      ],
+      "lastUpdate": "2026-04-14"
+    },
+    "src/track/events/trade.ts": {
+      "features": [
+        "global-track"
+      ],
+      "lastUpdate": "2026-04-14"
+    },
+    "src/track/events/point.ts": {
+      "features": [
+        "global-track"
+      ],
+      "lastUpdate": "2026-04-14"
+    },
+    "src/track/events/portfolio.ts": {
+      "features": [
+        "global-track"
+      ],
+      "lastUpdate": "2026-04-14"
+    },
+    "src/contexts/maintenance/index.tsx": {
+      "features": [
+        "global-maintenance"
+      ],
+      "lastUpdate": "2026-04-17"
+    },
+    "src/hooks/maintanence/useMaintenanceStatus.ts": {
+      "features": [
+        "global-maintenance"
+      ],
+      "lastUpdate": "2026-04-17"
+    },
+    "src/global/maintanence/MaintenanceWrapper.tsx": {
+      "features": [
+        "global-maintenance"
+      ],
+      "lastUpdate": "2026-04-17"
+    },
+    "src/global/region-restrict/RestrictWrapper.tsx": {
+      "features": [
+        "global-maintenance"
+      ],
+      "lastUpdate": "2026-04-17"
+    },
+    "src/pages/maintenance/MaintenanceContent.tsx": {
+      "features": [
+        "global-maintenance"
+      ],
+      "lastUpdate": "2026-04-17"
+    },
+    "src/http/maintenance/index.ts": {
+      "features": [
+        "global-maintenance"
+      ],
+      "lastUpdate": "2026-04-17"
+    }
+  }
+}

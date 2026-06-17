@@ -1,0 +1,8 @@
+{
+  "meta": {
+    "lastUpdated": "2026-04-16",
+    "totalTags": 0,
+    "description": "功能标签索引：tag-name -> feature-ids[]，用于查询「哪些功能使用了某概念」"
+  },
+  "index": {}
+}
