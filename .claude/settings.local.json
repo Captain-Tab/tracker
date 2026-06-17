@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(nvm list *)",
+      "Bash(fnm list *)",
+      "Read(//usr/local/bin/**)",
+      "Bash(brew list *)",
+      "Bash(python3 -c ' *、)",
+      "Bash(python3 *)",
+      "Bash(md5 *)"
+    ]
+  }
+}
