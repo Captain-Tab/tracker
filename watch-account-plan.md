@@ -42,8 +42,8 @@
        ├─ onopen: 订阅 accountState / accountUpdate / accountOrderUpdate / accountTrade（user=address）
        ├─ 心跳: 每 15s 发 {op:"ping"}，pong 看门狗超时则重连
        ├─ accountState 快照 → 当前持仓(data.P) + mark(data.B) + account_id(aid，取不到走 chain 备用)
-       │     对快照 P+O 做指纹去重，过滤服务端周期性重推
-       └─ 指纹变化 或 收到 accountTrade → 防抖 750ms 合并 → fetchAndReport()
+       │     对快照仓位做规范化指纹去重（abs(size)+派生方向+按 symbol 排序），过滤服务端周期性重推与表示/顺序漂移
+       └─ 指纹变化 或 收到 accountTrade → 防抖 3000ms（+maxWait 5000ms 封顶）合并 → fetchAndReport()
               ├─ 当前持仓：直接用上面的 WS 快照（不再请求 data positions 端点）
               ├─ 成交历史：GET data/api/v1/perps/trades?account_id=N（默认最近 10，--all 全量）
               ├─ 与上次持仓 diff → 事件；逐笔回放算 Realized PnL；相对上次的新成交标 ★
@@ -67,6 +67,9 @@
 3. 断线指数退避重连 + 重放订阅
 4. subscribe ack `success:false` 打日志
 5. HTTP 超时 10s + AbortController
+6. **限流退避（429/409）**：优先服务端 `Retry-After`，否则指数退避 2→60s + ±20% jitter；`rateLimitUntil` gate 所有请求，冷却后单次 catch-up；**限流时不打 web 备路**（两 host 可能共限）
+7. **拉取失败兜底**：任何未成功拉取（限流/硬错误未降级）一律跳过本次上报、保留 `lastOutFp`/`forceReport` 待下次，**绝不渲染空成交历史**（防误报）
+8. **去重双层规范化**：触发层 `stateFp` 与出参层 `outFp` 均用 `canonicalPositionsFp`（abs size+派生方向+排序）；成交分量用全 `tradeKey` 排序拼接（顺序无关、不碰大 id 精度）→ 不多发；REST 全量权威 + catch-up → 不漏发
 
 ## 八、部署与隐私结论
 
@@ -81,7 +84,7 @@
 ## 九、实跑修正（run-test 反馈）
 
 - **当前持仓来源改为 WS 快照**：`accountState.data.P`（字段 `s/ps/sz/ep/ur/cr/l/lp/m`，见 `@sodex/sdk` `parsePerpsSnapshotPosition`）。data-host 的 `api/v1/perps/positions` 是**历史/已结**仓位（size=0），不是当前持仓——已弃用于「当前仓位」展示。
-- **事件驱动而非轮询**：服务端会周期性重推 `accountState` 快照。脚本对快照 `P+O` 做指纹去重，**仅在指纹变化或收到 `accountTrade` 时**才拉成交历史并打印；首帧打印一次基线。
+- **事件驱动而非轮询**：服务端会周期性重推 `accountState` 快照。脚本对快照**仓位做规范化指纹去重**（`canonicalPositionsFp`：abs size+派生方向+排序，**不含订单数组** —— 订单易变字段每秒翻指纹会造成过度拉取，且报告不展示挂单），**仅在指纹变化或收到 `accountTrade` 时**才拉成交历史并打印；首帧打印一次基线。
 - **成交历史**走 REST `api/v1/perps/trades`（按 account_id），仅在变化时拉取。
 
 ### 仓位展示（对齐线上 Position 表列）
@@ -162,6 +165,7 @@ node watch-account.mjs 0xYourAddress --all                 # 成交历史拉全�
 node watch-account.mjs 0xYourAddress --history-limit=30     # 自定义单页条数
 node watch-account.mjs 0xYourAddress --enable-web-fallback # 主路失败降级 web
 node watch-account.mjs 0xYourAddress --debounce-ms=500     # 自定义防抖
+node watch-account.mjs 0xYourAddress --max-wait-ms=8000    # 防抖封顶（活跃流最长等待）
 node watch-account.mjs 0xYourAddress --account-id=12345    # 跳过 accountId 解析
 node watch-account.mjs 0xYourAddress --raw                 # 附原始帧/响应
 ```
