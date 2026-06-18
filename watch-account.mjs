@@ -89,6 +89,48 @@ function parseRetryAfter(headerVal) {
   return null;
 }
 
+// ---------- 统一格式化工具（千分位 + 去尾零，console / TG 两端共用）----------
+// 空值判定：null / undefined / "" → 缺失（显示 "-"，不当 0）
+const isBlank = (v) => v === null || v === undefined || v === "";
+
+// 数字：千分位 + 最多 maxDecimals 位小数，尾部 0 自动删减（toLocaleString 默认 trim）；缺失/非有限 → "-"
+export function fmtNum(value, maxDecimals = 2) {
+  if (isBlank(value)) return "-";
+  const x = Number(value);
+  if (!Number.isFinite(x)) return "-";
+  return x.toLocaleString("en-US", { maximumFractionDigits: maxDecimals });
+}
+
+// USD 金额：负号在 $ 前（-$0.26）；signed 时正数加 +；缺失/非有限 → "-"
+export function fmtUsd(value, signed = false) {
+  if (isBlank(value)) return "-";
+  const x = Number(value);
+  if (!Number.isFinite(x)) return "-";
+  const sign = x < 0 ? "-" : signed && x > 0 ? "+" : ""; // 0 不带符号
+  return `${sign}$${fmtNum(Math.abs(x), 2)}`;
+}
+
+// 百分比：带符号（+/-），2 位去尾零；缺失/非有限 → "-"
+export function fmtPct(value) {
+  if (isBlank(value)) return "-";
+  const x = Number(value);
+  if (!Number.isFinite(x)) return "-";
+  const sign = x < 0 ? "-" : x > 0 ? "+" : ""; // 0 不带符号
+  return `${sign}${fmtNum(Math.abs(x), 2)}%`;
+}
+
+// 统一事件时间：YYYY/MM/DD HH:mm:ss（上海 UTC+8）；入参 ms 时间戳，缺省取当前
+export function fmtTime(tsMs) {
+  const d = tsMs == null ? new Date() : new Date(Number(tsMs));
+  if (Number.isNaN(d.getTime())) return "-";
+  // sv-SE → "2026-06-18 10:45:48"，仅日期段是 "-"（时间段用 ":"），全替换为 "/"
+  return d.toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).replace(/-/g, "/");
+}
+
+// 方向中文映射（仓位方向只有 LONG / SHORT / BOTH，BOTH 已在 positionDirection 按符号判定）
+const DIRECTION_CN = { LONG: "做多", SHORT: "做空" };
+export const directionCN = (dir) => DIRECTION_CN[dir] ?? dir;
+
 const ts = () => new Date().toISOString().slice(11, 19);
 const log = (...a) => console.log(ts(), ...a);
 
@@ -121,54 +163,30 @@ async function sendTelegram(token, chatId, text) {
   } catch (e) { log(`TG 推送失败：${e.message}`); }
 }
 
-// 构建 Telegram 消息（样式 F 卡片）
-function buildTgMessage(clock, events, newFills, positions, markByCoin, trades, newKeys, pnlMap, reason) {
+// 构建 Telegram 消息（样式 F 卡片）。banner 头带【accountId】动词化;仓位走 derivePositionView 统一口径
+function buildTgMessage(accountId, kind, clock, newFills, events, positions, trades, newKeys, pnlMap, n) {
   const lines = [];
-  const isEvent = reason !== "daily" && reason !== "snapshot";
   const SEP = "━━━━━━━━━━━━━━━━";
 
-  // 1) banner
-  if (newFills.length > 0) {
-    let label = "NEW FILL";
-    if (events.length > 0) {
-      const ev = events.map((e) => e.split(" ")[0]);
-      label = ev.includes("CLOSED") ? "CLOSE FILL" : ev.includes("OPENED") ? "OPEN FILL" : "NEW FILL";
-    } else {
-      const pm2 = pnlMap ?? computeRealizedPnl(trades);
-      label = newFills.some((t) => { const v = pm2.get(tradeKey(t)); return v !== null && v !== undefined; }) ? "CLOSE FILL" : "OPEN FILL";
-    }
-    lines.push(`⚡ ${label}${newFills.length > 1 ? "S (" + newFills.length + ")" : ""} · ${clock}`);
-  } else if (events.length) {
-    lines.push(`⚡ POSITION CHANGE · ${clock}`);
-    for (const e of events) lines.push(e);
-  } else if (!isEvent) {
-    lines.push(`${reason === "snapshot" ? "📅 快照" : "📅 每日快照"} · ${clock}`);
-  } else {
-    lines.push(`⚡ UPDATE: ${clock}`);
-  }
+  // 1) banner 头 + 明细
+  lines.push(bannerHead(accountId, kind, clock, n));
+  for (const d of bannerDetailLines(newFills, events, positions)) lines.push(`  ${d}`);
 
   // 2) 仓位卡片
   const open = positions.filter((p) => Number(p.size) !== 0);
   if (open.length) {
     for (const p of open) {
-      const coin = baseCoin(p.symbol);
-      const dir = positionDirection(p);
-      const absSize = Math.abs(Number(p.size));
-      const lev = p.leverage || 0;
-      const mark = markByCoin?.get(coin) ?? null;
-      const entry = Number(p.entry);
-      const uPnl = Number(p.unrealizedPnl);
-      const margin = lev > 0 ? (absSize * entry) / lev : null;
-      const pnlSign = uPnl >= 0 ? "+" : "";
-      const roe = margin && margin > 0 ? ` (${(uPnl / margin * 100) >= 0 ? "+" : ""}${(uPnl / margin * 100).toFixed(2)}%)` : "";
+      const v = derivePositionView(p);
       lines.push(`\n${SEP}`);
-      lines.push(`📊 仓位：${coin} ${lev}x ${dir}`);
-      lines.push(`  持仓量  ${fmt(absSize, 2)}`);
-      lines.push(`  开仓价  ${fmt(p.entry, 2)}`);
-      lines.push(`  标记价  ${mark !== null ? fmt(mark, 2) : "-"}`);
-      lines.push(`  未结盈亏  ${pnlSign}$${Math.abs(uPnl).toFixed(2)}${roe}`);
-      lines.push(`  强平价  ${fmt(p.liqPrice, 2)}`);
-      if (margin !== null) lines.push(`  保证金  $${margin.toFixed(2)} (${marginModeLabel(p.marginMode)})`);
+      lines.push(`📊 仓位：${v.coin} ${v.lev}x ${v.dir}`);
+      lines.push(`  方向  ${v.dirCN}`);
+      lines.push(`  持仓量  ${fmtNum(v.absSize, v.qtyPrecision)}`);
+      lines.push(`  仓位价值  ${v.value !== null ? fmtUsd(v.value) : "-"}`);
+      lines.push(`  开仓价  ${fmtNum(v.entry, v.pricePrecision)}`);
+      lines.push(`  标记价  ${v.mark !== null ? fmtNum(v.mark, v.pricePrecision) : "-"}`);
+      lines.push(`  未结盈亏  ${fmtUsd(v.uPnl, true)}${v.roe !== null ? ` (${fmtPct(v.roe)})` : ""}`);
+      lines.push(`  强平价  ${fmtNum(v.liqPrice, v.pricePrecision)}`);
+      if (v.margin !== null) lines.push(`  保证金  ${fmtUsd(v.margin)} (${marginModeLabel(v.marginMode)})`);
       lines.push(`${SEP}`);
     }
   } else {
@@ -181,15 +199,14 @@ function buildTgMessage(clock, events, newFills, positions, markByCoin, trades, 
     lines.push(`\n📜 成交历史 (最近${trades.length}条)\n`);
     for (const t of trades.slice(0, 20)) {
       const m = symbolMeta(t.symbol_id);
-      const dt = t.ts_ms ? new Date(Number(t.ts_ms)).toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }) : "-";
       const marker = newKeys.has(tradeKey(t)) ? "★" : " ";
       const dir2 = SIDE_MAP[t.side] ?? String(t.side);
       const pnl = pm.get(tradeKey(t));
-      const pnlStr = pnl === null || pnl === undefined ? "—" : `${pnl >= 0 ? "+" : ""}$${Math.abs(pnl).toFixed(2)}`;
+      const pnlStr = pnl === null || pnl === undefined ? "—" : fmtUsd(pnl, true);
       const tradeValue = Number(t.price) * Number(t.quantity);
-      lines.push(`${marker} ${dt}`);
-      lines.push(`  ${m.name} ${dir2} ${fmt(t.quantity, 2)} @${fmt(t.price, 2)} Value $${fmt(tradeValue, 2)}`);
-      lines.push(`  盈亏 ${pnlStr}  手续费 ${fmt(t.fee, 2)} ${m.quoteCoin}`);
+      lines.push(`${marker} ${fmtTime(t.ts_ms)}`);
+      lines.push(`  ${m.name} ${dir2} ${fmtNum(t.quantity, m.quantityPrecision)} @${fmtNum(t.price, m.pricePrecision)} Value ${fmtUsd(tradeValue)}`);
+      lines.push(`  盈亏 ${pnlStr}  手续费 ${fmtNum(t.fee, m.feePrecision)} ${m.quoteCoin}`);
       lines.push("");
     }
     if (trades.length > 20) lines.push(`... 共 ${trades.length} 条`);
@@ -198,20 +215,41 @@ function buildTgMessage(clock, events, newFills, positions, markByCoin, trades, 
   return lines.join("\n");
 }
 
-// ---------- 符号元数据缓存 ----------
+// ---------- 符号元数据缓存（id / symbol 双索引；含精度，用于按币种格式化）----------
 let symbolsById = new Map();
+let symbolsBySymbol = new Map();
+
+const numOr = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+
+function buildSymbolMeta(s) {
+  return {
+    name: `${s.baseCoin}/${s.quoteCoin}`,
+    baseCoin: s.baseCoin,
+    quoteCoin: s.quoteCoin,
+    pricePrecision: numOr(s.pricePrecision, 4),       // 价格小数位（按币种）
+    quantityPrecision: numOr(s.quantityPrecision, 6), // 数量小数位
+    feePrecision: numOr(s.quoteCoinDisplayPrecision, 4), // 手续费（quote 币）展示位
+  };
+}
 
 async function refreshSymbols(env) {
   const json = await httpGetJson(`${env.biz}/biz/futures/symbols?env=${env.bizEnv}`);
   const list = Array.isArray(json?.data) ? json.data : [];
-  const map = new Map();
-  for (const s of list) map.set(Number(s.id), { name: `${s.baseCoin}/${s.quoteCoin}`, quoteCoin: s.quoteCoin });
-  if (map.size) { symbolsById = map; log(`符号缓存已更新：${map.size} 个 perps 交易对`); }
+  const byId = new Map();
+  const bySym = new Map();
+  for (const s of list) { const m = buildSymbolMeta(s); byId.set(Number(s.id), m); bySym.set(String(s.symbol), m); }
+  if (byId.size) { symbolsById = byId; symbolsBySymbol = bySym; log(`符号缓存已更新：${byId.size} 个 perps 交易对`); }
   else log("符号列表为空，沿用旧缓存");
 }
 
+const DEFAULT_META = { name: "?", baseCoin: "", quoteCoin: "", pricePrecision: 4, quantityPrecision: 6, feePrecision: 4 };
+
 function symbolMeta(symbolId) {
-  return symbolsById.get(Number(symbolId)) ?? { name: `#${symbolId}`, quoteCoin: "" };
+  return symbolsById.get(Number(symbolId)) ?? { ...DEFAULT_META, name: `#${symbolId}` };
+}
+
+function symbolMetaBySymbol(symbol) {
+  return symbolsBySymbol.get(String(symbol)) ?? { ...DEFAULT_META, name: baseCoin(symbol), quoteCoin: "USDC" };
 }
 
 // ---------- WS 快照仓位解析 ----------
@@ -250,6 +288,97 @@ function marginModeLabel(m) {
   if (/cross/i.test(m)) return "Cross";
   if (/iso/i.test(m)) return "Isolated";
   return m || "-";
+}
+
+// 共享持仓派生层：console + TG 两端统一口径，防 mark/方向/价值 重复实现导致漂移。
+// 标记价不在账户快照里 → 用 mark = 开仓价 + 未结盈亏/带符号数量 反推（与展示盈亏天然一致）。
+export function derivePositionView(p) {
+  const meta = symbolMetaBySymbol(p.symbol);
+  const dir = positionDirection(p); // LONG / SHORT
+  const absSize = Math.abs(Number(p.size));
+  const signedSize = dir === "SHORT" ? -absSize : absSize;
+  const lev = p.leverage || 0;
+  // 空字符串视为缺失（→ NaN），避免 Number("")=0 反推出 mark=0 的假值
+  const entry = isBlank(p.entry) ? NaN : Number(p.entry);
+  const uPnl = Number(p.unrealizedPnl);
+  // 反推标记价：ur = (mark - entry) × signedSize → mark = entry + ur/signedSize
+  const mark =
+    Number.isFinite(entry) && Number.isFinite(uPnl) && signedSize !== 0
+      ? entry + uPnl / signedSize
+      : null; // 兜底：无法反推 → null（标记价 / 仓位价值均显示 "-"）
+  const value = mark !== null && Number.isFinite(absSize) ? absSize * mark : null;
+  const margin = lev > 0 && Number.isFinite(entry) ? (absSize * entry) / lev : null;
+  const roe = margin && margin > 0 ? (uPnl / margin) * 100 : null;
+  return {
+    coin: meta.baseCoin || baseCoin(p.symbol),
+    dir,
+    dirCN: directionCN(dir),
+    absSize,
+    lev,
+    entry,
+    mark,
+    value,
+    uPnl,
+    margin,
+    roe,
+    liqPrice: Number(p.liqPrice),
+    marginMode: p.marginMode,
+    pricePrecision: meta.pricePrecision,
+    qtyPrecision: Math.min(meta.quantityPrecision, 6),
+  };
+}
+
+// banner 文案：动词化仓位状态，全部带【accountId】
+const BANNER_LABEL = {
+  START: "START WATCH",
+  OPEN: "OPEN POSITION",
+  CLOSE: "CLOSE POSITION",
+  INCREASE: "INCREASE POSITION",
+  REDUCE: "REDUCE POSITION",
+  UPDATE: "POSITION UPDATE",
+  CHANGE: "POSITION CHANGE",
+  SNAPSHOT: "SNAPSHOT",
+};
+
+function bannerHead(accountId, kind, clock, n) {
+  const label = BANNER_LABEL[kind] ?? "POSITION CHANGE";
+  const cnt = kind === "UPDATE" && n ? ` (${n})` : "";
+  return `⚡ 【${accountId}】 ${label}${cnt} · ${clock}`;
+}
+
+// 由 newFills + events 判定 banner 类型（START / SNAPSHOT 由调用方按 baseline/reason 决定）
+function classifyBanner(newFills, events) {
+  if (newFills.length > 1) return { kind: "UPDATE", n: newFills.length };
+  if (newFills.length === 1) {
+    const verbs = events.map((e) => e.split(" ")[0]);
+    if (verbs.includes("CLOSED")) return { kind: "CLOSE" };
+    if (verbs.includes("OPENED")) return { kind: "OPEN" };
+    if (verbs.includes("INCREASED")) return { kind: "INCREASE" };
+    if (verbs.includes("DECREASED")) return { kind: "REDUCE" };
+    return { kind: "OPEN" }; // 有成交但无明确 diff（开仓在历史窗口外）→ 视为开仓
+  }
+  return { kind: "CHANGE" }; // 仓位变化无成交（兜底，带 events 明细）
+}
+
+// banner 明细行（成交描述 + 结果仓位 / 或 events 列表），console 与 TG 共用
+function bannerDetailLines(newFills, events, positions) {
+  const openByCoin = new Map(
+    positions.filter((p) => Number(p.size) !== 0).map((p) => [baseCoin(p.symbol), p]),
+  );
+  const resultOf = (coin) => {
+    const p = openByCoin.get(coin);
+    return p ? `${directionCN(positionDirection(p))} ${fmtNum(Math.abs(Number(p.size)), 6)}` : "已平仓";
+  };
+  if (newFills.length >= 1) {
+    const fills = newFills.map((t) => {
+      const m = symbolMeta(t.symbol_id);
+      const coin = m.baseCoin || baseCoin(m.name);
+      return `${SIDE_MAP[t.side] ?? t.side} ${fmtNum(t.quantity, m.quantityPrecision)} ${coin} @ ${fmtNum(t.price, m.pricePrecision)}`;
+    });
+    const coins = [...new Set(newFills.map((t) => { const m = symbolMeta(t.symbol_id); return m.baseCoin || baseCoin(m.name); }))];
+    return [...fills, ...coins.map((c) => `→ ${c} ${resultOf(c)}`)];
+  }
+  return [...events];
 }
 
 async function resolveAccountIdViaChain(env, address) {
@@ -309,25 +438,24 @@ function diffPositions(prev, curr) {
   return events;
 }
 
-const fmt = (n, dp) => { const x = Number(n); return Number.isFinite(x) ? x.toFixed(dp) : String(n); };
-
-function renderPositions(positions, markByCoin) {
+function renderPositions(positions) {
   const open = positions.filter((p) => Number(p.size) !== 0);
   if (!open.length) return "  （无持仓）";
-  const header = ["Coin", "Amount", "Position Value", "Entry", "Mark", "Unrealized PnL (ROE%)", "Liq.Price", "Margin"];
+  const header = ["Coin", "方向", "持仓量", "仓位价值", "Entry", "Mark", "Unrealized PnL (ROE%)", "Liq.Price", "Margin"];
   const rows = open.map((p) => {
-    const coin = baseCoin(p.symbol);
-    const dir = positionDirection(p);
-    const absSize = Math.abs(Number(p.size));
-    const lev = p.leverage || 0;
-    const mark = markByCoin?.get(coin) ?? null;
-    const entry = Number(p.entry);
-    const uPnl = Number(p.unrealizedPnl);
-    const margin = lev > 0 ? (absSize * entry) / lev : null;
-    const posValue = absSize * (mark ?? entry);
-    const roe = margin && margin > 0 ? (uPnl / margin) * 100 : null;
-    const pnlStr = `${uPnl < 0 ? "-" : ""}$${Math.abs(uPnl).toFixed(2)}` + (roe !== null ? ` (${roe >= 0 ? "+" : ""}${roe.toFixed(2)}%)` : "");
-    return [`${coin} ${lev}x ${dir}`, `${fmt(absSize, 2)} ${coin}`, `${posValue.toFixed(2)} USDC`, fmt(p.entry, 2), mark !== null ? fmt(mark, 2) : "-", pnlStr, fmt(p.liqPrice, 2), margin !== null ? `$${margin.toFixed(2)} (${marginModeLabel(p.marginMode)})` : "-"];
+    const v = derivePositionView(p);
+    const pnlStr = fmtUsd(v.uPnl, true) + (v.roe !== null ? ` (${fmtPct(v.roe)})` : "");
+    return [
+      `${v.coin} ${v.lev}x ${v.dir}`,
+      v.dirCN,
+      `${fmtNum(v.absSize, v.qtyPrecision)} ${v.coin}`,
+      v.value !== null ? fmtUsd(v.value) : "-",
+      fmtNum(v.entry, v.pricePrecision),
+      v.mark !== null ? fmtNum(v.mark, v.pricePrecision) : "-",
+      pnlStr,
+      fmtNum(v.liqPrice, v.pricePrecision),
+      v.margin !== null ? `${fmtUsd(v.margin)} (${marginModeLabel(v.marginMode)})` : "-",
+    ];
   });
   const w = header.map((h, i) => Math.max(h.length, ...rows.map((r) => String(r[i]).length)));
   const line = (cells) => "  " + cells.map((c, i) => String(c).padEnd(w[i])).join("  ");
@@ -372,15 +500,14 @@ function renderTrades(trades, newKeys = new Set()) {
   const header = ["Time", "Coin", "Direction", "Price", "Amount", "Trade Value", "Realized PnL", "Fee"];
   const rows = trades.map((t) => {
     const m = symbolMeta(t.symbol_id);
-    const clock = t.ts_ms ? new Date(Number(t.ts_ms)).toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }) : "-";
-    const time = `${newKeys.has(tradeKey(t)) ? "★ " : "  "}${clock}`;
+    const time = `${newKeys.has(tradeKey(t)) ? "★ " : "  "}${fmtTime(t.ts_ms)}`;
     const dir = SIDE_MAP[t.side] ?? String(t.side);
-    const price = fmt(t.price, 2);
-    const value = `$${fmt(Number(t.price) * Number(t.quantity), 2)}`;
+    const price = fmtNum(t.price, m.pricePrecision);
+    const value = fmtUsd(Number(t.price) * Number(t.quantity));
     const pnl = pnlMap.get(tradeKey(t));
-    const pnlStr = pnl === null || pnl === undefined ? "-" : `${pnl >= 0 ? "+" : "-"}$${Math.abs(pnl).toFixed(2)}`;
-    const fee = `${fmt(t.fee, 2)} ${m.quoteCoin}`.trim();
-    return [time, m.name, dir, price, fmt(t.quantity, 2), value, pnlStr, fee];
+    const pnlStr = pnl === null || pnl === undefined ? "-" : fmtUsd(pnl, true);
+    const fee = `${fmtNum(t.fee, m.feePrecision)} ${m.quoteCoin}`.trim();
+    return [time, m.name, dir, price, fmtNum(t.quantity, m.quantityPrecision), value, pnlStr, fee];
   });
   const w = header.map((h, i) => Math.max(h.length, ...rows.map((r) => String(r[i]).length)));
   const line = (cells) => "  " + cells.map((c, i) => String(c).padEnd(w[i])).join("  ");
@@ -400,20 +527,10 @@ function boxBanner(lines) {
   return [`╔${bar}╗`, ...body, `╚${bar}╝`].join("\n");
 }
 
-function buildEventBanner(clock, newFills, positions, events) {
-  const openByCoin = new Map(positions.filter((p) => Number(p.size) !== 0).map((p) => [baseCoin(p.symbol), p]));
-  const resultOf = (coin) => { const p = openByCoin.get(coin); return p ? `${positionDirection(p)} ${fmt(Math.abs(Number(p.size)), 2)}` : "FLAT (closed)"; };
-  if (newFills.length === 1) {
-    const t = newFills[0];
-    const coin = baseCoin(symbolMeta(t.symbol_id).name);
-    return boxBanner([`⚡ NEW FILL  ·  ${clock}`, `   ${SIDE_MAP[t.side] ?? t.side} ${fmt(t.quantity, 2)} ${coin} @ ${fmt(t.price, 2)}  →  ${resultOf(coin)}`]);
-  }
-  if (newFills.length > 1) {
-    const coins = [...new Set(newFills.map((t) => baseCoin(symbolMeta(t.symbol_id).name)))];
-    return boxBanner([`⚡ NEW FILLS (${newFills.length})  ·  ${clock}`, ...newFills.map((t) => `   ${SIDE_MAP[t.side] ?? t.side} ${fmt(t.quantity, 2)} ${baseCoin(symbolMeta(t.symbol_id).name)} @ ${fmt(t.price, 2)}`), ...coins.map((coin) => `   →  ${coin} ${resultOf(coin)}`)]);
-  }
-  if (events.length) return boxBanner([`⚡ POSITION CHANGE  ·  ${clock}`, ...events.map((e) => `   ${e}`)]);
-  return boxBanner([`⚡ ACCOUNT UPDATE  ·  ${clock}`, `   (no net position change)`]);
+function buildEventBanner(accountId, kind, clock, newFills, events, positions, n) {
+  const head = bannerHead(accountId, kind, clock, n);
+  const detail = bannerDetailLines(newFills, events, positions).map((l) => `   ${l}`);
+  return boxBanner([head, ...detail]);
 }
 
 // ---------- 监听器 ----------
@@ -422,7 +539,7 @@ class AccountWatcher {
     this.env = env;
     this.address = address;
     this.flags = flags;
-    this.historyLimit = Number(flags["history-limit"] ?? 5);
+    this.historyLimit = Number(flags["history-limit"] ?? 2);
     this.fetchAll = flags.all === true || flags.all === "true";
     this.debounceMs = Number(flags["debounce-ms"] ?? 3000);
     this.maxWaitMs = Number(flags["max-wait-ms"] ?? 5000);
@@ -447,7 +564,6 @@ class AccountWatcher {
     this.closing = false;
     this.fetching = false;
     this.positions = [];
-    this.markByCoin = new Map();
     this.lastPositions = [];
     this.seenTradeIds = new Set();
     this.baselineLogged = false;
@@ -514,7 +630,7 @@ class AccountWatcher {
       const data = msg.data ?? {};
       if (!this.accountId) { const aid = data.aid ?? data.accountId ?? data.account_id ?? null; if (aid) { this.accountId = String(aid); log(`accountId = ${this.accountId}（来自 WS 快照）`); } }
       this.positions = Array.isArray(data.P) ? data.P.map(parseWsPosition) : [];
-      if (Array.isArray(data.B)) { const m = new Map(); for (const b of data.B) if (b?.a != null && b?.px != null) m.set(String(b.a), Number(b.px)); this.markByCoin = m; }
+      // 标记价由 derivePositionView 从持仓反推（账户快照无合约 mark），不再读 data.B
       // 触发指纹只认规范化后的仓位身份；移除订单数组（易变字段每秒翻指纹→过度拉取，
       // 且报告不展示挂单，无新成交则无可报）。新成交另由 accountTrade 触发。
       const fp = canonicalPositionsFp(this.positions);
@@ -600,16 +716,21 @@ class AccountWatcher {
       }
       this.retryScheduled = false;
 
-      const clock = ts();
-      console.log(""); console.log(buildEventBanner(clock, newFills, this.positions, events)); log(`account_id=${this.accountId}`);
-      console.log("\n--- 当前仓位 Positions ---"); console.log(renderPositions(this.positions, this.markByCoin));
+      // banner 类型:首帧→START WATCH;每日 force→SNAPSHOT;否则按成交/仓位 diff 动词化
+      const { kind, n } = isBaseline
+        ? { kind: "START" }
+        : this.tgReason === "daily"
+          ? { kind: "SNAPSHOT" }
+          : classifyBanner(newFills, events);
+      const clock = fmtTime();
+      console.log(""); console.log(buildEventBanner(this.accountId, kind, clock, newFills, events, this.positions, n)); log(`account_id=${this.accountId}`);
+      console.log("\n--- 当前仓位 Positions ---"); console.log(renderPositions(this.positions));
       console.log("\n--- 成交历史 Trade History ---"); console.log(renderTrades(trades, newKeys));
       if (this.flags.raw && result?.raw) { console.log("\n--- raw trades ---"); console.log(JSON.stringify(result.raw, null, 2)); }
       console.log("=".repeat(60) + "\n");
 
       const tgPnlMap = computeRealizedPnl(trades);
-      const shClock = nowShanghai();
-      const tgText = buildTgMessage(shClock, events, newFills, this.positions, this.markByCoin, trades, newKeys, tgPnlMap, this.tgReason);
+      const tgText = buildTgMessage(this.accountId, kind, clock, newFills, events, this.positions, trades, newKeys, tgPnlMap, n);
       this.tgReason = "event";
       sendTelegram(this.tgToken, this.tgChat, tgText);
     } finally { this.fetching = false; }
@@ -630,12 +751,10 @@ function msUntilNextShanghai(hhmm) {
   return target - now;
 }
 
-const nowShanghai = () => new Date().toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" });
-
 class SnapshotMode {
   constructor(env, address, flags) {
     this.env = env; this.address = address; this.flags = flags;
-    this.historyLimit = Number(flags["history-limit"] ?? 5);
+    this.historyLimit = Number(flags["history-limit"] ?? 2);
     this.fetchAll = flags.all === true || flags.all === "true";
     this.at = String(flags.at ?? "20:00");
     this.enableWebFallback = flags["enable-web-fallback"] === true || flags["enable-web-fallback"] === "true";
@@ -663,12 +782,10 @@ class SnapshotMode {
     const stateJson = await httpGetJson(`${this.env.gateway}/api/v1/perps/accounts/${this.address}/state`);
     const data = stateJson?.data ?? stateJson ?? {};
     const positions = Array.isArray(data.P) ? data.P.map(parseWsPosition) : [];
-    const markByCoin = new Map();
-    if (Array.isArray(data.B)) for (const b of data.B) if (b?.a != null && b?.px != null) markByCoin.set(String(b.a), Number(b.px));
     let accountId = this.accountId ?? data.aid ?? data.accountId ?? data.account_id ?? null;
     if (!accountId) accountId = await resolveAccountIdViaChain(this.env, this.address);
     this.accountId = accountId;
-    return { positions, markByCoin, accountId };
+    return { positions, accountId };
   }
 
   async fetchAndReport(reason) {
@@ -695,16 +812,17 @@ class SnapshotMode {
       this.baselineLogged = true;
       const events = diffPositions(this.lastPositions, snap.positions);
       this.lastPositions = snap.positions;
+      const newFills = trades.filter((t) => newKeys.has(tradeKey(t)));
+      const clock = fmtTime();
 
-      console.log("\n" + boxBanner([`⚡ SNAPSHOT · ${reason}`, `   ${nowShanghai()} (UTC+8) · account_id=${snap.accountId}`, ...events.map((e) => `   ${e}`)]));
-      console.log("\n--- 当前仓位 Positions ---"); console.log(renderPositions(snap.positions, snap.markByCoin));
+      console.log("\n" + buildEventBanner(snap.accountId, "SNAPSHOT", clock, newFills, events, snap.positions));
+      console.log("\n--- 当前仓位 Positions ---"); console.log(renderPositions(snap.positions));
       console.log("\n--- 成交历史 Trade History ---"); console.log(renderTrades(trades, newKeys));
       if (this.flags.raw && result?.raw) { console.log("\n--- raw trades ---"); console.log(JSON.stringify(result.raw, null, 2)); }
       console.log("=".repeat(60) + "\n");
 
-      const newFills = trades.filter((t) => newKeys.has(tradeKey(t)));
       const tgPnlMap = computeRealizedPnl(trades);
-      const tgText = buildTgMessage(nowShanghai(), events, newFills, snap.positions, snap.markByCoin, trades, newKeys, tgPnlMap, "snapshot");
+      const tgText = buildTgMessage(snap.accountId, "SNAPSHOT", clock, newFills, events, snap.positions, trades, newKeys, tgPnlMap);
       sendTelegram(this.tgToken, this.tgChat, tgText);
     } catch (e) { log(`快照失败：${e.message}`); }
     finally { this.running = false; }
@@ -721,7 +839,7 @@ async function main() {
       "  默认实时 WS + 每日 20:00 快照；--snapshot 纯快照模式\n" +
       "  --at=HH:MM  每日快照时间（上海，默认 20:00）\n" +
       "  Telegram：--tg-token=BOT_TOKEN --tg-chat=CHAT_ID\n" +
-      "  通用：--all / --history-limit=N（默认 5）/ --enable-web-fallback / --account-id=N / --raw\n" +
+      "  通用：--all / --history-limit=N（默认 2）/ --enable-web-fallback / --account-id=N / --raw\n" +
       "  实时模式额外：--debounce-ms=N（默认 3000）/ --max-wait-ms=N（默认 5000，防抖封顶）");
     process.exit(1);
   }
@@ -739,4 +857,7 @@ async function main() {
   process.on("SIGINT", () => { log("收到 SIGINT，关闭"); runner.close(); process.exit(0); });
 }
 
-main().catch((err) => { console.error("启动失败:", err); process.exit(1); });
+// 仅作为入口直接运行时启动；被 import（如单测）时不触发 WS/副作用
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err) => { console.error("启动失败:", err); process.exit(1); });
+}

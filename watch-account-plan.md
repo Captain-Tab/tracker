@@ -41,11 +41,11 @@
  └─ 连 wss .../ws/perps
        ├─ onopen: 订阅 accountState / accountUpdate / accountOrderUpdate / accountTrade（user=address）
        ├─ 心跳: 每 15s 发 {op:"ping"}，pong 看门狗超时则重连
-       ├─ accountState 快照 → 当前持仓(data.P) + mark(data.B) + account_id(aid，取不到走 chain 备用)
+       ├─ accountState 快照 → 当前持仓(data.P) + account_id(aid，取不到走 chain 备用)；标记价由持仓 ur 反推（见 §九）
        │     对快照仓位做规范化指纹去重（abs(size)+派生方向+按 symbol 排序），过滤服务端周期性重推与表示/顺序漂移
        └─ 指纹变化 或 收到 accountTrade → 防抖 3000ms（+maxWait 5000ms 封顶）合并 → fetchAndReport()
               ├─ 当前持仓：直接用上面的 WS 快照（不再请求 data positions 端点）
-              ├─ 成交历史：GET data/api/v1/perps/trades?account_id=N（默认最近 10，--all 全量）
+              ├─ 成交历史：GET data/api/v1/perps/trades?account_id=N（默认最近 2，--all 全量）
               ├─ 与上次持仓 diff → 事件；逐笔回放算 Realized PnL；相对上次的新成交标 ★
               └─ 打印：fill-driven banner + 仓位表 + Trade History 表
                    （Time | Coin | Direction | Price | Amount | Trade Value | Realized PnL | Fee）
@@ -57,7 +57,7 @@
 - 成交 `side`：`{1: Buy, 2: Sell}`（`domain/normalize/history.ts:23`）
 - 仓位方向：WS 快照 `ps` 为名称（`LONG`/`SHORT`/`BOTH`）；`BOTH`（单向模式）按 `size` 符号判 LONG/SHORT
 - `symbol_id` → `baseCoin/quoteCoin`：`biz/futures/symbols`（`perpsApi.ts:23`）
-- Trade Value = price × quantity；所有数值列统一 2 位小数（见 §九「时区与精度」）
+- Trade Value = price × quantity；数值按字段分精度（价格/数量按币种精度，USD 类 2 位，均千分位 + 去尾零，见 §九「时区与精度」）
 - 成交时间 `ts_ms`，Fee 计价币 = `quoteCoin`
 
 ## 六、健壮性（SDK 帮我们做、脚本里自己实现）
@@ -89,14 +89,17 @@
 
 ### 仓位展示（对齐线上 Position 表列）
 
-列：`Coin(含 Nx 杠杆) | Amount | Position Value | Entry | Mark | Unrealized PnL (ROE%) | Liq.Price | Margin`
+列（终端表格）：`Coin(含 Nx 杠杆) | 方向 | 持仓量 | 仓位价值 | Entry | Mark | Unrealized PnL (ROE%) | Liq.Price | Margin`
 
-- **方向**：`ps=BOTH`（单向模式）按 `size` 符号判 LONG/SHORT；hedge 模式直接用 `ps`。
+Telegram 卡片每项独占一行：`方向 / 持仓量 / 仓位价值 / 开仓价 / 标记价 / 未结盈亏(ROE%) / 强平价 / 保证金`。console 与 TG 共用 `derivePositionView()` 派生，保证两端口径一致。
+
+- **方向**：`ps=BOTH`（单向模式）按 `size` 符号判 LONG/SHORT；hedge 模式直接用 `ps`。展示中文映射 `LONG→做多 / SHORT→做空`。
 - **杠杆**：合到 Coin 列（`SPCX 5x LONG`）。杠杆是仓位级属性，**不进** Trade History。
+- **持仓量 / 仓位价值**：拆为两项；仓位价值 = `标记价 × |size|`（USD，2 位）。
 - **Margin** = `|size|×entry / leverage`（实测对齐线上 `$13.97`）；模式来自 `m`（Cross/Isolated）。
 - **ROE%** = `uPnL / margin`（实测对齐线上 `-4.42%`）。
-- **Mark / Position Value**：Mark 取快照 balances 的币种 oracle 价（`B[].px`，按 base coin 匹配）；查不到时 Position Value 回退用 entry，Mark 显示 `-`。
-- **Liq.Price**：与全局精度一致，2 位小数（见下「时区与精度」）。
+- **标记价（Mark）反推**：账户快照**不含合约 mark**（`data.B` 是抵押币余额，非合约标的价）。改用持仓字段反推 `mark = 开仓价 + 未结盈亏 / 带符号数量`（因 `ur=(mark−entry)×带符号size`），与展示盈亏天然自洽。数量为 0 / 字段缺失时标记价与仓位价值均显示 `-`。
+- **精度**：价格类（开仓价/标记价/强平价/成交价）按币种 `pricePrecision`；数量按 `quantityPrecision`（封顶 6）；USD 金额（仓位价值/盈亏/保证金）2 位；均千分位 + 去尾零。统一走 `fmtNum/fmtUsd/fmtPct`。
 
 ### 逐笔已实现盈亏（Realized PnL，计算列）
 
@@ -109,33 +112,43 @@ API **不返回**逐笔盈亏（trades 只有 price/quantity/fee/side；盈亏�
 
 **新增行标记**：每次因账户变化重拉成交后，相对上次**新出现**的成交行，行首打 `★`（旧行用等宽空格占位对齐）。首次基线打印不标，之后才标。
 
-**事件 banner（fill-driven）**：每次变化打印一个方框 banner，描述本次新成交及其导致的持仓结果，与 `★` 行保持一致：
+**事件 banner（动词化，全部带 `【accountId】`）**：每次变化打印方框 banner，头部由 `bannerHead(accountId, kind, clock)` 生成，时间统一 `fmtTime` 的 `YYYY/MM/DD HH:mm:ss`（上海 UTC+8）：
 
 ```
-╔═══════════════════════════════════════════╗
-║ ⚡ NEW FILL  ·  14:29:00                   ║
-║    Sell 0.21 SPCX @ 197.96  →  SHORT 0.21 ║
-╚═══════════════════════════════════════════╝
+╔══════════════════════════════════════════════════╗
+║ ⚡ 【1163】 OPEN POSITION · 2026/06/18 14:29:00   ║
+║    Sell 0.21 SPCX @ 197.96  →  SPCX 做空 0.21    ║
+╚══════════════════════════════════════════════════╝
 ```
 
-- 平仓：`Buy 0.21 SPCX @ 198.10  →  FLAT (closed)`。
-- 多笔：列出每笔 + 每币种结果行。
-- 无新成交但持仓变化：退化为 `POSITION CHANGE` + diff 事件；都没有则 `ACCOUNT UPDATE`。
+banner 类型（kind）：
+
+- `START WATCH` — 启动基线
+- `OPEN / CLOSE / INCREASE / REDUCE POSITION` — 单笔开/平/加/减（由成交 + 仓位 diff 动词判定）
+- `POSITION UPDATE (n)` — 多笔成交
+- `POSITION CHANGE` — 仓位变化但无成交可归因（带 diff 明细，兜底）
+- `SNAPSHOT` — 快照/每日（不带原因）
+- 平仓结果行显示 `→ SPCX 已平仓`；旧的 `ACCOUNT UPDATE`（无变化）已删除，无变化不单独发通知。
 - banner 对齐按「emoji 宽度=2」计算，适配大多数现代终端；个别终端把 ⚡ 渲染成单宽时右边框可能偏移（仅视觉，不影响数据）。
 
 **口径与限制**：
 
 - 仅「交易盈亏」，**不含资金费**（trades 无此数据），手续费在独立 Fee 列；故与线上「已实现盈亏」可能略有出入。
-- 准确性依赖窗口**包含开仓笔**——默认最近 10 条时，若仓位在窗口外开的，最早几行盈亏会失真；要全准用 `--all`。
+- 准确性依赖窗口**包含开仓笔**——默认最近 2 条时，若仓位在窗口外开的，最早几行盈亏会失真；要全准用 `--all`。
 
 ### 时区与精度
 
-- 成交时间显示**北京时间 UTC+8**（`Asia/Shanghai`，无 DST），格式 `YYYY-MM-DD HH:mm:ss`。
-- **所有数值列统一 2 位小数**（Price / Amount / Trade Value / Realized PnL / Fee / Entry / Mark / Liq.Price / Position Value / Margin / ROE%）。
+- 所有事件 / 成交时间走统一 `fmtTime`，显示**北京时间 UTC+8**（`Asia/Shanghai`，无 DST），格式 `YYYY/MM/DD HH:mm:ss`（斜杠分隔）。
+- **数值按字段分精度 + 千分位 + 去尾零**（统一 `fmtNum/fmtUsd/fmtPct`）：
+  - 价格类（Price / Entry / Mark / Liq.Price）→ 按币种 `pricePrecision`
+  - 数量类（Amount / 持仓量）→ 按 `quantityPrecision`（封顶 6）
+  - USD 金额（Trade Value / Realized PnL / Position Value / Margin）→ 2 位
+  - 手续费 Fee → 按 `quoteCoinDisplayPrecision`；ROE% → 2 位带符号
+  - 缺失 / 非法值统一显示 `-`（不当 0）
 
 ### 成交历史两种模式
 
-- **默认**：最近 **10** 条（`--history-limit ?? 10`），每次变化单页拉取。
+- **默认**：最近 **2** 条（`--history-limit ?? 2`），每次变化单页拉取。
 - **`--all`**：按游标 `meta.next_cursor` 翻页拉全部（每页 100，安全上限 200 页）。
 - `--history-limit=N` 自定义单页条数。
 - 注意：`--all` 在每次变化事件都会重拉全量，适合一次性 dump，不适合长驻默认。
@@ -144,8 +157,8 @@ API **不返回**逐笔盈亏（trades 只有 price/quantity/fee/side；盈亏�
 
 实时 WS 监听之外的第二种模式：**不**保持持久 WS，改用 REST 取快照，适合「每天定点看一次 + 想看时手动拉」。
 
-- **当前持仓来源**：REST `GET {gateway}/api/v1/perps/accounts/{address}/state`（按 address，公开无鉴权），解析 `data.P`（同 WS 快照字段）取 live 持仓、`data.B` 取 mark、`data.aid` 取 accountId。
-- **成交历史**：同实时模式走 data host `api/v1/perps/trades`（默认最近 10，`--all` 全量）。
+- **当前持仓来源**：REST `GET {gateway}/api/v1/perps/accounts/{address}/state`（按 address，公开无鉴权），解析 `data.P`（同 WS 快照字段）取 live 持仓、`data.aid` 取 accountId；标记价同实时模式由持仓 `ur` 反推（见 §九）。
+- **成交历史**：同实时模式走 data host `api/v1/perps/trades`（默认最近 2，`--all` 全量）。
 - **每日定时**：默认每天 **20:00 上海时间（UTC+8）** 抓一次。`msUntilNextShanghai` 用固定 +8 偏移算下一个触发点（上海无 DST）；`--at=HH:MM` 可改。
 - **按需触发**：
   - **`kill -USR1 <pid>`** —— 主推荐，headless / systemd 下可用，无端口、无鉴权面（脚本启动时打印 pid）。
@@ -157,7 +170,7 @@ API **不返回**逐笔盈亏（trades 只有 price/quantity/fee/side；盈亏�
 ## 七、用法
 
 ```bash
-node watch-account.mjs 0xYourAddress                       # 实时 WS 监听（默认），成交历史默认最近 10 条
+node watch-account.mjs 0xYourAddress                       # 实时 WS 监听（默认），成交历史默认最近 2 条
 node watch-account.mjs 0xYourAddress --snapshot            # 快照模式：启动抓一次 + 每日 20:00 上海时间
 node watch-account.mjs 0xYourAddress --snapshot --at=08:30 # 改每日抓取时间
 #   按需触发：kill -USR1 <pid>（或交互式终端回车）

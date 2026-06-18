@@ -139,7 +139,10 @@
       "Bash(cp /Users/soso/Documents/code/soso-kit/.claude/kit/context/library/sodex-web/indexes/tags.json /Users/soso/Documents/code/sodex-web/.claude/kit/context/library/sodex-web/indexes/tags.json)",
       "Bash(git checkout:*)",
       "Bash(rm -f .claude/kit/context/library/sodex-web/reference/global/global-track-guide.md)",
-      "mcp__figma__get_design_context"
+      "mcp__figma__get_design_context",
+      "Bash(mkdir -p /tmp/deploy-watch-account)",
+      "Bash(cp -r /Users/tabcaptain/Documents/code/tracker/watch-account/* /tmp/deploy-watch-account/)",
+      "Bash(cp /Users/tabcaptain/Documents/code/tracker/watch-account/watch-account.mjs /Users/tabcaptain/Documents/code/tracker/watch-account/watch-account-plan.md /Users/tabcaptain/Documents/code/tracker/watch-account/query-account.mjs /Users/tabcaptain/Documents/code/tracker/watch-account/query-account.md /tmp/deploy-watch-account/)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",
