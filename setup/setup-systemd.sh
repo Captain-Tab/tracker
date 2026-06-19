@@ -3,17 +3,25 @@
 #
 # 配置区（按实际情况填写）
 # ======================================================
+# 两种模式二选一：
+#   A. 单地址：填 WALLET_ADDRESS，留空 CONFIG_PATH
+#   B. 多地址：填 CONFIG_PATH，留空 WALLET_ADDRESS
 
-WALLET_ADDRESS="0x"                                  # 监听的钱包地址
-TG_TOKEN=""                                           # Telegram Bot Token（可选）
-TG_CHAT=""                                            # Telegram Chat ID（可选）
+WALLET_ADDRESS=""                                    # 单地址模式：监听的钱包地址
+CONFIG_PATH="/root/watch-account/script/watch.config.json"  # 多地址模式：配置文件路径
+TG_TOKEN=""                                           # 单地址模式 Telegram Bot Token（可选）
+TG_CHAT=""                                            # 单地址模式 Telegram Chat ID（可选）
 
 # ======================================================
 
 # 组装命令参数
-NODE_CMD="/usr/bin/node /root/watch-account/script/watch-account.mjs ${WALLET_ADDRESS}"
-[ -n "${TG_TOKEN}" ] && NODE_CMD="${NODE_CMD} --tg-token=${TG_TOKEN}"
-[ -n "${TG_CHAT}" ] && NODE_CMD="${NODE_CMD} --tg-chat=${TG_CHAT}"
+if [ -n "${CONFIG_PATH}" ]; then
+  NODE_CMD="/usr/bin/node /root/watch-account/script/watch-account.mjs --config=${CONFIG_PATH}"
+else
+  NODE_CMD="/usr/bin/node /root/watch-account/script/watch-account.mjs ${WALLET_ADDRESS}"
+  [ -n "${TG_TOKEN}" ] && NODE_CMD="${NODE_CMD} --tg-token=${TG_TOKEN}"
+  [ -n "${TG_CHAT}" ] && NODE_CMD="${NODE_CMD} --tg-chat=${TG_CHAT}"
+fi
 
 cat > /etc/systemd/system/watch-account.service << END
 [Unit]

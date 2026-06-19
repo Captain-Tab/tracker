@@ -155,7 +155,11 @@
       "Bash(echo \"__EXIT__=$?\")",
       "Bash(md5 -r /Users/tabcaptain/Documents/code/tracker/script/*.mjs /Users/tabcaptain/Documents/code/tracker/script/*.sh)",
       "Bash(md5 -r /Users/tabcaptain/Documents/code/tracker/docs/*.md)",
-      "Bash(md5 -r /Users/tabcaptain/Documents/code/tracker/setup/Makefile /Users/tabcaptain/Documents/code/tracker/setup/setup-systemd.sh)"
+      "Bash(md5 -r /Users/tabcaptain/Documents/code/tracker/setup/Makefile /Users/tabcaptain/Documents/code/tracker/setup/setup-systemd.sh)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(node --test script/format.test.mjs)",
+      "Bash(node *)",
+      "Bash(npm install *)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",

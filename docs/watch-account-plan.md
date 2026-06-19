@@ -1,15 +1,16 @@
-# WS 监听账户变化 → REST 拉成交详情（perps）
+# WS 监听账户变化 → REST 拉平仓历史 / 离场挂单（perps）
 
 `script/watch-account.mjs` 的设计说明。配套已有的 `script/query-account.mjs`（快照查询）。
 
 ## 一、目标
 
-长驻监听一个钱包 `address` 的**合约（perps）账户**：
+长驻监听**一个或多个**钱包 `address` 的**合约（perps）账户**，围绕"跟/盯某交易者、预判其操作"：
 
-- WS 收到账户变化（开仓 long/short、加减仓、平仓、成交）→ 作为**触发器**
-- 触发后用 REST 拉**权威详情**：当前仓位 + 成交历史（Trade History）+ 订单
-- 主路 sodex-next，备路 sodex-web（`--enable-web-fallback`）
-- 全程**零鉴权**（已实测验证，见下）、零依赖（Node 22 内置 `WebSocket` + `fetch`）
+- WS 收到账户变化（开/加/减/平仓、离场挂单挂改撤）→ 作为**触发器**
+- 触发后用 REST 拉**权威详情**：当前仓位（WS 快照）+ **平仓历史**（权威 `realized_pnl`/资金费/均价）
+- **离场挂单（reduceOnly）** 是唯一的**前瞻信号**——提前看到对方的止盈/止损出场计划
+- **多地址**：一进程同时盯多个地址，各自独立 WS + 独立 Telegram 会话，模块级共享限流
+- 依赖 `ws` 包（`npm install`）；无 SDK、无鉴权（已实测，见 §二）。代理(WARP)另需 `undici` + `https-proxy-agent`
 
 ## 二、为什么不需要 apiKey / JWT（实测证据）
 
@@ -26,50 +27,74 @@
 | 层 | host | 键 | 鉴权 |
 | --- | --- | --- | --- |
 | WS 触发 | `wss://mainnet-gw.sodex.dev/ws/perps` | `address` | 无（已证） |
-| 成交/订单/仓位历史 | `https://mainnet-data.sodex.dev/api/v1/perps/{trades,orders,positions}` | `account_id` | 无 |
+| 平仓历史 | `https://mainnet-data.sodex.dev/api/v1/perps/positions` | `account_id` | 无 |
 | 符号元数据 | `https://alpha-biz.sodex.dev/biz/futures/symbols?env=mainnet` | — | 无 |
 | address→accountId 备用 | `https://sodex.dev/mainnet/chain/address/{address}/accounts` | `address` | 无 |
-| 备路 sodex-web | 同网关，`/futures/fapi/...` | `accountId` | 无（public path）|
+| 快照模式当前仓位 | `https://mainnet-gw.sodex.dev/api/v1/perps/accounts/{address}/state` | `address` | 无 |
 
 ## 四、执行流程
 
-> 默认实时 WS 监听模式；另有 `--snapshot` 快照模式见 §十。
+> 默认实时 WS 监听模式；多地址用 `--config`（§十一）；`--snapshot` 单地址快照模式见 §十。
 
 ```
 启动
- ├─ 拉 biz/futures/symbols → 建 symbol_id → {name, quoteCoin} 缓存（每 6h 刷新）
- └─ 连 wss .../ws/perps
+ ├─ 拉 biz/futures/symbols → 建 symbol_id → {name, quoteCoin, 精度} 缓存（每 6h 刷新）
+ └─ 连 wss .../ws/perps（每地址一条）
        ├─ onopen: 订阅 accountState / accountUpdate / accountOrderUpdate / accountTrade（user=address）
        ├─ 心跳: 每 15s 发 {op:"ping"}，pong 看门狗超时则重连
-       ├─ accountState 快照 → 当前持仓(data.P) + account_id(aid，取不到走 chain 备用)；标记价由持仓 ur 反推（见 §九）
-       │     对快照仓位做规范化指纹去重（abs(size)+派生方向+按 symbol 排序），过滤服务端周期性重推与表示/顺序漂移
-       └─ 指纹变化 或 收到 accountTrade → 防抖 3000ms（+maxWait 5000ms 封顶）合并 → fetchAndReport()
-              ├─ 当前持仓：直接用上面的 WS 快照（不再请求 data positions 端点）
-              ├─ 成交历史：GET data/api/v1/perps/trades?account_id=N（默认最近 2，--all 全量）
-              ├─ 与上次持仓 diff → 事件；逐笔回放算 Realized PnL；相对上次的新成交标 ★
-              └─ 打印：fill-driven banner + 仓位表 + Trade History 表
-                   （Time | Coin | Direction | Price | Amount | Trade Value | Realized PnL | Fee）
+       ├─ accountState 快照 → 当前持仓(data.P) + 离场单(data.O 中 R:true) + account_id(aid)
+       │     触发指纹 stateFp = 规范化仓位身份 + 离场单集合(i+p+q)；开仓单(R:false)不计，避免 churn
+       └─ 指纹变化 或 accountTrade/accountOrderUpdate → 防抖 3000ms（+maxWait 5000ms 封顶）→ fetchAndReport()
+              ├─ 当前持仓 / 离场单：直接用 WS 快照
+              ├─ 平仓历史：GET data/api/v1/perps/positions?account_id=N（取 size=0 已平仓，按 updated_at 降序取最近 N）
+              ├─ 出参指纹 outFp = 仓位 + 离场单 + 平仓 position_id 集（三者任一变才上报）
+              ├─ 与上次持仓 diff → 事件；新出现的已平仓位（新 position_id）标 ★
+              └─ 打印：头部一行 banner + 仓位卡片(含离场挂单) + 平仓历史；离场单挂/改/撤另发轻提醒
        └─ onclose: 指数退避重连（1s→30s，带 jitter）+ 重新订阅
 ```
 
-## 五、字段映射（取自 sodex-next 源码）
+## 五、字段映射（实测）
 
-- 成交 `side`：`{1: Buy, 2: Sell}`（`domain/normalize/history.ts:23`）
-- 仓位方向：WS 快照 `ps` 为名称（`LONG`/`SHORT`/`BOTH`）；`BOTH`（单向模式）按 `size` 符号判 LONG/SHORT
-- `symbol_id` → `baseCoin/quoteCoin`：`biz/futures/symbols`（`perpsApi.ts:23`）
-- Trade Value = price × quantity；数值按字段分精度（价格/数量按币种精度，USD 类 2 位，均千分位 + 去尾零，见 §九「时区与精度」）
-- 成交时间 `ts_ms`，Fee 计价币 = `quoteCoin`
+- 仓位方向（WS）：`ps` 名称（`LONG`/`SHORT`/`BOTH`）；`BOTH`（单向模式）按 `size` 符号判 LONG/SHORT
+- **平仓历史枚举是数字，与 WS 字符串不同源**（独立映射，不复用 `positionDirection`）：
+  - `position_side`：`2 → 做多(LONG)`、`3 → 做空(SHORT)`；`1` 未观测，兜底原值
+  - `margin_mode`：`2 → Cross`、`1 → Isolated`；未知兜底原值
+- 离场单（WS `data.O`，仅取 `R:true`）：`i` 单号 / `s` 币 / `S` BUY|SELL / `p` 价 / `q` 量 / `z` 已成交 / `ps` 方向 / `o` 类型
+- `symbol_id` → `baseCoin/quoteCoin`：`biz/futures/symbols`
+- 时间 `updated_at`（ms）；盈亏/资金费计价币 = USD
 
-## 六、健壮性（SDK 帮我们做、脚本里自己实现）
+## 六、健壮性
 
-1. `{op:"ping"}` 每 15s + pong 看门狗（`ws.mjs:1194`）
+1. `{op:"ping"}` 每 15s + pong 看门狗
 2. 大整数安全解析（ID 类字段 16+ 位转字符串，避免 Number 丢精度）
 3. 断线指数退避重连 + 重放订阅
 4. subscribe ack `success:false` 打日志
 5. HTTP 超时 10s + AbortController
-6. **限流退避（429/409）**：优先服务端 `Retry-After`，否则指数退避 2→60s + ±20% jitter；`rateLimitUntil` gate 所有请求，冷却后单次 catch-up；**限流时不打 web 备路**（两 host 可能共限）
-7. **拉取失败兜底**：任何未成功拉取（限流/硬错误未降级）一律跳过本次上报、保留 `lastOutFp`/`forceReport` 待下次，**绝不渲染空成交历史**（防误报）
-8. **去重双层规范化**：触发层 `stateFp` 与出参层 `outFp` 均用 `canonicalPositionsFp`（abs size+派生方向+排序）；成交分量用全 `tradeKey` 排序拼接（顺序无关、不碰大 id 精度）→ 不多发；REST 全量权威 + catch-up → 不漏发
+6. **模块级共享限流（429/409）**：优先服务端 `Retry-After`，否则指数退避 2→60s + ±20% jitter；`sharedRateLimitUntil` gate **所有地址**的请求（一处限流全员退避，多地址聚合 QPS 受控）。**冷却结束遍历全部 watcher 各触发一次 `scheduleFetch`**（G2：否则冷却期内其他地址的变化因被 gate 而永久漏报；各自 outFp 去重，无变化不重复上报）。
+7. **拉取失败兜底**：任何未成功拉取一律跳过本次上报、保留 `lastOutFp`/`forceReport` 待下次，绝不渲染空数据（防误报）。
+8. **去重双层规范化**：触发层 `stateFp` 与出参层 `outFp` **都含仓位 + 离场单**（G1：否则纯挂单变化被去重→即时提醒失效）；`outFp` 另含平仓 position_id 集。
+9. **平仓索引延迟补拉**（G5/G6）：检测到 CLOSED 仓位事件但平仓历史尚无对应新 `position_id` → 等 2s 补拉，使 CLOSE banner 能正确带上 ★ 平仓记录。
+10. **内存限容**：`seenPositionIds` 超 2000 用当前数据重建，防长跑泄漏。
+
+## 七、用法
+
+```bash
+# 多地址（推荐，各推各的 Telegram 会话）
+node script/watch-account.mjs --config=script/watch.config.json
+
+# 单地址（向后兼容）
+node script/watch-account.mjs 0xYourAddress                        # 实时 WS 监听（默认）
+node script/watch-account.mjs 0xYourAddress --snapshot             # 快照模式：启动抓一次 + 每日 20:00
+node script/watch-account.mjs 0xYourAddress --snapshot --at=08:30  # 改每日抓取时间
+node script/watch-account.mjs 0xYourAddress --tg-token=xxx --tg-chat=yyy  # 单地址 Telegram
+node script/watch-account.mjs 0xYourAddress --history-limit=5      # 平仓历史条数（默认 2）
+node script/watch-account.mjs 0xYourAddress --debounce-ms=500      # 自定义防抖
+node script/watch-account.mjs 0xYourAddress --max-wait-ms=8000     # 防抖封顶（活跃流最长等待）
+node script/watch-account.mjs 0xYourAddress --account-id=12345     # 跳过 accountId 解析
+node script/watch-account.mjs 0xYourAddress --raw                  # 附原始帧/响应
+```
+
+约束：`--config` 仅实时 WS 模式，与 `--snapshot` **互斥**（多地址快照本次不做）。
 
 ## 八、部署与隐私结论
 
@@ -80,105 +105,91 @@
 - **IP 暴露对比**：本机暴露住宅 IP（≈城市级定位 + ISP，凭法律程序可溯源）；VPS 暴露数据中心 IP（不直接暴露住宅位置，但 VPS 账单可溯源到本人）。两者对法律程序都非匿名。
 - **VPN/代理**：只是把你的 IP 换成它的（常规隐私手段），不等于匿名——信任转移到 VPN 方（有支付信息、可能记日志）。真正风险是**关联**：别用同一 IP/网络既监听又登录你本人账户。
 - **边界**：不为「规避运营方识别」做 IP 轮换/多跳/反关联工程；只做正常连接卫生（单连接、限速、抖动重连）+ 监听与本人账户隔离。
+- **配置隐私**：`watch.config.json` 含 Telegram bot token / chat_id → 已入 `.gitignore`，仅 VPS 本地存在。
 
-## 九、实跑修正（run-test 反馈）
+## 九、仓位与平仓历史展示
 
-- **当前持仓来源改为 WS 快照**：`accountState.data.P`（字段 `s/ps/sz/ep/ur/cr/l/lp/m`，见 `@sodex/sdk` `parsePerpsSnapshotPosition`）。data-host 的 `api/v1/perps/positions` 是**历史/已结**仓位（size=0），不是当前持仓——已弃用于「当前仓位」展示。
-- **事件驱动而非轮询**：服务端会周期性重推 `accountState` 快照。脚本对快照**仓位做规范化指纹去重**（`canonicalPositionsFp`：abs size+派生方向+排序，**不含订单数组** —— 订单易变字段每秒翻指纹会造成过度拉取，且报告不展示挂单），**仅在指纹变化或收到 `accountTrade` 时**才拉成交历史并打印；首帧打印一次基线。
-- **成交历史**走 REST `api/v1/perps/trades`（按 account_id），仅在变化时拉取。
+### 仓位卡片（对齐线上 Position 表）
 
-### 仓位展示（对齐线上 Position 表列）
+console 表格列：`Coin(含 Nx 杠杆) | 方向 | 持仓量 | 仓位价值 | Entry | Mark | Unrealized PnL (ROE%) | Liq.Price | Margin | 离场挂单`。
+Telegram 卡片每项独占一行，末尾追加离场挂单。console 与 TG 共用 `derivePositionView()` 派生，两端口径一致。
 
-列（终端表格）：`Coin(含 Nx 杠杆) | 方向 | 持仓量 | 仓位价值 | Entry | Mark | Unrealized PnL (ROE%) | Liq.Price | Margin`
+- **方向**：`ps=BOTH` 按 `size` 符号判 LONG/SHORT；hedge 直接用 `ps`。中文映射 `LONG→做多 / SHORT→做空`。
+- **持仓量 / 仓位价值**：仓位价值 = `标记价 × |size|`（USD，2 位）。
+- **Margin** = `|size|×entry / leverage`；模式来自 `m`（Cross/Isolated）。**ROE%** = `uPnL / margin`。
+- **标记价（Mark）反推**：账户快照不含合约 mark，用 `mark = 开仓价 + 未结盈亏 / 带符号数量` 反推（因 `ur=(mark−entry)×带符号size`），与展示盈亏天然自洽。无法反推时标记价/价值显示 `-`。
+- **离场挂单（reduceOnly）**：仓位卡片末尾按 symbol + 方向匹配该仓的离场单：
+  - 行格式 `离场挂单 {止盈|止损} @ {价} ({全平|部分} {量}{部分时 /持仓量})`
+  - 方向匹配：reduceOnly `SELL→平多`、`BUY→平空`；hedge 按 `ps`
+  - TP/SL 推断：多单 SELL 价 > 标记 → 止盈、< → 止损；空单反之
+  - **mark 反推不出（G11）**：退化为 `离场挂单 @ 价 (...)`，不带止盈/止损标签
+  - 孤儿单（无对应持仓）暂忽略；stop 类型订单样本未实测，TP/SL 暂按价格侧推断
 
-Telegram 卡片每项独占一行：`方向 / 持仓量 / 仓位价值 / 开仓价 / 标记价 / 未结盈亏(ROE%) / 强平价 / 保证金`。console 与 TG 共用 `derivePositionView()` 派生，保证两端口径一致。
+### 平仓历史（权威盈亏，替换原成交历史）
 
-- **方向**：`ps=BOTH`（单向模式）按 `size` 符号判 LONG/SHORT；hedge 模式直接用 `ps`。展示中文映射 `LONG→做多 / SHORT→做空`。
-- **杠杆**：合到 Coin 列（`SPCX 5x LONG`）。杠杆是仓位级属性，**不进** Trade History。
-- **持仓量 / 仓位价值**：拆为两项；仓位价值 = `标记价 × |size|`（USD，2 位）。
-- **Margin** = `|size|×entry / leverage`（实测对齐线上 `$13.97`）；模式来自 `m`（Cross/Isolated）。
-- **ROE%** = `uPnL / margin`（实测对齐线上 `-4.42%`）。
-- **标记价（Mark）反推**：账户快照**不含合约 mark**（`data.B` 是抵押币余额，非合约标的价）。改用持仓字段反推 `mark = 开仓价 + 未结盈亏 / 带符号数量`（因 `ur=(mark−entry)×带符号size`），与展示盈亏天然自洽。数量为 0 / 字段缺失时标记价与仓位价值均显示 `-`。
-- **精度**：价格类（开仓价/标记价/强平价/成交价）按币种 `pricePrecision`；数量按 `quantityPrecision`（封顶 6）；USD 金额（仓位价值/盈亏/保证金）2 位；均千分位 + 去尾零。统一走 `fmtNum/fmtUsd/fmtPct`。
+来源 `data/api/v1/perps/positions`（按 account_id，仅 `size=0` 已平仓记录）。**比逐笔成交回放更准**——直接用接口权威 `realized_pnl`（仓位生命周期累计 = 平仓总盈亏）+ 资金费 + 均价。
 
-### 逐笔已实现盈亏（Realized PnL，计算列）
+- **排序（G3）**：接口按 `position_id` 返回（非平仓时间），pid 小但 `updated_at` 新会排后 → **客户端按 `updated_at` 降序**再取最近 N（默认 2，`--history-limit=N`）。
+- 每条两行：
+  ```
+  {★ }平仓时间  币种 方向 · {全平|部分}
+    开仓 {均开} → 平仓 {均平}  数量 {cum_closed_size}
+    已实现盈亏 {realized_pnl 带符号} 资金费 {funding_fee 带符号}
+  ```
+- **★ 新记录**：首帧基线全部不标（避免满屏 ★），之后新出现的已平仓位（新 `position_id`）标 ★，沿用 `seenPositionIds` + `baselineLogged` 机制。
+- **限制**：`perps/positions` 只返已平仓（size=0），**部分减仓（仓仍开）期间无平仓历史记录**；其可见性靠 WS 实时持仓 diff（DECREASED），权威 PnL 待全平才出现。
 
-API **不返回**逐笔盈亏（trades 只有 price/quantity/fee/side；盈亏只在仓位级 `cr`）。本列由脚本**回放成交序列**计算：
+### banner（去重，头部一行）
 
-- 按 symbol 时间升序回放，维护带符号净持仓 `qty` 与**加权均价** `entry`。
-- 开仓/加仓笔：更新 `entry`，本笔无已实现盈亏（显示 `-`）。
-- 平仓/减仓笔：`PnL = (成交价 − entry) × 平仓量 × 方向符号`（多 +1 / 空 −1）；越过 0 则余量按成交价反向开新仓。
-- 实测对齐：Buy0.11→Sell0.11 = `+$0.0220`；Sell0.36→Buy0.36 = `−$0.2268`。
-
-**新增行标记**：每次因账户变化重拉成交后，相对上次**新出现**的成交行，行首打 `★`（旧行用等宽空格占位对齐）。首次基线打印不标，之后才标。
-
-**事件 banner（动词化，全部带 `【accountId】`）**：每次变化打印方框 banner，头部由 `bannerHead(accountId, kind, clock)` 生成，时间统一 `fmtTime` 的 `YYYY/MM/DD HH:mm:ss`（上海 UTC+8）：
+每次变化打印方框 banner，**只有头部一行**（原 `OPENED/CLOSED…` 明细行已删，与仓位卡片重复）。头部 `bannerHead(displayId, kind, clock)`，时间统一 `YYYY/MM/DD HH:mm:ss`（上海 UTC+8）：
 
 ```
-╔══════════════════════════════════════════════════╗
-║ ⚡ 【1163】 OPEN POSITION · 2026/06/18 14:29:00   ║
-║    Sell 0.21 SPCX @ 197.96  →  SPCX 做空 0.21    ║
-╚══════════════════════════════════════════════════╝
+╔══════════════════════════════════════════════╗
+║ ⚡ 【3602-xiao】 OPEN POSITION · 2026/06/20 …  ║
+╚══════════════════════════════════════════════╝
 ```
 
-banner 类型（kind）：
+- **displayId**：`label ? accountId-label : accountId`（config 项可选 `label` 起别名，如 `【1046-xiao】`；无 label 仍只 `【1046】`）。
+- banner 类型（kind）由仓位 diff 动词判定：`START WATCH`（基线）/ `OPEN/CLOSE/INCREASE/REDUCE POSITION` / `POSITION CHANGE`（无 diff，如纯离场单变化）/ `SNAPSHOT`（每日/快照）。
+- "什么动作"由头部动词、"什么币/量/价"由仓位卡片、平仓由「平仓历史」表达——消除重复。
 
-- `START WATCH` — 启动基线
-- `OPEN / CLOSE / INCREASE / REDUCE POSITION` — 单笔开/平/加/减（由成交 + 仓位 diff 动词判定）
-- `POSITION UPDATE (n)` — 多笔成交
-- `POSITION CHANGE` — 仓位变化但无成交可归因（带 diff 明细，兜底）
-- `SNAPSHOT` — 快照/每日（不带原因）
-- 平仓结果行显示 `→ SPCX 已平仓`；旧的 `ACCOUNT UPDATE`（无变化）已删除，无变化不单独发通知。
-- banner 对齐按「emoji 宽度=2」计算，适配大多数现代终端；个别终端把 ⚡ 渲染成单宽时右边框可能偏移（仅视觉，不影响数据）。
+### 离场挂单变化轻提醒（独立 banner）
 
-**口径与限制**：
+reduceOnly 单集合 diff（按 orderId）检测 PLACE/MODIFY/CANCEL → 主报告之后单发：
 
-- 仅「交易盈亏」，**不含资金费**（trades 无此数据），手续费在独立 Fee 列；故与线上「已实现盈亏」可能略有出入。
-- 准确性依赖窗口**包含开仓笔**——默认最近 2 条时，若仓位在窗口外开的，最早几行盈亏会失真；要全准用 `--all`。
+```
+⚡ 【3602】 离场挂单 · 时间
+设置/撤销/调整 {止盈|止损} {coin} {方向} @ {价}
+```
+
+- **MODIFY（G9）**：同 orderId 的 `p`/`q` 变 → 一条"调整"；交易所撤旧+新单实现改单时退化为 撤销+设置 两条（可接受）。
+- **FILL 不双报**：reduceOnly 单消失时，若同窗口该 symbol 仓位减/平 → 判成交，归平仓事件，不发撤销提醒；否则判撤销。
+- 首帧只建立基线，不提醒；普通开仓单（`R:false`）挂/撤 **不触发任何报告/通知**。
 
 ### 时区与精度
 
-- 所有事件 / 成交时间走统一 `fmtTime`，显示**北京时间 UTC+8**（`Asia/Shanghai`，无 DST），格式 `YYYY/MM/DD HH:mm:ss`（斜杠分隔）。
-- **数值按字段分精度 + 千分位 + 去尾零**（统一 `fmtNum/fmtUsd/fmtPct`）：
-  - 价格类（Price / Entry / Mark / Liq.Price）→ 按币种 `pricePrecision`
-  - 数量类（Amount / 持仓量）→ 按 `quantityPrecision`（封顶 6）
-  - USD 金额（Trade Value / Realized PnL / Position Value / Margin）→ 2 位
-  - 手续费 Fee → 按 `quoteCoinDisplayPrecision`；ROE% → 2 位带符号
-  - 缺失 / 非法值统一显示 `-`（不当 0）
+- 时间统一 `fmtTime`，**北京时间 UTC+8**（`Asia/Shanghai`，无 DST），格式 `YYYY/MM/DD HH:mm:ss`（斜杠分隔）。
+- 数值按字段分精度 + 千分位 + 去尾零（`fmtNum/fmtUsd/fmtPct`）：价格类按币种 `pricePrecision`；数量按 `quantityPrecision`（封顶 6）；USD 金额 2 位；缺失/非法显示 `-`。
 
-### 成交历史两种模式
+## 十、Snapshot 模式（单地址 `--snapshot`：按需 + 每日定时）
 
-- **默认**：最近 **2** 条（`--history-limit ?? 2`），每次变化单页拉取。
-- **`--all`**：按游标 `meta.next_cursor` 翻页拉全部（每页 100，安全上限 200 页）。
-- `--history-limit=N` 自定义单页条数。
-- 注意：`--all` 在每次变化事件都会重拉全量，适合一次性 dump，不适合长驻默认。
+实时 WS 之外的第二种模式：**不**保持持久 WS，改用 REST 取快照，适合「每天定点看一次 + 想看时手动拉」。
 
-## 十、Snapshot 模式（`--snapshot`：按需 + 每日定时）
+- **当前持仓 / 离场单来源**：REST `GET {gateway}/api/v1/perps/accounts/{address}/state`，解析 `data.P`（持仓）/ `data.O`（离场单）/ `data.aid`（accountId）。
+- **平仓历史**：同实时模式走 data host `api/v1/perps/positions`（默认最近 2，`--history-limit=N`）。
+- **每日定时**：默认每天 **20:00 上海时间（UTC+8）**；`--at=HH:MM` 可改。
+- **按需触发**：`kill -USR1 <pid>`（headless/systemd 可用，无端口、无鉴权面）；交互式 TTY 下额外支持回车。
+- 复用实时模式渲染：仓位卡片(含离场挂单)、平仓历史、★ 新增标记；banner 头为 `SNAPSHOT`。
 
-实时 WS 监听之外的第二种模式：**不**保持持久 WS，改用 REST 取快照，适合「每天定点看一次 + 想看时手动拉」。
-
-- **当前持仓来源**：REST `GET {gateway}/api/v1/perps/accounts/{address}/state`（按 address，公开无鉴权），解析 `data.P`（同 WS 快照字段）取 live 持仓、`data.aid` 取 accountId；标记价同实时模式由持仓 `ur` 反推（见 §九）。
-- **成交历史**：同实时模式走 data host `api/v1/perps/trades`（默认最近 2，`--all` 全量）。
-- **每日定时**：默认每天 **20:00 上海时间（UTC+8）** 抓一次。`msUntilNextShanghai` 用固定 +8 偏移算下一个触发点（上海无 DST）；`--at=HH:MM` 可改。
-- **按需触发**：
-  - **`kill -USR1 <pid>`** —— 主推荐，headless / systemd 下可用，无端口、无鉴权面（脚本启动时打印 pid）。
-  - 终端回车 —— 仅在交互式 TTY 下额外支持，方便本地测试。
-  - 未采用 stdin-only（服务器无 TTY）或 HTTP 端口（增加攻击面，与低足迹目标冲突）。
-- 复用实时模式的渲染：仓位表、成交表、`★` 新增行标记、`diffPositions` 事件、Realized PnL 计算；banner 头为 `⚡ SNAPSHOT · <原因>`（启动 / 每日 20:00 / 按需）。
-- 启动先抓一次基线（不标 ★），之后每日 / 按需抓取相对上次的新成交标 `★`。
-
-## 七、用法
+## 十一、多地址模式（`--config`）
 
 ```bash
-node script/watch-account.mjs 0xYourAddress                       # 实时 WS 监听（默认），成交历史默认最近 2 条
-node script/watch-account.mjs 0xYourAddress --snapshot            # 快照模式：启动抓一次 + 每日 20:00 上海时间
-node script/watch-account.mjs 0xYourAddress --snapshot --at=08:30 # 改每日抓取时间
-#   按需触发：kill -USR1 <pid>（或交互式终端回车）
-node script/watch-account.mjs 0xYourAddress --all                 # 成交历史拉全部（游标翻页）
-node script/watch-account.mjs 0xYourAddress --history-limit=30     # 自定义单页条数
-node script/watch-account.mjs 0xYourAddress --enable-web-fallback # 主路失败降级 web
-node script/watch-account.mjs 0xYourAddress --debounce-ms=500     # 自定义防抖
-node script/watch-account.mjs 0xYourAddress --max-wait-ms=8000    # 防抖封顶（活跃流最长等待）
-node script/watch-account.mjs 0xYourAddress --account-id=12345    # 跳过 accountId 解析
-node script/watch-account.mjs 0xYourAddress --raw                 # 附原始帧/响应
+node script/watch-account.mjs --config=script/watch.config.json
 ```
+
+- 进程内循环 `new AccountWatcher(addr)`，各自独立 WS（物理隔离：一地址断不影响其他），共享模块级限流器。
+- 配置：**全局一个 bot（`tgToken`）+ 每地址独立 `tgChat`**；地址项可选 `tgToken` 覆盖、可选 `label` 别名、可选 `at` 镜像时刻。
+- **每地址独立每日镜像时刻 `at`（可选）**：每个地址各自在自己的 `at`（上海时间 `HH:MM`）触发一次 SNAPSHOT，可错峰避免 N 地址同一时刻并发拉取。取值优先级 **地址项 `at` > 全局 `--at` > 默认 `20:00`**；非法值（非 `HH:MM`）告警并回退默认。
+- 错误处理（G8）：文件缺失 / JSON 解析失败 / `watches` 空 → 退出；非法 `address` 跳过告警；重复 address 去重保首个；非法 `at` 告警回退默认。
+- 配置含 TG 凭据 → **不入 git**（`.gitignore`），仅服务器本地填写 `script/watch.config.json`。
+- 容量：1GB/1 核 VPS 跑 5–10 地址内存/CPU 充裕；瓶颈是 data host 限流，由共享限流器兜。

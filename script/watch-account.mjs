@@ -1,21 +1,23 @@
 #!/usr/bin/env node
 // 监听某钱包 address 的 perps 账户变化（事件驱动，非轮询）。
-// 当前持仓直接取自 WS accountState 快照；成交历史在变化时用 REST 拉取。
+// 当前持仓直接取自 WS accountState 快照；平仓历史/离场挂单在变化时用 REST 拉取。
 //
-// 零依赖（Node 22 内置 WebSocket + fetch）、无 SDK、无鉴权。
-// Node < 22 自动 polyfill ws 包（npm install ws）。
+// 依赖 ws 包（npm install ws）；无 SDK、无鉴权。代理(WARP)另需 undici + https-proxy-agent。
 //
 // 请求控制（防 429/409 限流、防多发/漏发）：
-//   1. 指纹去重 — 规范化比对（abs(size)+派生方向+排序），消除表示/顺序漂移误判
+//   1. 指纹去重 — 规范化比对（abs(size)+派生方向+离场单集合+排序），消除表示/顺序漂移误判
 //   2. 防抖合并 — 默认 3000ms + maxWait 5000ms 封顶，活跃流不饥饿
-//   3. 限流退避 — 429/409 优先 Retry-After，否则指数 2→60s + jitter；冷却后单次补拉；限流不打备路
+//   3. 限流退避 — 429/409 优先 Retry-After，否则指数 2→60s + jitter；模块级共享，一处限流全员退避
 //   4. 失败兜底 — 拉取失败不渲染空数据，保留指纹待下次成功（不误报）
-//   5. 暂缓重试 — accountState/accountTrade 异步时等 2s 补拉
+//   5. 暂缓重试 — CLOSED 仓位但平仓历史尚无对应记录时等 2s 补拉（positions 索引延迟）
 //
 // 用法：
-//   node watch-account.mjs 0xYourAddress
-//   node watch-account.mjs 0xYourAddress --snapshot
-//   node watch-account.mjs 0xYourAddress --tg-token=BOT_TOKEN --tg-chat=CHAT_ID
+//   单地址：node watch-account.mjs 0xYourAddress
+//   单地址快照：node watch-account.mjs 0xYourAddress --snapshot
+//   多地址：node watch-account.mjs --config=script/watch.config.json
+//   Telegram：--tg-token=BOT_TOKEN --tg-chat=CHAT_ID（单地址）
+
+import { readFileSync } from "node:fs";
 
 // 代理支持：Node 22 内置 fetch/WebSocket 不认 HTTP_PROXY 环境变量，需显式处理
 const PROXY_URL = process.env.HTTP_PROXY || process.env.http_proxy || null;
@@ -68,7 +70,6 @@ const ENVS = {
 };
 
 const CHANNELS = ["accountState", "accountUpdate", "accountOrderUpdate", "accountTrade"];
-const SIDE_MAP = { 1: "Buy", 2: "Sell" };
 
 // 429/409 同属限流家族（409 为本网关实测限流码，非标准 Conflict 语义）
 const THROTTLE_STATUSES = new Set([429, 409]);
@@ -80,6 +81,7 @@ const RECONNECT_MAX_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 10_000;
 const SYMBOLS_REFRESH_MS = 6 * 60 * 60 * 1_000;
 const TG_TIMEOUT_MS = 8_000;
+const SEEN_IDS_CAP = 2000; // seenPositionIds 上限，超出用当前数据重建防长跑泄漏
 
 // ---------- 通用工具 ----------
 function parseArgs(argv) {
@@ -96,6 +98,23 @@ function parseArgs(argv) {
 
 function isAddress(v) {
   return typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v);
+}
+
+// 每日快照时间格式校验：HH:MM（0-23 : 0-59）。config / CLI 写错时不致定时器失效。
+export function isValidHHMM(v) {
+  if (typeof v !== "string") return false;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(v);
+  if (!m) return false;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  return h >= 0 && h <= 23 && min >= 0 && min <= 59;
+}
+
+// 每日快照时间取值优先级：地址项 at > CLI --at > 默认 20:00；非法值跳过回退下一级。
+export function pickAt(watchAt, cliAt) {
+  if (isValidHHMM(watchAt)) return watchAt;
+  if (isValidHHMM(cliAt)) return cliAt;
+  return "20:00";
 }
 
 function parseJsonSafe(text) {
@@ -171,6 +190,39 @@ async function httpGetJson(url) {
   } finally { clearTimeout(timer); }
 }
 
+// ---------- 模块级共享限流（多地址聚合 QPS 受控，一处 429/409 全员退避）----------
+let sharedRateLimitUntil = 0;
+let sharedBackoff = 0;
+let sharedWakeScheduled = false;
+const watcherRegistry = new Set();
+
+// 限流退避（秒级翻倍封顶 60s）+ ±20% jitter，防多实例同步重试惊群
+function nextSharedBackoffMs() {
+  sharedBackoff = Math.min((sharedBackoff || 1) * 2, 60);
+  const base = sharedBackoff * 1000;
+  return Math.round(base + base * 0.2 * (Math.random() * 2 - 1));
+}
+
+// 冷却结束唤醒全部 watcher（G2）：冷却期内其他 watcher 的 stateFp 已推进但 scheduleFetch 被
+// gate 丢弃；若只唤醒命中 429 的实例，其余永不重触发→漏报。故冷却结束遍历全员各触发一次
+// scheduleFetch（各自 outFp 去重，无变化不重复上报）。cooldown 被后续 429 延长时自动重排。
+function scheduleSharedWake() {
+  if (sharedWakeScheduled) return;
+  sharedWakeScheduled = true;
+  const tick = () => {
+    const remain = sharedRateLimitUntil - Date.now();
+    if (remain > 0) { setTimeout(tick, remain + 500); return; }
+    sharedWakeScheduled = false;
+    for (const w of watcherRegistry) w.scheduleFetch();
+  };
+  setTimeout(tick, Math.max(0, sharedRateLimitUntil - Date.now()) + 500);
+}
+
+function enterSharedRateLimit(waitMs) {
+  sharedRateLimitUntil = Math.max(sharedRateLimitUntil, Date.now() + waitMs);
+  scheduleSharedWake();
+}
+
 // ---------- Telegram 推送 ----------
 async function sendTelegram(token, chatId, text) {
   if (!token || !chatId) return;
@@ -187,16 +239,15 @@ async function sendTelegram(token, chatId, text) {
   } catch (e) { log(`TG 推送失败：${e.message}`); }
 }
 
-// 构建 Telegram 消息（样式 F 卡片）。banner 头带【accountId】动词化;仓位走 derivePositionView 统一口径
-function buildTgMessage(accountId, kind, clock, newFills, events, positions, trades, newKeys, pnlMap, n) {
+// 构建 Telegram 消息（样式 F 卡片）。banner 头一行 + 仓位卡片(含离场挂单) + 平仓历史。
+function buildTgMessage(displayId, kind, clock, positions, reduceOnly, posHistory, newPosIds, limit) {
   const lines = [];
   const SEP = "━━━━━━━━━━━━━━━━";
 
-  // 1) banner 头 + 明细
-  lines.push(bannerHead(accountId, kind, clock, n));
-  for (const d of bannerDetailLines(newFills, events, positions)) lines.push(`  ${d}`);
+  // 1) banner 头（去重：明细行已删，动作由头部动词表达）
+  lines.push(bannerHead(displayId, kind, clock));
 
-  // 2) 仓位卡片
+  // 2) 仓位卡片（末尾追加该仓离场挂单）
   const open = positions.filter((p) => Number(p.size) !== 0);
   if (open.length) {
     for (const p of open) {
@@ -211,31 +262,28 @@ function buildTgMessage(accountId, kind, clock, newFills, events, positions, tra
       lines.push(`  未结盈亏  ${fmtUsd(v.uPnl, true)}${v.roe !== null ? ` (${fmtPct(v.roe)})` : ""}`);
       lines.push(`  强平价  ${fmtNum(v.liqPrice, v.pricePrecision)}`);
       if (v.margin !== null) lines.push(`  保证金  ${fmtUsd(v.margin)} (${marginModeLabel(v.marginMode)})`);
+      for (const line of exitOrderLines(p, v, reduceOnly)) lines.push(`  ${line}`);
       lines.push(`${SEP}`);
     }
   } else {
     lines.push(`\n📊 仓位：无持仓`);
   }
 
-  // 3) 成交卡片
-  if (trades.length) {
-    const pm = pnlMap ?? computeRealizedPnl(trades);
-    lines.push(`\n📜 成交历史 (最近${trades.length}条)\n`);
-    for (const t of trades.slice(0, 20)) {
-      const m = symbolMeta(t.symbol_id);
-      const marker = newKeys.has(tradeKey(t)) ? "★" : " ";
-      const dir2 = SIDE_MAP[t.side] ?? String(t.side);
-      const pnl = pm.get(tradeKey(t));
-      const pnlStr = pnl === null || pnl === undefined ? "—" : fmtUsd(pnl, true);
-      const tradeValue = Number(t.price) * Number(t.quantity);
-      lines.push(`${marker} ${fmtTime(t.ts_ms)}`);
-      lines.push(`  ${m.name} ${dir2} ${fmtNum(t.quantity, m.quantityPrecision)} @${fmtNum(t.price, m.pricePrecision)} Value ${fmtUsd(tradeValue)}`);
-      lines.push(`  盈亏 ${pnlStr}  手续费 ${fmtNum(t.fee, m.feePrecision)} ${m.quoteCoin}`);
-      lines.push("");
-    }
-    if (trades.length > 20) lines.push(`... 共 ${trades.length} 条`);
-  }
+  // 3) 平仓历史
+  const history = renderPositionHistory(posHistory, newPosIds, limit);
+  if (history) lines.push(`\n${history}`);
 
+  return lines.join("\n");
+}
+
+// 离场挂单变化轻提醒（独立 banner）。changes: { placed, modified, canceled }（含 view/mark 上下文）
+function buildExitOrderBanner(displayId, clock, changes) {
+  const verb = { place: "设置", cancel: "撤销", modify: "调整" };
+  const lines = [`⚡ 【${displayId}】 离场挂单 · ${clock}`];
+  for (const c of changes) {
+    const tag = c.label ? `${c.label} ` : "";
+    lines.push(`${verb[c.action]} ${tag}${c.coin} ${c.dirCN} @ ${c.priceStr}`);
+  }
   return lines.join("\n");
 }
 
@@ -276,7 +324,7 @@ function symbolMetaBySymbol(symbol) {
   return symbolsBySymbol.get(String(symbol)) ?? { ...DEFAULT_META, name: baseCoin(symbol), quoteCoin: "USDC" };
 }
 
-// ---------- WS 快照仓位解析 ----------
+// ---------- WS 快照仓位 / 离场单解析 ----------
 function parseWsPosition(p) {
   return {
     symbol: String(p.s ?? p.symbol ?? "?"),
@@ -289,6 +337,33 @@ function parseWsPosition(p) {
     liqPrice: String(p.lp ?? p.liquidationPrice ?? ""),
     marginMode: String(p.m ?? p.marginMode ?? ""),
   };
+}
+
+// 离场单（reduceOnly，R:true）归一化。WS data.O 字段：i 单号 / s 币 / S BUY|SELL /
+// p 价 / q 量 / z 已成交 / ps LONG|SHORT|BOTH / o 类型 / X 状态。开仓单(R:false)不取。
+function parseReduceOnlyOrders(orders) {
+  if (!Array.isArray(orders)) return [];
+  return orders.filter((o) => o && o.R === true).map((o) => ({
+    orderId: String(o.i),
+    symbol: String(o.s ?? "?"),
+    side: String(o.S ?? ""),
+    posSide: String(o.ps ?? ""),
+    price: String(o.p ?? ""),
+    qty: String(o.q ?? ""),
+    filled: String(o.z ?? "0"),
+    type: String(o.o ?? ""),
+    status: String(o.X ?? ""),
+  }));
+}
+
+// 离场单规范化指纹：只取 R:true，i+p+q 排序拼接（不含开仓单，避免 churn）。
+export function canonicalReduceOnlyOrders(orders) {
+  if (!Array.isArray(orders)) return "";
+  return orders
+    .filter((o) => o && o.R === true)
+    .map((o) => `${o.i}:${o.p}:${o.q}`)
+    .sort()
+    .join(",");
 }
 
 const baseCoin = (symbol) => String(symbol).split(/[-/]/)[0];
@@ -352,7 +427,40 @@ export function derivePositionView(p) {
   };
 }
 
-// banner 文案：动词化仓位状态，全部带【accountId】
+// 匹配某仓的离场单并生成展示行（仓位卡片末尾）。
+// 方向匹配：hedge 按 ps；单向/BOTH 按 side（SELL→平多, BUY→平空）。
+// TP/SL 推断（G11）：多单 SELL 价>标记→止盈、<→止损；空单反之；mark 反推不出→退化无标签。
+export function exitOrderLines(position, view, reduceOnly) {
+  const matches = matchReduceOnly(position, view, reduceOnly);
+  return matches.map((o) => {
+    const label = exitTpSlLabel(view, o);
+    const qty = Number(o.qty);
+    const full = Number.isFinite(qty) && Number.isFinite(view.absSize) && qty >= view.absSize - 1e-12;
+    const qtyStr = fmtNum(o.qty, view.qtyPrecision);
+    const amt = full ? `全平 ${qtyStr}` : `部分 ${qtyStr} / ${fmtNum(view.absSize, view.qtyPrecision)}`;
+    const labelPart = label ? `${label} ` : "";
+    return `离场挂单  ${labelPart}@ ${fmtNum(o.price, view.pricePrecision)} (${amt})`;
+  });
+}
+
+function matchReduceOnly(position, view, reduceOnly) {
+  return reduceOnly.filter((o) => {
+    if (baseCoin(o.symbol) !== baseCoin(position.symbol)) return false;
+    if (o.posSide === "LONG" || o.posSide === "SHORT") return o.posSide === view.dir;
+    const closes = o.side === "SELL" ? "LONG" : o.side === "BUY" ? "SHORT" : null;
+    return closes === view.dir;
+  });
+}
+
+// TP/SL 标签：需要 mark 才能判；mark null（G11）或价非法 → 返回 ""（不带标签）
+function exitTpSlLabel(view, order) {
+  const price = Number(order.price);
+  if (view.mark === null || !Number.isFinite(price)) return "";
+  const isTp = view.dir === "LONG" ? price > view.mark : price < view.mark;
+  return isTp ? "止盈" : "止损";
+}
+
+// banner 文案：动词化仓位状态，全部带【displayId】
 const BANNER_LABEL = {
   START: "START WATCH",
   OPEN: "OPEN POSITION",
@@ -364,45 +472,20 @@ const BANNER_LABEL = {
   SNAPSHOT: "SNAPSHOT",
 };
 
-function bannerHead(accountId, kind, clock, n) {
+function bannerHead(displayId, kind, clock) {
   const label = BANNER_LABEL[kind] ?? "POSITION CHANGE";
-  const cnt = kind === "UPDATE" && n ? ` (${n})` : "";
-  return `⚡ 【${accountId}】 ${label}${cnt} · ${clock}`;
+  return `⚡ 【${displayId}】 ${label} · ${clock}`;
 }
 
-// 由 newFills + events 判定 banner 类型（START / SNAPSHOT 由调用方按 baseline/reason 决定）
-function classifyBanner(newFills, events) {
-  if (newFills.length > 1) return { kind: "UPDATE", n: newFills.length };
-  if (newFills.length === 1) {
-    const verbs = events.map((e) => e.split(" ")[0]);
-    if (verbs.includes("CLOSED")) return { kind: "CLOSE" };
-    if (verbs.includes("OPENED")) return { kind: "OPEN" };
-    if (verbs.includes("INCREASED")) return { kind: "INCREASE" };
-    if (verbs.includes("DECREASED")) return { kind: "REDUCE" };
-    return { kind: "OPEN" }; // 有成交但无明确 diff（开仓在历史窗口外）→ 视为开仓
-  }
-  return { kind: "CHANGE" }; // 仓位变化无成交（兜底，带 events 明细）
-}
-
-// banner 明细行（成交描述 + 结果仓位 / 或 events 列表），console 与 TG 共用
-function bannerDetailLines(newFills, events, positions) {
-  const openByCoin = new Map(
-    positions.filter((p) => Number(p.size) !== 0).map((p) => [baseCoin(p.symbol), p]),
-  );
-  const resultOf = (coin) => {
-    const p = openByCoin.get(coin);
-    return p ? `${directionCN(positionDirection(p))} ${fmtNum(Math.abs(Number(p.size)), 6)}` : "已平仓";
-  };
-  if (newFills.length >= 1) {
-    const fills = newFills.map((t) => {
-      const m = symbolMeta(t.symbol_id);
-      const coin = m.baseCoin || baseCoin(m.name);
-      return `${SIDE_MAP[t.side] ?? t.side} ${fmtNum(t.quantity, m.quantityPrecision)} ${coin} @ ${fmtNum(t.price, m.pricePrecision)}`;
-    });
-    const coins = [...new Set(newFills.map((t) => { const m = symbolMeta(t.symbol_id); return m.baseCoin || baseCoin(m.name); }))];
-    return [...fills, ...coins.map((c) => `→ ${c} ${resultOf(c)}`)];
-  }
-  return [...events];
+// 由仓位 diff events 判定 banner 类型（START / SNAPSHOT 由调用方按 baseline/reason 决定）。
+// 删 trades 后不再有 newFills，动词全部来自 diffPositions 的 events。
+function classifyBanner(events) {
+  const verbs = events.map((e) => e.split(" ")[0]);
+  if (verbs.includes("OPENED")) return { kind: "OPEN" };
+  if (verbs.includes("CLOSED")) return { kind: "CLOSE" };
+  if (verbs.includes("INCREASED")) return { kind: "INCREASE" };
+  if (verbs.includes("DECREASED")) return { kind: "REDUCE" };
+  return { kind: "CHANGE" }; // 无仓位 diff（如纯离场单变化）→ 兜底
 }
 
 async function resolveAccountIdViaChain(env, address) {
@@ -411,35 +494,61 @@ async function resolveAccountIdViaChain(env, address) {
   return resp.data.primaryAccountId ?? null;
 }
 
-const ALL_PAGE_SIZE = 100;
-const ALL_MAX_PAGES = 200;
+// ---------- 平仓历史（perps/positions 权威 realized_pnl / 资金费 / 均价）----------
+// G4 数字枚举映射（与 WS 字符串 ps/m 不同源，平仓历史走自己的数字映射）：
+const POSITION_SIDE_CN = { 2: "做多", 3: "做空" }; // 2=LONG / 3=SHORT；1 未观测，兜底原值
+const MARGIN_MODE_NUM = { 1: "Isolated", 2: "Cross" }; // 实测全为 2=Cross
 
-async function fetchTradesNext(env, accountId, opts) {
-  const base = `${env.data}/api/v1/perps/trades?account_id=${encodeURIComponent(accountId)}`;
-  if (!opts.all) {
-    const json = await httpGetJson(`${base}&limit=${opts.limit}`);
-    return { source: "sodex-next", trades: json?.data ?? [], raw: json };
-  }
-  const trades = [];
-  let cursor = "", pages = 0;
-  while (pages < ALL_MAX_PAGES) {
-    const url = `${base}&limit=${ALL_PAGE_SIZE}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
-    const json = await httpGetJson(url);
-    const batch = json?.data ?? [];
-    trades.push(...batch);
-    cursor = json?.meta?.next_cursor ?? "";
-    pages++;
-    if (!cursor || batch.length === 0) break;
-  }
-  if (pages >= ALL_MAX_PAGES && cursor) log(`已达翻页上限 ${ALL_MAX_PAGES} 页，结果可能不完整`);
-  return { source: "sodex-next", trades, raw: { pages, count: trades.length } };
+export function positionSideCN(side) {
+  return POSITION_SIDE_CN[Number(side)] ?? `side${side}`;
 }
 
-async function fetchTradesWeb(env, accountId, opts) {
-  const pageSize = opts.all ? 1000 : opts.limit;
-  const json = await httpGetJson(`${env.gateway}/futures/fapi/trade/v1/order/trade-list?accountId=${encodeURIComponent(accountId)}&pageSize=${pageSize}`);
-  const rows = json?.data?.rows ?? json?.data ?? [];
-  return { source: "sodex-web", trades: Array.isArray(rows) ? rows : [], raw: json };
+export function marginModeNumLabel(m) {
+  return MARGIN_MODE_NUM[Number(m)] ?? String(m);
+}
+
+// G3：接口按 position_id 返回（非平仓时间），pid 小但 updated_at 新会排后
+// → 客户端按 updated_at 降序排序后再取最近 N。仅取已平仓（size=0）。
+export function toPositionHistoryRecords(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .filter((r) => Number(r.size) === 0)
+    .map((r) => ({
+      positionId: String(r.position_id),
+      symbolId: Number(r.symbol_id),
+      positionSide: Number(r.position_side),
+      marginMode: Number(r.margin_mode),
+      maxSize: r.max_size,
+      cumClosedSize: r.cum_closed_size,
+      avgEntryPrice: r.avg_entry_price,
+      avgClosePrice: r.avg_close_price,
+      realizedPnl: r.realized_pnl,
+      fundingFee: r.funding_fee,
+      updatedAt: Number(r.updated_at),
+    }))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+async function fetchPositionHistory(env, accountId) {
+  const json = await httpGetJson(`${env.data}/api/v1/perps/positions?account_id=${encodeURIComponent(accountId)}`);
+  return { records: toPositionHistoryRecords(json?.data), raw: json };
+}
+
+// 平仓历史渲染（中文「平仓历史」，每条两行 + ★ 标新）。无记录返回 null。
+function renderPositionHistory(records, newIds, limit) {
+  const list = (records ?? []).slice(0, limit);
+  if (!list.length) return null;
+  const lines = [`📜 平仓历史 (最近${list.length}条)\n`];
+  for (const r of list) {
+    const meta = symbolMeta(r.symbolId);
+    const coin = meta.baseCoin || `#${r.symbolId}`;
+    const star = newIds && newIds.has(r.positionId) ? "★ " : "";
+    const full = Math.abs(Number(r.cumClosedSize)) >= Math.abs(Number(r.maxSize)) - 1e-12;
+    lines.push(`  ${star}${fmtTime(r.updatedAt)}  ${coin} ${positionSideCN(r.positionSide)} · ${full ? "全平" : "部分"}`);
+    lines.push(`  开仓 ${fmtNum(r.avgEntryPrice, meta.pricePrecision)} → 平仓 ${fmtNum(r.avgClosePrice, meta.pricePrecision)}  数量 ${fmtNum(r.cumClosedSize, meta.quantityPrecision)}`);
+    lines.push(`  已实现盈亏 ${fmtUsd(r.realizedPnl, true)}  资金费 ${fmtUsd(r.fundingFee, true)}`);
+    lines.push("");
+  }
+  return lines.join("\n");
 }
 
 function diffPositions(prev, curr) {
@@ -462,13 +571,32 @@ function diffPositions(prev, curr) {
   return events;
 }
 
-function renderPositions(positions) {
+// 离场单集合 diff（G9/G10）：按 orderId 比对得出 PLACE / MODIFY / CANCEL。
+// G9 MODIFY：同 orderId 的 p/q 变 → 一条"调整"；交易所撤旧+新单实现改单时退化为 CANCEL+PLACE（可接受）。
+export function diffReduceOnly(prevMap, currList) {
+  const placed = [];
+  const modified = [];
+  const canceled = [];
+  const currIds = new Set();
+  for (const o of currList) {
+    currIds.add(o.orderId);
+    const prev = prevMap.get(o.orderId);
+    if (!prev) placed.push(o);
+    else if (prev.price !== o.price || prev.qty !== o.qty) modified.push(o);
+  }
+  for (const [id, o] of prevMap) if (!currIds.has(id)) canceled.push(o);
+  return { placed, modified, canceled };
+}
+
+function renderPositions(positions, reduceOnly) {
   const open = positions.filter((p) => Number(p.size) !== 0);
   if (!open.length) return "  （无持仓）";
-  const header = ["Coin", "方向", "持仓量", "仓位价值", "Entry", "Mark", "Unrealized PnL (ROE%)", "Liq.Price", "Margin"];
+  const header = ["Coin", "方向", "持仓量", "仓位价值", "Entry", "Mark", "Unrealized PnL (ROE%)", "Liq.Price", "Margin", "离场挂单"];
   const rows = open.map((p) => {
     const v = derivePositionView(p);
     const pnlStr = fmtUsd(v.uPnl, true) + (v.roe !== null ? ` (${fmtPct(v.roe)})` : "");
+    // console 表格列头已是「离场挂单」，剥掉每行同名前缀避免双重标签（TG 卡片无列头，不剥）
+    const exit = exitOrderLines(p, v, reduceOnly ?? []).map((l) => l.replace(/^离场挂单\s+/, "")).join(" / ") || "-";
     return [
       `${v.coin} ${v.lev}x ${v.dir}`,
       v.dirCN,
@@ -479,59 +607,8 @@ function renderPositions(positions) {
       pnlStr,
       fmtNum(v.liqPrice, v.pricePrecision),
       v.margin !== null ? `${fmtUsd(v.margin)} (${marginModeLabel(v.marginMode)})` : "-",
+      exit,
     ];
-  });
-  const w = header.map((h, i) => Math.max(h.length, ...rows.map((r) => String(r[i]).length)));
-  const line = (cells) => "  " + cells.map((c, i) => String(c).padEnd(w[i])).join("  ");
-  return [line(header), ...rows.map(line)].join("\n");
-}
-
-const tradeKey = (t) => String(t.trade_id ?? `${t.ts_ms}-${t.price}-${t.quantity}`);
-
-function computeRealizedPnl(trades) {
-  const asc = [...trades].sort((a, b) => Number(a.ts_ms) - Number(b.ts_ms));
-  const state = new Map();
-  const out = new Map();
-  for (const t of asc) {
-    const price = Number(t.price);
-    const qty = Number(t.quantity);
-    const key = tradeKey(t);
-    if (!Number.isFinite(price) || !Number.isFinite(qty) || (t.side !== 1 && t.side !== 2)) { out.set(key, null); continue; }
-    const signed = (t.side === 1 ? 1 : -1) * qty;
-    const s = state.get(t.symbol_id) ?? { qty: 0, entry: 0 };
-    let pnl = null;
-    if (s.qty === 0 || Math.sign(s.qty) === Math.sign(signed)) {
-      const absNew = Math.abs(s.qty) + qty;
-      s.entry = absNew > 0 ? (s.entry * Math.abs(s.qty) + price * qty) / absNew : price;
-      s.qty += signed;
-    } else {
-      const closeQty = Math.min(qty, Math.abs(s.qty));
-      const dirSign = Math.sign(s.qty);
-      pnl = (price - s.entry) * closeQty * dirSign;
-      s.qty += signed;
-      if (s.qty === 0) s.entry = 0;
-      else if (Math.sign(s.qty) !== dirSign) s.entry = price;
-    }
-    state.set(t.symbol_id, s);
-    out.set(key, pnl);
-  }
-  return out;
-}
-
-function renderTrades(trades, newKeys = new Set()) {
-  if (!trades.length) return "  （无成交记录）";
-  const pnlMap = computeRealizedPnl(trades);
-  const header = ["Time", "Coin", "Direction", "Price", "Amount", "Trade Value", "Realized PnL", "Fee"];
-  const rows = trades.map((t) => {
-    const m = symbolMeta(t.symbol_id);
-    const time = `${newKeys.has(tradeKey(t)) ? "★ " : "  "}${fmtTime(t.ts_ms)}`;
-    const dir = SIDE_MAP[t.side] ?? String(t.side);
-    const price = fmtNum(t.price, m.pricePrecision);
-    const value = fmtUsd(Number(t.price) * Number(t.quantity));
-    const pnl = pnlMap.get(tradeKey(t));
-    const pnlStr = pnl === null || pnl === undefined ? "-" : fmtUsd(pnl, true);
-    const fee = `${fmtNum(t.fee, m.feePrecision)} ${m.quoteCoin}`.trim();
-    return [time, m.name, dir, price, fmtNum(t.quantity, m.quantityPrecision), value, pnlStr, fee];
   });
   const w = header.map((h, i) => Math.max(h.length, ...rows.map((r) => String(r[i]).length)));
   const line = (cells) => "  " + cells.map((c, i) => String(c).padEnd(w[i])).join("  ");
@@ -551,10 +628,9 @@ function boxBanner(lines) {
   return [`╔${bar}╗`, ...body, `╚${bar}╝`].join("\n");
 }
 
-function buildEventBanner(accountId, kind, clock, newFills, events, positions, n) {
-  const head = bannerHead(accountId, kind, clock, n);
-  const detail = bannerDetailLines(newFills, events, positions).map((l) => `   ${l}`);
-  return boxBanner([head, ...detail]);
+// console banner = 头部一行（明细行已删，banner 去重）
+function buildEventBanner(displayId, kind, clock) {
+  return boxBanner([bannerHead(displayId, kind, clock)]);
 }
 
 // ---------- 监听器 ----------
@@ -564,19 +640,16 @@ class AccountWatcher {
     this.address = address;
     this.flags = flags;
     this.historyLimit = Number(flags["history-limit"] ?? 2);
-    this.fetchAll = flags.all === true || flags.all === "true";
     this.debounceMs = Number(flags["debounce-ms"] ?? 3000);
     this.maxWaitMs = Number(flags["max-wait-ms"] ?? 5000);
-    this.enableWebFallback = flags["enable-web-fallback"] === true || flags["enable-web-fallback"] === "true";
     this.accountId = flags["account-id"] ?? null;
     this.tgToken = flags["tg-token"] ?? null;
     this.tgChat = flags["tg-chat"] ?? null;
-    this.at = String(flags.at ?? "20:00");
+    this.label = flags.label ?? null;
+    this.at = pickAt(flags.at, undefined); // 非法 --at 回退默认 20:00
     this.forceReport = false;
     this.dailyTimer = null;
     this.tgReason = "event";
-    this.rateLimitUntil = 0;
-    this.rateLimitBackoff = 0;
     this.retryScheduled = false;
     this.ws = null;
     this.requestId = 0;
@@ -588,14 +661,21 @@ class AccountWatcher {
     this.closing = false;
     this.fetching = false;
     this.positions = [];
+    this.ordersRaw = [];
     this.lastPositions = [];
-    this.seenTradeIds = new Set();
+    this.seenPositionIds = new Set();
+    this.prevReduceOnly = new Map(); // orderId → 归一化单（G10 离场单 diff）
     this.baselineLogged = false;
     this.stateFp = null;
     this.lastOutFp = null;
   }
 
-  start() { this.connect(); }
+  // label 别名：banner 头从【accountId】变为【accountId-label】；无 label 仍只显示 accountId
+  makeDisplayId() {
+    return this.label ? `${this.accountId}-${this.label}` : String(this.accountId);
+  }
+
+  start() { watcherRegistry.add(this); this.connect(); }
 
   connect() {
     const url = `${this.env.gatewayWs}/ws/perps`;
@@ -654,18 +734,18 @@ class AccountWatcher {
       const data = msg.data ?? {};
       if (!this.accountId) { const aid = data.aid ?? data.accountId ?? data.account_id ?? null; if (aid) { this.accountId = String(aid); log(`accountId = ${this.accountId}（来自 WS 快照）`); } }
       this.positions = Array.isArray(data.P) ? data.P.map(parseWsPosition) : [];
-      // 标记价由 derivePositionView 从持仓反推（账户快照无合约 mark），不再读 data.B
-      // 触发指纹只认规范化后的仓位身份；移除订单数组（易变字段每秒翻指纹→过度拉取，
-      // 且报告不展示挂单，无新成交则无可报）。新成交另由 accountTrade 触发。
-      const fp = canonicalPositionsFp(this.positions);
+      this.ordersRaw = Array.isArray(data.O) ? data.O : [];
+      // 触发指纹 = 仓位身份 + 离场单集合（reduceOnly 挂/改/撤即时触发；开仓单不计，避免 churn）
+      const fp = canonicalPositionsFp(this.positions) + "|" + canonicalReduceOnlyOrders(this.ordersRaw);
       if (fp !== this.stateFp) { this.stateFp = fp; this.scheduleFetch(); }
       return;
     }
-    if (msg.channel === "accountTrade") this.scheduleFetch();
+    // 成交 / 订单推送只作"重新评估"提示，状态以 accountState 全量快照为准
+    if (msg.channel === "accountTrade" || msg.channel === "accountOrderUpdate") this.scheduleFetch();
   }
 
   scheduleFetch() {
-    if (Date.now() < this.rateLimitUntil) return;
+    if (Date.now() < sharedRateLimitUntil) return;
     const now = Date.now();
     if (this.firstPendingAt === 0) this.firstPendingAt = now;
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
@@ -683,44 +763,36 @@ class AccountWatcher {
     this.fetchAndReport();
   }
 
-  // 限流退避（秒级翻倍封顶 60s）+ ±20% jitter，防多实例同步重试惊群
-  nextBackoffMs() {
-    this.rateLimitBackoff = Math.min((this.rateLimitBackoff || 1) * 2, 60);
-    const base = this.rateLimitBackoff * 1000;
-    return Math.round(base + base * 0.2 * (Math.random() * 2 - 1));
-  }
-
   async fetchAndReport() {
     if (this.fetching) { this.scheduleFetch(); return; }
     // 冷却兜底：限流前已 armed 的 debounceTimer 可能在冷却期内 fire，
-    // 此处再 gate 一次，避免在 rateLimitUntil 内打出请求又触发限流。
-    if (Date.now() < this.rateLimitUntil) return;
+    // 此处再 gate 一次，避免在 sharedRateLimitUntil 内打出请求又触发限流。
+    if (Date.now() < sharedRateLimitUntil) return;
     this.fetching = true;
     try {
       if (!this.accountId) { this.accountId = await resolveAccountIdViaChain(this.env, this.address); if (!this.accountId) { log("无法解析 accountId，跳过"); return; } log(`accountId = ${this.accountId}（来自 chain api）`); }
-      const fetchOpts = this.fetchAll ? { all: true } : { limit: this.historyLimit };
       let result = null;
       try {
-        result = await fetchTradesNext(this.env, this.accountId, fetchOpts);
-        this.rateLimitBackoff = 0;
+        result = await fetchPositionHistory(this.env, this.accountId);
+        sharedBackoff = 0;
       } catch (err) {
-        log(`[next 主路失败] ${err.message}`);
+        log(`[平仓历史拉取失败] ${err.message}`);
         if (THROTTLE_STATUSES.has(err.status)) {
-          // 限流：优先用服务端 Retry-After，否则指数退避 + jitter；gate 所有请求；
-          // 不打 web 备路（两 host 可能共限，转移只会双限）；冷却后单次 catch-up。
-          const waitMs = err.retryAfterMs ?? this.nextBackoffMs();
-          this.rateLimitUntil = Date.now() + waitMs;
-          log(`触发限流(${err.status})，${Math.round(waitMs / 1000)}s 后恢复`);
-          setTimeout(() => this.scheduleFetch(), waitMs + 500);
-        } else if (this.enableWebFallback) {
-          result = await fetchTradesWeb(this.env, this.accountId, fetchOpts).catch((e) => { log(`[web 备路失败] ${e.message}`); return null; });
+          // 限流：优先服务端 Retry-After，否则指数退避 + jitter；模块级 gate 全员；
+          // 冷却结束由 scheduleSharedWake 唤醒全部 watcher（G2），不在此处单实例 setTimeout。
+          const waitMs = err.retryAfterMs ?? nextSharedBackoffMs();
+          enterSharedRateLimit(waitMs);
+          log(`触发限流(${err.status})，${Math.round(waitMs / 1000)}s 后全员恢复`);
         }
       }
-      // 拉取失败（限流/硬错误未降级成功）：不渲染空数据，保留 lastOutFp / forceReport 待下次成功
+      // 拉取失败（限流/硬错误）：不渲染空数据，保留 lastOutFp / forceReport 待下次成功（不误报）
       if (result === null) return;
-      const trades = result.trades ?? [];
-      const tradeFp = trades.map(tradeKey).sort().join(",");
-      const outFp = canonicalPositionsFp(this.positions) + "|" + tradeFp;
+
+      const records = result.records ?? [];
+      const reduceOnly = parseReduceOnlyOrders(this.ordersRaw);
+      // G1：出参去重须含 reduceOnly + 平仓 position_id 集，否则纯挂单变化(仓位/平仓均无变)被去重 → 即时提醒失效
+      const closedIdsFp = records.map((r) => r.positionId).sort().join(",");
+      const outFp = canonicalPositionsFp(this.positions) + "|" + canonicalReduceOnlyOrders(this.ordersRaw) + "|" + closedIdsFp;
       const force = this.forceReport; this.forceReport = false;
       if (!force && outFp === this.lastOutFp) return;
       this.lastOutFp = outFp;
@@ -728,42 +800,92 @@ class AccountWatcher {
       const events = diffPositions(this.lastPositions, this.positions);
       this.lastPositions = this.positions;
 
-      const newKeys = new Set();
-      for (const t of trades) { const k = tradeKey(t); if (!this.seenTradeIds.has(k)) { this.seenTradeIds.add(k); if (this.baselineLogged) newKeys.add(k); } }
+      // ★ 复用：首帧基线全部不标，之后新出现的已平仓位（新 position_id）标 ★
+      const newPosIds = new Set();
+      for (const r of records) { if (!this.seenPositionIds.has(r.positionId)) { this.seenPositionIds.add(r.positionId); if (this.baselineLogged) newPosIds.add(r.positionId); } }
+      if (this.seenPositionIds.size > SEEN_IDS_CAP) this.seenPositionIds = new Set(records.map((r) => r.positionId));
       const isBaseline = !this.baselineLogged;
       this.baselineLogged = true;
-      const newFills = trades.filter((t) => newKeys.has(tradeKey(t)));
 
-      if (!force && !isBaseline && events.length > 0 && newFills.length === 0) {
+      // G5/G6：检测到 CLOSED 仓位事件但平仓历史尚无对应新 position_id → positions 索引延迟，2s 补拉
+      const hasClosed = events.some((e) => e.startsWith("CLOSED"));
+      if (!force && !isBaseline && hasClosed && newPosIds.size === 0) {
         if (!this.retryScheduled) { this.retryScheduled = true; this.lastOutFp = null; setTimeout(() => { this.retryScheduled = false; this.scheduleFetch(); }, 2000); }
         return;
       }
       this.retryScheduled = false;
 
-      // banner 类型:首帧→START WATCH;每日 force→SNAPSHOT;否则按成交/仓位 diff 动词化
-      const { kind, n } = isBaseline
+      // 离场单变化提醒（独立 banner）；首帧只建立基线，不提醒
+      const exitChanges = isBaseline ? [] : this.computeExitChanges(reduceOnly, events);
+      this.prevReduceOnly = new Map(reduceOnly.map((o) => [o.orderId, o]));
+
+      // banner 类型：首帧→START WATCH；每日 force→SNAPSHOT；否则按仓位 diff 动词化
+      const { kind } = isBaseline
         ? { kind: "START" }
         : this.tgReason === "daily"
           ? { kind: "SNAPSHOT" }
-          : classifyBanner(newFills, events);
+          : classifyBanner(events);
       const clock = fmtTime();
-      console.log(""); console.log(buildEventBanner(this.accountId, kind, clock, newFills, events, this.positions, n)); log(`account_id=${this.accountId}`);
-      console.log("\n--- 当前仓位 Positions ---"); console.log(renderPositions(this.positions));
-      console.log("\n--- 成交历史 Trade History ---"); console.log(renderTrades(trades, newKeys));
-      if (this.flags.raw && result?.raw) { console.log("\n--- raw trades ---"); console.log(JSON.stringify(result.raw, null, 2)); }
+      const displayId = this.makeDisplayId();
+
+      console.log(""); console.log(buildEventBanner(displayId, kind, clock)); log(`account_id=${this.accountId}`);
+      console.log("\n--- 当前仓位 Positions ---"); console.log(renderPositions(this.positions, reduceOnly));
+      const histText = renderPositionHistory(records, newPosIds, this.historyLimit);
+      console.log("\n--- 平仓历史 Position History ---"); console.log(histText ?? "  （无平仓记录）");
+      if (this.flags.raw && result?.raw) { console.log("\n--- raw positions ---"); console.log(JSON.stringify(result.raw, null, 2)); }
       console.log("=".repeat(60) + "\n");
 
-      const tgPnlMap = computeRealizedPnl(trades);
-      const tgText = buildTgMessage(this.accountId, kind, clock, newFills, events, this.positions, trades, newKeys, tgPnlMap, n);
+      const tgText = buildTgMessage(displayId, kind, clock, this.positions, reduceOnly, records, newPosIds, this.historyLimit);
       this.tgReason = "event";
       sendTelegram(this.tgToken, this.tgChat, tgText);
+
+      // 离场单提醒在主报告之后单发，便于 TG 区分"账户状态" vs "前瞻信号"
+      if (exitChanges.length) {
+        const exitText = buildExitOrderBanner(displayId, clock, exitChanges);
+        console.log(exitText + "\n");
+        sendTelegram(this.tgToken, this.tgChat, exitText);
+      }
     } finally { this.fetching = false; }
   }
 
-  close() { this.closing = true; this.clearTimers(); try { this.ws?.close(); } catch {} }
+  // 离场单 PLACE/MODIFY/CANCEL → 提醒条目。FILL 不双报：单消失且同窗口该 coin 仓位减/平 → 判成交，归平仓事件不报撤销。
+  computeExitChanges(reduceOnly, events) {
+    const { placed, modified, canceled } = diffReduceOnly(this.prevReduceOnly, reduceOnly);
+    const reducedCoins = new Set(
+      events.filter((e) => e.startsWith("DECREASED") || e.startsWith("CLOSED")).map((e) => e.split(" ")[2]),
+    );
+    const out = [];
+    for (const o of placed) out.push(this.exitChangeEntry("place", o, reduceOnly));
+    for (const o of modified) out.push(this.exitChangeEntry("modify", o, reduceOnly));
+    for (const o of canceled) {
+      if (reducedCoins.has(baseCoin(o.symbol))) continue; // 成交→平仓事件已表达，不发撤销提醒
+      out.push(this.exitChangeEntry("cancel", o, reduceOnly));
+    }
+    return out;
+  }
+
+  // 单条离场变化的展示上下文（coin / 方向 / 价 / TP-SL 标签）。标签需对应持仓 mark，取不到则省略。
+  exitChangeEntry(action, order, reduceOnly) {
+    const closesDir = order.posSide === "LONG" || order.posSide === "SHORT"
+      ? order.posSide
+      : order.side === "SELL" ? "LONG" : order.side === "BUY" ? "SHORT" : "";
+    const pos = this.positions.find((p) => baseCoin(p.symbol) === baseCoin(order.symbol) && Number(p.size) !== 0);
+    const view = pos ? derivePositionView(pos) : null;
+    const meta = symbolMetaBySymbol(order.symbol);
+    const label = view ? exitTpSlLabel(view, order) : "";
+    return {
+      action,
+      coin: meta.baseCoin || baseCoin(order.symbol),
+      dirCN: directionCN(closesDir),
+      priceStr: fmtNum(order.price, meta.pricePrecision),
+      label,
+    };
+  }
+
+  close() { watcherRegistry.delete(this); this.closing = true; this.clearTimers(); try { this.ws?.close(); } catch {} }
 }
 
-// ---------- Snapshot 模式 ----------
+// ---------- Snapshot 模式（单地址；按需 + 每日定时）----------
 const SHANGHAI_OFFSET_MS = 8 * 3600 * 1000;
 
 function msUntilNextShanghai(hhmm) {
@@ -779,18 +901,19 @@ class SnapshotMode {
   constructor(env, address, flags) {
     this.env = env; this.address = address; this.flags = flags;
     this.historyLimit = Number(flags["history-limit"] ?? 2);
-    this.fetchAll = flags.all === true || flags.all === "true";
-    this.at = String(flags.at ?? "20:00");
-    this.enableWebFallback = flags["enable-web-fallback"] === true || flags["enable-web-fallback"] === "true";
+    this.at = pickAt(flags.at, undefined); // 非法 --at 回退默认 20:00
     this.accountId = flags["account-id"] ?? null;
     this.tgToken = flags["tg-token"] ?? null;
     this.tgChat = flags["tg-chat"] ?? null;
-    this.seenTradeIds = new Set();
+    this.label = flags.label ?? null;
+    this.seenPositionIds = new Set();
     this.baselineLogged = false;
     this.lastPositions = [];
     this.timer = null;
     this.running = false;
   }
+
+  makeDisplayId() { return this.label ? `${this.accountId}-${this.label}` : String(this.accountId); }
 
   async start() {
     await this.fetchAndReport("启动快照");
@@ -806,10 +929,11 @@ class SnapshotMode {
     const stateJson = await httpGetJson(`${this.env.gateway}/api/v1/perps/accounts/${this.address}/state`);
     const data = stateJson?.data ?? stateJson ?? {};
     const positions = Array.isArray(data.P) ? data.P.map(parseWsPosition) : [];
+    const ordersRaw = Array.isArray(data.O) ? data.O : [];
     let accountId = this.accountId ?? data.aid ?? data.accountId ?? data.account_id ?? null;
     if (!accountId) accountId = await resolveAccountIdViaChain(this.env, this.address);
     this.accountId = accountId;
-    return { positions, accountId };
+    return { positions, ordersRaw, accountId };
   }
 
   async fetchAndReport(reason) {
@@ -818,35 +942,34 @@ class SnapshotMode {
     try {
       const snap = await this.fetchSnapshot();
       if (!snap.accountId) { log("无法解析 accountId，跳过"); return; }
-      const fetchOpts = this.fetchAll ? { all: true } : { limit: this.historyLimit };
       let result = null;
-      try { result = await fetchTradesNext(this.env, snap.accountId, fetchOpts); }
+      try { result = await fetchPositionHistory(this.env, snap.accountId); }
       catch (err) {
-        log(`[next 主路失败] ${err.message}`);
-        // 快照模式低频（定时/按需），限流时直接跳过本次，等下次触发；不打备路
+        log(`[平仓历史拉取失败] ${err.message}`);
+        // 快照模式低频（定时/按需），限流时直接跳过本次，等下次触发
         if (THROTTLE_STATUSES.has(err.status)) log(`触发限流(${err.status})，跳过本次快照`);
-        else if (this.enableWebFallback) result = await fetchTradesWeb(this.env, snap.accountId, fetchOpts).catch((e) => { log(`[web 备路失败] ${e.message}`); return null; });
       }
       // 拉取失败：不渲染空数据
       if (result === null) { log("拉取失败，跳过本次快照上报"); return; }
-      const trades = result.trades ?? [];
 
-      const newKeys = new Set();
-      for (const t of trades) { const k = tradeKey(t); if (!this.seenTradeIds.has(k)) { this.seenTradeIds.add(k); if (this.baselineLogged) newKeys.add(k); } }
+      const records = result.records ?? [];
+      const reduceOnly = parseReduceOnlyOrders(snap.ordersRaw);
+      const newPosIds = new Set();
+      for (const r of records) { if (!this.seenPositionIds.has(r.positionId)) { this.seenPositionIds.add(r.positionId); if (this.baselineLogged) newPosIds.add(r.positionId); } }
+      if (this.seenPositionIds.size > SEEN_IDS_CAP) this.seenPositionIds = new Set(records.map((r) => r.positionId));
       this.baselineLogged = true;
-      const events = diffPositions(this.lastPositions, snap.positions);
       this.lastPositions = snap.positions;
-      const newFills = trades.filter((t) => newKeys.has(tradeKey(t)));
       const clock = fmtTime();
+      const displayId = this.makeDisplayId();
 
-      console.log("\n" + buildEventBanner(snap.accountId, "SNAPSHOT", clock, newFills, events, snap.positions));
-      console.log("\n--- 当前仓位 Positions ---"); console.log(renderPositions(snap.positions));
-      console.log("\n--- 成交历史 Trade History ---"); console.log(renderTrades(trades, newKeys));
-      if (this.flags.raw && result?.raw) { console.log("\n--- raw trades ---"); console.log(JSON.stringify(result.raw, null, 2)); }
+      console.log("\n" + buildEventBanner(displayId, "SNAPSHOT", clock));
+      console.log("\n--- 当前仓位 Positions ---"); console.log(renderPositions(snap.positions, reduceOnly));
+      const histText = renderPositionHistory(records, newPosIds, this.historyLimit);
+      console.log("\n--- 平仓历史 Position History ---"); console.log(histText ?? "  （无平仓记录）");
+      if (this.flags.raw && result?.raw) { console.log("\n--- raw positions ---"); console.log(JSON.stringify(result.raw, null, 2)); }
       console.log("=".repeat(60) + "\n");
 
-      const tgPnlMap = computeRealizedPnl(trades);
-      const tgText = buildTgMessage(snap.accountId, "SNAPSHOT", clock, newFills, events, snap.positions, trades, newKeys, tgPnlMap);
+      const tgText = buildTgMessage(displayId, "SNAPSHOT", clock, snap.positions, reduceOnly, records, newPosIds, this.historyLimit);
       sendTelegram(this.tgToken, this.tgChat, tgText);
     } catch (e) { log(`快照失败：${e.message}`); }
     finally { this.running = false; }
@@ -855,25 +978,76 @@ class SnapshotMode {
   close() { if (this.timer) clearTimeout(this.timer); }
 }
 
+// ---------- 配置文件（多地址）----------
+// G8：缺失 / 解析失败 / watches 空 → exit(1)；非法 address 跳过告警；重复 address 去重保首个。
+function loadConfig(path) {
+  let raw;
+  try { raw = readFileSync(path, "utf8"); }
+  catch (e) { console.error(`配置文件读取失败：${path}（${e.message}）`); process.exit(1); }
+  let cfg;
+  try { cfg = JSON.parse(raw); }
+  catch (e) { console.error(`配置文件 JSON 解析失败：${e.message}`); process.exit(1); }
+  const watches = Array.isArray(cfg.watches) ? cfg.watches : [];
+  if (!watches.length) { console.error("配置文件 watches 为空"); process.exit(1); }
+  const seen = new Set();
+  const valid = [];
+  for (const w of watches) {
+    if (!w || !isAddress(w.address)) { console.error(`跳过非法 address：${w?.address}`); continue; }
+    const key = w.address.toLowerCase();
+    if (seen.has(key)) { console.error(`跳过重复 address：${w.address}`); continue; }
+    if (w.at !== undefined && !isValidHHMM(w.at)) console.error(`地址 ${w.address} 的 at="${w.at}" 非法（应为 HH:MM），回退默认 20:00`);
+    seen.add(key);
+    valid.push(w);
+  }
+  if (!valid.length) { console.error("配置文件无有效 address"); process.exit(1); }
+  return { tgToken: cfg.tgToken ?? null, watches: valid };
+}
+
 // ---------- 入口 ----------
 async function main() {
   const { address, flags } = parseArgs(process.argv.slice(2));
+  const configPath = typeof flags.config === "string" ? flags.config : null;
+  const snapshotMode = flags.snapshot === true || flags.snapshot === "true";
+
+  // G7：--config 仅实时 WS 模式，与 --snapshot 互斥（多地址快照本次不做）
+  if (configPath && snapshotMode) { console.error("--config 与 --snapshot 互斥（多地址快照本次不做）"); process.exit(1); }
+
+  const env = ENVS[flags.env ?? "production"];
+  if (!env) { console.error(`未知 env: ${flags.env}`); process.exit(1); }
+
+  // 多地址模式：读 config，循环建 N 个 watcher
+  if (configPath) {
+    const cfg = loadConfig(configPath);
+    await refreshSymbols(env).catch((e) => log(`符号列表拉取失败（不阻断）：${e.message}`));
+    setInterval(() => refreshSymbols(env).catch(() => {}), SYMBOLS_REFRESH_MS);
+    const runners = cfg.watches.map((w) => new AccountWatcher(env, w.address, {
+      ...flags,
+      "tg-token": w.tgToken ?? cfg.tgToken,
+      "tg-chat": w.tgChat ?? null,
+      label: w.label ?? null,
+      at: pickAt(w.at, flags.at), // 每地址独立镜像时刻：地址项 at > 全局 --at > 默认 20:00
+    }));
+    log(`模式：多地址实时 WS（${runners.length} 个地址，共享限流）`);
+    for (const r of runners) r.start();
+    process.on("SIGINT", () => { log("收到 SIGINT，关闭全部"); for (const r of runners) r.close(); process.exit(0); });
+    return;
+  }
+
+  // 单地址模式（向后兼容）
   if (!isAddress(address)) {
     console.error("用法: node script/watch-account.mjs 0xAddress [模式] [选项]\n" +
+      "  多地址：node script/watch-account.mjs --config=script/watch.config.json\n" +
       "  默认实时 WS + 每日 20:00 快照；--snapshot 纯快照模式\n" +
       "  --at=HH:MM  每日快照时间（上海，默认 20:00）\n" +
       "  Telegram：--tg-token=BOT_TOKEN --tg-chat=CHAT_ID\n" +
-      "  通用：--all / --history-limit=N（默认 2）/ --enable-web-fallback / --account-id=N / --raw\n" +
+      "  通用：--history-limit=N（平仓历史条数，默认 2）/ --account-id=N / --raw\n" +
       "  实时模式额外：--debounce-ms=N（默认 3000）/ --max-wait-ms=N（默认 5000，防抖封顶）");
     process.exit(1);
   }
-  const env = ENVS[flags.env ?? "production"];
-  if (!env) { console.error(`未知 env: ${flags.env}`); process.exit(1); }
 
   await refreshSymbols(env).catch((e) => log(`符号列表拉取失败（不阻断）：${e.message}`));
   setInterval(() => refreshSymbols(env).catch(() => {}), SYMBOLS_REFRESH_MS);
 
-  const snapshotMode = flags.snapshot === true || flags.snapshot === "true";
   const runner = snapshotMode ? new SnapshotMode(env, address, flags) : new AccountWatcher(env, address, flags);
   log(snapshotMode ? "模式：snapshot（按需 + 每日定时）" : "模式：实时 WS 监听");
   runner.start();

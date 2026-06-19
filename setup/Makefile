@@ -1,22 +1,21 @@
-.PHONY: sync pull push logs status restart
+.PHONY: sync sync-config pull logs-f logs status restart
 
 HOST := root@107.172.90.184
 REMOTE_DIR := /root/watch-account
 SCRIPT_DIR := ../script
-DOCS_DIR := ../docs
-SETUP_DIR := ../setup
 
-# 推送文件到 VPS
+# 推送脚本到 VPS（watch-account.mjs）
 sync:
-	rsync -avz $(SCRIPT_DIR)/*.mjs $(HOST):$(REMOTE_DIR)/script/
-	rsync -avz $(DOCS_DIR)/*.md $(HOST):$(REMOTE_DIR)/docs/
-	rsync -avz $(SETUP_DIR)/*.sh $(HOST):$(REMOTE_DIR)/setup/
+	rsync -avz $(SCRIPT_DIR)/watch-account.mjs $(HOST):$(REMOTE_DIR)/script/
+
+# 推送配置文件到 VPS（含 TG 凭据，不入 git）
+sync-config:
+	rsync -avz $(SCRIPT_DIR)/watch.config.json $(HOST):$(REMOTE_DIR)/script/
 
 # 从 VPS 拉回文件
 pull:
-	rsync -avz $(HOST):$(REMOTE_DIR)/script/*.mjs $(SCRIPT_DIR)/
-	rsync -avz $(HOST):$(REMOTE_DIR)/docs/*.md $(DOCS_DIR)/
-	rsync -avz $(HOST):$(REMOTE_DIR)/setup/*.sh $(SETUP_DIR)/
+	rsync -avz $(HOST):$(REMOTE_DIR)/script/watch-account.mjs $(SCRIPT_DIR)/
+	rsync -avz $(HOST):$(REMOTE_DIR)/script/watch.config.json $(SCRIPT_DIR)/
 
 # VPS 上查看状态
 status:
