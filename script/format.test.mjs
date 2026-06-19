@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import {
   fmtNum, fmtUsd, fmtPct, fmtTime, directionCN, derivePositionView,
   canonicalReduceOnlyOrders, toPositionHistoryRecords, positionSideCN, marginModeNumLabel,
-  exitOrderLines, diffReduceOnly, isValidHHMM, pickAt,
+  exitOrderLines, diffReduceOnly, isValidHHMM, pickAt, shortAddress,
 } from "./watch-account.mjs";
 
 const approx = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
@@ -281,4 +281,21 @@ test("pickAt: 优先级 地址项 > CLI > 默认 20:00", () => {
   assert.equal(pickAt("bad", "10:00"), "10:00"); // 地址项非法 → 回退 CLI
   assert.equal(pickAt("bad", "also-bad"), "20:00"); // 都非法 → 默认
   assert.equal(pickAt(true, undefined), "20:00"); // --at 无值 → 默认
+});
+
+// ---------- shortAddress ----------
+test("shortAddress: 标准以太坊地址缩短", () => {
+  assert.equal(shortAddress("0xbeadbf314a7b17140f5964249803d649d5491c8a"), "0xbead...1c8a");
+  assert.equal(shortAddress("0x584743497098d00733d5d29fe80e020280427027"), "0x5847...7027");
+});
+
+test("shortAddress: 短地址原样返回", () => {
+  assert.equal(shortAddress("0x1234"), "0x1234");
+  assert.equal(shortAddress("abc"), "abc");
+});
+
+test("shortAddress: 空/非法 → 占位", () => {
+  assert.equal(shortAddress(""), "");
+  assert.equal(shortAddress(null), "?");
+  assert.equal(shortAddress(undefined), "?");
 });

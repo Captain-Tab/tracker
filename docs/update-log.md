@@ -4,6 +4,17 @@
 
 ---
 
+## v2.1 — 2026-06-20
+
+banner 头去 accountId，改用 label / 短地址。
+
+### 变更
+
+- **`makeDisplayId` 不再拼接 accountId**：有 label 只显示 label（如 `MW`），无 label 显示短地址（如 `0xbead...1c8a`），不再显示交易所内部 accountId 数字。
+- 新增 `shortAddress()` 工具函数：`0x前6...后4` 格式。
+
+---
+
 ## v2.0 — 2026-06-20
 
 多地址 + 平仓历史 + 离场挂单前瞻 + banner 去重。围绕"跟/盯某交易者、预判其操作"的增强。

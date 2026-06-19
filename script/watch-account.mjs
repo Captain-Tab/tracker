@@ -101,6 +101,12 @@ function isAddress(v) {
 }
 
 // 每日快照时间格式校验：HH:MM（0-23 : 0-59）。config / CLI 写错时不致定时器失效。
+// 短地址：0x前6...后4（如 0xbead...1c8a）
+export function shortAddress(address) {
+  if (!address || typeof address !== "string" || address.length < 10) return address ?? "?";
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
 export function isValidHHMM(v) {
   if (typeof v !== "string") return false;
   const m = /^(\d{1,2}):(\d{2})$/.exec(v);
@@ -670,9 +676,9 @@ class AccountWatcher {
     this.lastOutFp = null;
   }
 
-  // label 别名：banner 头从【accountId】变为【accountId-label】；无 label 仍只显示 accountId
+  // 有 label 显示 label，无 label 显示短地址
   makeDisplayId() {
-    return this.label ? `${this.accountId}-${this.label}` : String(this.accountId);
+    return this.label ?? shortAddress(this.address);
   }
 
   start() { watcherRegistry.add(this); this.connect(); }
@@ -913,7 +919,7 @@ class SnapshotMode {
     this.running = false;
   }
 
-  makeDisplayId() { return this.label ? `${this.accountId}-${this.label}` : String(this.accountId); }
+  makeDisplayId() { return this.label ?? shortAddress(this.address); }
 
   async start() {
     await this.fetchAndReport("启动快照");
