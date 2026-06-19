@@ -17,18 +17,42 @@
 //   node watch-account.mjs 0xYourAddress --snapshot
 //   node watch-account.mjs 0xYourAddress --tg-token=BOT_TOKEN --tg-chat=CHAT_ID
 
-// Node < 22 WebSocket polyfill
-if (typeof WebSocket === "undefined") {
+// 代理支持：Node 22 内置 fetch/WebSocket 不认 HTTP_PROXY 环境变量，需显式处理
+const PROXY_URL = process.env.HTTP_PROXY || process.env.http_proxy || null;
+
+// fetch 走代理（undici ProxyAgent，Node 22 fetch 底层即 undici）
+if (PROXY_URL) {
   try {
-    const WS = (await import("ws")).default || (await import("ws")).WebSocket;
-    const WSBase = WS.prototype ? WS : WS.WebSocket;
-    globalThis.WebSocket = function (url, protocols) {
-      return new WSBase(url, protocols, { handshakeTimeout: 10000, headers: { "User-Agent": "node" } });
-    };
+    const { ProxyAgent, setGlobalDispatcher } = await import("undici");
+    setGlobalDispatcher(new ProxyAgent(PROXY_URL));
+    console.error(`[proxy] fetch 走代理 ${PROXY_URL}`);
   } catch {
-    console.error("Node < 22 需要安装 ws 包:\n  npm install ws");
-    process.exit(1);
+    console.error("警告：未安装 undici，fetch 不走代理（真实 IP 会暴露）\n  npm install undici");
   }
+}
+
+// WebSocket 走代理（Node 22 内置 WS 不支持 HTTP CONNECT 代理，统一用 ws 包）
+try {
+  const WS = (await import("ws")).default || (await import("ws")).WebSocket;
+  const WSBase = WS.prototype ? WS : WS.WebSocket;
+  let wsAgent = undefined;
+  if (PROXY_URL) {
+    try {
+      const { HttpsProxyAgent } = await import("https-proxy-agent");
+      wsAgent = new HttpsProxyAgent(PROXY_URL);
+      console.error(`[proxy] WebSocket 走代理 ${PROXY_URL}`);
+    } catch {
+      console.error("警告：未安装 https-proxy-agent，WebSocket 不走代理（真实 IP 会暴露）\n  npm install https-proxy-agent");
+    }
+  }
+  globalThis.WebSocket = function (url, protocols) {
+    const opts = { handshakeTimeout: 10000, headers: { "User-Agent": "node" } };
+    if (wsAgent) opts.agent = wsAgent;
+    return new WSBase(url, protocols, opts);
+  };
+} catch {
+  console.error("需要安装 ws 包:\n  npm install ws");
+  process.exit(1);
 }
 
 // ---------- 环境配置 ----------
@@ -835,7 +859,7 @@ class SnapshotMode {
 async function main() {
   const { address, flags } = parseArgs(process.argv.slice(2));
   if (!isAddress(address)) {
-    console.error("用法: node watch-account.mjs 0xAddress [模式] [选项]\n" +
+    console.error("用法: node script/watch-account.mjs 0xAddress [模式] [选项]\n" +
       "  默认实时 WS + 每日 20:00 快照；--snapshot 纯快照模式\n" +
       "  --at=HH:MM  每日快照时间（上海，默认 20:00）\n" +
       "  Telegram：--tg-token=BOT_TOKEN --tg-chat=CHAT_ID\n" +

@@ -1,6 +1,6 @@
 # WS 监听账户变化 → REST 拉成交详情（perps）
 
-`watch-account.mjs` 的设计说明。配套已有的 `query-account.mjs`（快照查询）。
+`script/watch-account.mjs` 的设计说明。配套已有的 `script/query-account.mjs`（快照查询）。
 
 ## 一、目标
 
@@ -170,15 +170,15 @@ banner 类型（kind）：
 ## 七、用法
 
 ```bash
-node watch-account.mjs 0xYourAddress                       # 实时 WS 监听（默认），成交历史默认最近 2 条
-node watch-account.mjs 0xYourAddress --snapshot            # 快照模式：启动抓一次 + 每日 20:00 上海时间
-node watch-account.mjs 0xYourAddress --snapshot --at=08:30 # 改每日抓取时间
+node script/watch-account.mjs 0xYourAddress                       # 实时 WS 监听（默认），成交历史默认最近 2 条
+node script/watch-account.mjs 0xYourAddress --snapshot            # 快照模式：启动抓一次 + 每日 20:00 上海时间
+node script/watch-account.mjs 0xYourAddress --snapshot --at=08:30 # 改每日抓取时间
 #   按需触发：kill -USR1 <pid>（或交互式终端回车）
-node watch-account.mjs 0xYourAddress --all                 # 成交历史拉全部（游标翻页）
-node watch-account.mjs 0xYourAddress --history-limit=30     # 自定义单页条数
-node watch-account.mjs 0xYourAddress --enable-web-fallback # 主路失败降级 web
-node watch-account.mjs 0xYourAddress --debounce-ms=500     # 自定义防抖
-node watch-account.mjs 0xYourAddress --max-wait-ms=8000    # 防抖封顶（活跃流最长等待）
-node watch-account.mjs 0xYourAddress --account-id=12345    # 跳过 accountId 解析
-node watch-account.mjs 0xYourAddress --raw                 # 附原始帧/响应
+node script/watch-account.mjs 0xYourAddress --all                 # 成交历史拉全部（游标翻页）
+node script/watch-account.mjs 0xYourAddress --history-limit=30     # 自定义单页条数
+node script/watch-account.mjs 0xYourAddress --enable-web-fallback # 主路失败降级 web
+node script/watch-account.mjs 0xYourAddress --debounce-ms=500     # 自定义防抖
+node script/watch-account.mjs 0xYourAddress --max-wait-ms=8000    # 防抖封顶（活跃流最长等待）
+node script/watch-account.mjs 0xYourAddress --account-id=12345    # 跳过 accountId 解析
+node script/watch-account.mjs 0xYourAddress --raw                 # 附原始帧/响应
 ```

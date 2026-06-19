@@ -142,7 +142,20 @@
       "mcp__figma__get_design_context",
       "Bash(mkdir -p /tmp/deploy-watch-account)",
       "Bash(cp -r /Users/tabcaptain/Documents/code/tracker/watch-account/* /tmp/deploy-watch-account/)",
-      "Bash(cp /Users/tabcaptain/Documents/code/tracker/watch-account/watch-account.mjs /Users/tabcaptain/Documents/code/tracker/watch-account/watch-account-plan.md /Users/tabcaptain/Documents/code/tracker/watch-account/query-account.mjs /Users/tabcaptain/Documents/code/tracker/watch-account/query-account.md /tmp/deploy-watch-account/)"
+      "Bash(cp /Users/tabcaptain/Documents/code/tracker/watch-account/watch-account.mjs /Users/tabcaptain/Documents/code/tracker/watch-account/watch-account-plan.md /Users/tabcaptain/Documents/code/tracker/watch-account/query-account.mjs /Users/tabcaptain/Documents/code/tracker/watch-account/query-account.md /tmp/deploy-watch-account/)",
+      "Bash(rsync *)",
+      "Bash(make sync *)",
+      "Bash(ssh *)",
+      "Bash(mv watch-account.mjs script/)",
+      "Bash(mv query-account.mjs script/)",
+      "Bash(mv format.test.mjs script/)",
+      "Bash(mv watch-account-plan.md docs/)",
+      "Bash(mv query-account.md docs/)",
+      "Bash(bash /Users/tabcaptain/Documents/code/tracker/.claude/kit/check/verify.sh)",
+      "Bash(echo \"__EXIT__=$?\")",
+      "Bash(md5 -r /Users/tabcaptain/Documents/code/tracker/script/*.mjs /Users/tabcaptain/Documents/code/tracker/script/*.sh)",
+      "Bash(md5 -r /Users/tabcaptain/Documents/code/tracker/docs/*.md)",
+      "Bash(md5 -r /Users/tabcaptain/Documents/code/tracker/setup/Makefile /Users/tabcaptain/Documents/code/tracker/setup/setup-systemd.sh)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",
