@@ -4,6 +4,21 @@
 
 ---
 
+## discovery TG 消息格式优化 — 2026-06-20
+
+通知消息标题与日期分行 + 移除紧凑单行格式（第 6 起不展示）。
+
+### 变更
+
+- **标题与日期分行**：第一行 `🔭 跟单候选发现`（纯标题），第二行 `⌚ YYYY-MM-DD`（时间带 emoji），避免日期干扰标题语义。
+- **移除紧凑单行**：TG 仅展示前 5 名详展卡片，删掉 `#N addr · score · PFx.xx xx%` 紧凑格式（`DETAIL_CARDS` 从"分界线"改为"截断线"）。手机端窄屏下紧凑行与上一条卡片无视觉分隔，易混淆。
+
+### 验证
+
+- 示例数据构建 TG 消息，`node service/discovery/process/output.test.mjs` 全 7 项检查通过，未真实推送。
+
+---
+
 ## 定时镜像无持仓不推 TG + formatDisplayId 测试对齐 — 2026-06-20
 
 定时/镜像快照当前无持仓时不再推送 Telegram（仅 console 留痕）；顺带修掉既有 formatDisplayId 测试失败。

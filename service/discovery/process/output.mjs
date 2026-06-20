@@ -3,7 +3,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 const TG_TIMEOUT_MS = 8_000;
-const DETAIL_CARDS = 5; // 前 5 名详展卡片，第 6 起紧凑单行
+const DETAIL_CARDS = 5; // 前 5 名详展卡片，超出部分不展示（TG 手机端紧凑格式易混淆）
 
 // ---------- 格式化（discovery 自包含，不依赖 watch-account.mjs）----------
 function fmtUsd(value, signed = false) {
@@ -75,7 +75,9 @@ async function sendTelegram(token, chatId, text) {
 // 手机友好排版：逐行短文本，每指标独占一行，避免窄屏折行
 function buildTgMessage(ranked, summary, mdFileName, generatedAt, config) {
   const lines = [];
-  lines.push(`🔭 跟单候选发现 · ${beijingDate(generatedAt)}`);
+  // 标题与时间分行，避免日期干扰标题语义
+  lines.push(`🔭 跟单候选发现`);
+  lines.push(`⌚ ${beijingDate(generatedAt)}`);
   lines.push(`候选 ${summary.candidates} → 通过 ${summary.passed} → 推荐 ${summary.recommended}`);
   lines.push(`排除 ${summary.excluded} 个在监听 · 不足 topK 不凑数`);
 
@@ -85,20 +87,18 @@ function buildTgMessage(ranked, summary, mdFileName, generatedAt, config) {
     return lines.join("\n");
   }
 
-  ranked.forEach((p, i) => {
+  // TG 仅展示前 5 名详展卡片，第 6 起不展示（紧凑单行在手机端易混淆）
+  const display = ranked.slice(0, DETAIL_CARDS);
+  display.forEach((p, i) => {
     const n = i + 1;
-    if (i < DETAIL_CARDS) {
-      lines.push("");
-      lines.push(`#${n} · 评分 ${p.score} · ${profileType(p, config)}`);
-      lines.push(`📡 ${shortAddr(p.walletAddress)}`);
-      lines.push(`盈亏比 ${fmtPF(p.profitFactor)}`);
-      lines.push(`胜率 ${fmtPct(p.winRate)}`);
-      lines.push(`合约盈利 ${fmtUsd(p.perpsPnl)}`);
-      lines.push(`成交量 ${fmtUsd(p.volume)}`);
-      lines.push(`命中窗 ${windowsStr(p.hitWindows)}`);
-    } else {
-      lines.push(`#${n} ${shortAddr(p.walletAddress)} · ${p.score} · PF${fmtPF(p.profitFactor)} ${fmtPct(p.winRate)}`);
-    }
+    lines.push("");
+    lines.push(`#${n} · 评分 ${p.score} · ${profileType(p, config)}`);
+    lines.push(`📡 ${shortAddr(p.walletAddress)}`);
+    lines.push(`盈亏比 ${fmtPF(p.profitFactor)}`);
+    lines.push(`胜率 ${fmtPct(p.winRate)}`);
+    lines.push(`合约盈利 ${fmtUsd(p.perpsPnl)}`);
+    lines.push(`成交量 ${fmtUsd(p.volume)}`);
+    lines.push(`命中窗 ${windowsStr(p.hitWindows)}`);
   });
 
   lines.push("");
