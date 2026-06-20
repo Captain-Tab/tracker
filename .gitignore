@@ -8,3 +8,7 @@ script/watch.config.json
 
 # 系统
 .DS_Store
+
+# 发现系统：config 含 TG 凭据、log/ 含被观察地址，仅本地存在
+script/discovery/config.json
+script/discovery/log/

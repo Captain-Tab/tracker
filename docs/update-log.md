@@ -1,10 +1,37 @@
-# 更新日志（watch-account）
+# 更新日志（tracker）
 
-`script/watch-account.mjs`（perps 账户监听）的版本变更记录。最新在上。
+`script/`（perps 账户监听 watch-account + 跟单候选发现 discovery）的版本变更记录。最新在上。
 
 ---
 
-## v2.1 — 2026-06-20
+## discovery v1 — 2026-06-20
+
+新增跟单候选发现系统 `script/discovery/`（五阶段管线：collect→filter→evaluate→score→output）。
+
+### 新增
+
+- **五阶段纯函数管线 + 零依赖**（Node18 fetch）：`main.mjs` + `api/index.mjs` + `process/{collect,filter,evaluate,score,output}.mjs` + `config.json`。漏斗 ~150→~30→十几→topK，只覆盖榜单前 100 名。
+- **api/index.mjs 接口收口**：4 个 HTTP（leaderboard/overview/chart/positions，JSDoc 契约）+ WS 声明 + 自带轻量限流（并发≤4 + 间隔 + 429/409 退避）+ 大整数安全解析。
+- **D1-D4**：positions 带 `limit=200`；弃 tradeRatio 用 perps 绝对额；双通道门槛（中频≥20 或 低频≥8&PF≥3&win≥70%）；不用 ROI。
+- **输出**：`log/discovery-YYYY-MM-DD-HHmm.{json,md}` + TG 推送（前5详展/第6起紧凑）；只读 watch.config 排除已监听，**绝不写**；topK 是上限不凑数；0 通过照常出文件。
+- CLI：`--dry-run`（仅 stdout）/`--no-push`（落盘不推 TG）/`--limit=N`/`--top`/`--pages`/`--config`。
+
+### 算法 v2 根因修正（dry-run 实测后）
+
+- **D5 chart 弃用**：`chart.pnl_usd` 实测是累计曲线非单日，evaluate 全部逐笔指标改用 positions 真账本。
+- **D6 freshness 改 positions**：overview 短窗是净值快照口径（混转入/提现，与榜单 pnl 误导同源），改用 positions 近 7 天逐笔实现（`<0`=正在亏淘汰，`=0` 休眠放行）。
+- **D7 弃 Sharpe/ddRatio，用 Recovery Factor**：日级 Sharpe 低信号、`maxDD/总盈利` 分母趋零爆炸（D2 同病）；统一用 `RF=净盈利/maxDD`（永不爆炸）。preset 矩阵随之重校准。
+- 新增 `maxWin/maxLoss` 仅展示（RF 已数学兜住单笔尾部，不设门槛）。
+
+### 验证
+
+- `node --check` 全 7 文件通过；`node --test` 基线 40/41（1 个 format.test 为既有失败，未触碰）。
+- 真实地址校验：3602(中频)/192916(低频) 通过；17139(合约亏)/204502(单日集中) 淘汰。
+- dry-run 收敛 162→42→7，0 落盘/0 推送验证 dry-run 与 --no-push。
+
+---
+
+## watch-account v2.1 — 2026-06-20
 
 通知样式优化（手机 TG 防折行 + emoji 标识）+ displayId 改地址 + 每地址镜像时刻。
 
