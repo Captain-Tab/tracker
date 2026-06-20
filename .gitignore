@@ -1,14 +1,14 @@
 # 依赖（ubuntu 服务器直接 npm install ws，不纳入项目配置）
 node_modules/
-
+package.json
+package-lock.json
 
 # 多地址监听配置（含 Telegram bot token / chat_id，仅 VPS 本地存在）
-script/watch.config.json
-
-
-# 系统
-.DS_Store
+script/watch/config.json
 
 # 发现系统：config 含 TG 凭据、log/ 含被观察地址，仅本地存在
 script/discovery/config.json
 script/discovery/log/
+
+# 系统
+.DS_Store

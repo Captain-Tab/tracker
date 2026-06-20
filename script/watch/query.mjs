@@ -1,16 +1,18 @@
 #!/usr/bin/env node
-// 通过钱包 address 查询某账户的「仓位」和「当前委托」。
+// 通过钱包 address 查询某账户的「仓位」和「当前委托」（闭环核查腿）。
 // 主路 sodex-next（直接用 address），失败降级到备路 sodex-web（需先解析 accountId）。
 //
 // 用法：
-//   node script/query-account.mjs 0xYourAddress
-//   node script/query-account.mjs 0xYourAddress --env=preview   # 默认 production
-//   node script/query-account.mjs 0xYourAddress --raw           # 打印原始响应
-//   node script/query-account.mjs 0xYourAddress --enable-web-fallback        # 开启 sodex-web 备用/兜底
-//   node script/query-account.mjs 0xYourAddress --enable-web-fallback --source=web  # 强制只走备路
+//   node script/watch/query.mjs 0xYourAddress
+//   node script/watch/query.mjs 0xYourAddress --env=preview   # 默认 production
+//   node script/watch/query.mjs 0xYourAddress --raw           # 打印原始响应
+//   node script/watch/query.mjs 0xYourAddress --enable-web-fallback        # 开启 sodex-web 备用/兜底
+//   node script/watch/query.mjs 0xYourAddress --enable-web-fallback --source=web  # 强制只走备路
 //
 // 默认只走 sodex-next 主路；sodex-web 备用/兜底默认关闭，需 --enable-web-fallback 才启用。
-// 零依赖：Node 18+ 内置 fetch。链上解析 accountId 为可选增强（见 resolveAccountIdViaChain 注释）。
+// 零依赖：Node 18+ 内置 fetch。httpGetJson / resolveAccountIdViaChain 复用 api/index.mjs。
+import { isAddress } from "../tool/format.mjs";
+import { httpGetJson, resolveAccountIdViaChain } from "./api/index.mjs";
 
 // 环境配置（取自项目 .env.production / .env.preview）
 const ENVS = {
@@ -33,8 +35,6 @@ const WEB_PERPS_ACCOUNT_DETAILS = "/futures/fapi/user/v1/public/account/details"
 const WEB_PERPS_ORDER_LIST = "/futures/fapi/trade/v1/public/list";
 const WEB_SPOT_ORDER_LIST = "/pro/p/user/order/list";
 
-const REQUEST_TIMEOUT_MS = 10_000;
-
 function parseArgs(argv) {
   const positional = [];
   const flags = {};
@@ -49,40 +49,7 @@ function parseArgs(argv) {
   return { address: positional[0], flags };
 }
 
-function isAddress(value) {
-  return typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value);
-}
-
-async function httpGetJson(url) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    });
-    const text = await res.text();
-    let json = null;
-    try {
-      json = text ? JSON.parse(text) : null;
-    } catch {
-      json = { __nonJson: text };
-    }
-    if (!res.ok) {
-      const err = new Error(`HTTP ${res.status} ${url}`);
-      err.status = res.status;
-      err.body = json;
-      throw err;
-    }
-    return json;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 // ---------- 主路：sodex-next（address 直查）----------
-
 async function queryNext(gateway, address) {
   const [perpsState, spotState] = await Promise.all([
     httpGetJson(`${gateway}${NEXT_PERPS_PREFIX}/accounts/${address}/state`),
@@ -110,33 +77,7 @@ async function queryNext(gateway, address) {
   };
 }
 
-// ---------- address -> accountId（备路前置，主 HTTP api + 备链上）----------
-
-// 主：HTTP chain api（零依赖）
-async function resolveAccountIdViaApi(chainBase, address) {
-  const resp = await httpGetJson(`${chainBase}/chain/address/${address}/accounts`);
-  if (resp?.code !== 0 || !resp?.data) return null;
-  return resp.data.primaryAccountId || null;
-}
-
-// 备：链上合约 getAccountsByAddress（需要 viem，可选）。
-// 默认不启用——如需启用，安装/复用 viem 后取消注释并在 resolveAccountId 里接上。
-//   import { createPublicClient, http, encodeFunctionData } from "viem";
-//   合约 0x0101...0101，selector getAccountsByAddress(address) -> uint256[]
-//   ValueChain RPC: https://mainnet.valuechain.xyz/  chainId 286623
-async function resolveAccountIdViaChain(_address) {
-  return null; // 占位：默认走 HTTP api，链上作为可选增强
-}
-
-async function resolveAccountId(chainBase, address) {
-  const viaApi = await resolveAccountIdViaApi(chainBase, address).catch(() => null);
-  if (viaApi) return viaApi;
-  const viaChain = await resolveAccountIdViaChain(address).catch(() => null);
-  return viaChain;
-}
-
 // ---------- 备路：sodex-web（accountId 查）----------
-
 async function queryWeb(gateway, address, accountId) {
   const q = `accountId=${encodeURIComponent(accountId)}`;
   const [details, perpsOrders, spotOrders] = await Promise.all([
@@ -164,12 +105,11 @@ async function queryWeb(gateway, address, accountId) {
 }
 
 // ---------- 编排 ----------
-
 async function main() {
   const { address, flags } = parseArgs(process.argv.slice(2));
 
   if (!isAddress(address)) {
-    console.error("用法: node script/query-account.mjs 0xAddress [--env=production|preview] [--raw] [--enable-web-fallback] [--source=next|web]");
+    console.error("用法: node script/watch/query.mjs 0xAddress [--env=production|preview] [--raw] [--enable-web-fallback] [--source=next|web]");
     process.exit(1);
   }
 
@@ -204,7 +144,7 @@ async function main() {
 
   // 备路 web：仅在开启备用开关时启用（next 失败降级，或强制 web）
   if (enableWebFallback && (!result || forceSource === "web")) {
-    const accountId = await resolveAccountId(env.chain, address);
+    const accountId = await resolveAccountIdViaChain(env, address);
     if (!accountId) {
       console.error("[备路失败] 无法解析 accountId（HTTP chain api 未返回，链上备路默认未启用）");
       process.exit(3);

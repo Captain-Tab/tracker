@@ -1,6 +1,25 @@
 # 更新日志（tracker）
 
-`script/`（perps 账户监听 watch-account + 跟单候选发现 discovery）的版本变更记录。最新在上。
+`script/`（perps 账户监听 watch + 跟单候选发现 discovery + 共享 tool）的版本变更记录。最新在上。
+
+---
+
+## watch 结构重组 — 2026-06-20
+
+把根目录单体脚本按「层」重组到 `script/watch/`，并抽全局共享格式化层 `script/tool/`（纯结构迁移，行为零变更）。
+
+### 变更
+
+- **抽 `script/tool/format.mjs`**：数字/千分位/去尾零/USD/百分比/时间格式化 + 地址(shortAddress/formatDisplayId/isAddress)/HH:MM(isValidHHMM/pickAt) 校验，供 watch/discovery/query 共享。
+- **`watch-account.mjs`(1090 行) 按层拆**：`watch/main.mjs`(入口) + `watch/api/index.mjs`(REST IO+共享限流+TG+符号缓存) + `watch/process/{parse(归一+diff), render(渲染), watcher(AccountWatcher+WS), snapshot(SnapshotMode), config(loadConfig)}.mjs`。WS polyfill 留在 watcher（保 query 不依赖 ws）；共享限流状态经 ES module live binding 跨模块引用。
+- **`query-account.mjs` → `watch/query.mjs`**：复用 `api/index.mjs` 的 httpGetJson/resolveAccountIdViaChain 与 `tool/format` 的 isAddress，删内部重复实现。
+- **`watch.config.json` → `watch/config.json`**（gitignore 路径同步）。
+- **测试**：原 `format.test.mjs` 按被测模块拆为 `tool/format.test.mjs`(format/校验) + `watch/test/domain.test.mjs`(parse/render)。
+
+### 验证
+
+- `node --check` 全 9 个 .mjs 通过；`node --test` 基线不退化（40 pass / 1 既有 formatDisplayId fail，原样保留）。
+- watch --snapshot / query 行为与迁移前一致（纯结构迁移）。
 
 ---
 
