@@ -1,0 +1,30 @@
+// service/app/config.json 填写参考（实际 config.json 是纯 JSON 不能带注释，已 gitignore，服务器本地维护）。
+// 缺 config.json 时 app/index.mjs 用内置默认（两服务均开、weekly 周一 9 点）。
+{
+  // 监听服务开关
+  "watch": { "enabled": true },
+
+  // 发现服务开关 + 运行周期
+  "discovery": {
+    "enabled": true,
+    "schedule": {
+      // freq 枚举：
+      //   "weekly"  — 每周，按 day(0-6) 选星期几
+      //   "monthly" — 每月，按 day(1-28) 选第几号
+      //   "daily"   — 每天（day 忽略）
+      "freq": "weekly",
+
+      // day 取值（按 freq 不同含义）：
+      //   weekly  → 星期数字(cron 习惯)：0=周日 1=周一 2=周二 3=周三 4=周四 5=周五 6=周六
+      //   monthly → 1..28（避开 29-31，防月份缺失）
+      //   daily   → 忽略
+      "day": 1,
+
+      // hour 0..23 整点；时区固定 Asia/Shanghai
+      "hour": 9
+    }
+  },
+
+  // 部署：WARP 代理地址 + 是否依赖 warp-svc.service
+  "deploy": { "proxyUrl": "http://127.0.0.1:40000", "requiresWarp": true }
+}

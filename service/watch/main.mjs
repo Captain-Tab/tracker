@@ -12,9 +12,9 @@
 //   5. 暂缓重试 — CLOSED 仓位但平仓历史尚无对应记录时等 2s 补拉（positions 索引延迟）
 //
 // 用法：
-//   单地址：node script/watch/main.mjs 0xYourAddress
-//   单地址快照：node script/watch/main.mjs 0xYourAddress --snapshot
-//   多地址：node script/watch/main.mjs --config=script/watch/config.json
+//   单地址：node service/watch/main.mjs 0xYourAddress
+//   单地址快照：node service/watch/main.mjs 0xYourAddress --snapshot
+//   多地址：node service/watch/main.mjs --config=service/watch/config.json
 //   Telegram：--tg-token=BOT_TOKEN --tg-chat=CHAT_ID（单地址）
 import { isAddress, pickAt } from "../tool/format.mjs";
 import { ENVS, log, refreshSymbols, SYMBOLS_REFRESH_MS } from "./api/index.mjs";
@@ -65,8 +65,8 @@ async function main() {
 
   // 单地址模式（向后兼容）
   if (!isAddress(address)) {
-    console.error("用法: node script/watch/main.mjs 0xAddress [模式] [选项]\n" +
-      "  多地址：node script/watch/main.mjs --config=script/watch/config.json\n" +
+    console.error("用法: node service/watch/main.mjs 0xAddress [模式] [选项]\n" +
+      "  多地址：node service/watch/main.mjs --config=service/watch/config.json\n" +
       "  默认实时 WS + 每日 20:00 快照；--snapshot 纯快照模式\n" +
       "  --at=HH:MM  每日快照时间（上海，默认 20:00）\n" +
       "  Telegram：--tg-token=BOT_TOKEN --tg-chat=CHAT_ID\n" +

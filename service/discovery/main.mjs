@@ -1,10 +1,10 @@
 // 入口编排：CLI → 加载 config + 展开 riskPreset → 只读 watch.config 得 excludeAddresses → 串行五阶段。
 // 用法：
-//   node script/discovery/main.mjs --dry-run            # 干跑：只 stdout，不落盘不推 TG
-//   node script/discovery/main.mjs --top=10             # 正式：写 log/ + 推 TG（不动 watch.config）
-//   node script/discovery/main.mjs --pages=4            # 看前 200 名
-//   node script/discovery/main.mjs --config=script/discovery/config.json
-//   node script/discovery/main.mjs --limit=20 --no-push  # 测试：仅扫前 20，落盘但不推 TG
+//   node service/discovery/main.mjs --dry-run            # 干跑：只 stdout，不落盘不推 TG
+//   node service/discovery/main.mjs --top=10             # 正式：写 log/ + 推 TG（不动 watch.config）
+//   node service/discovery/main.mjs --pages=4            # 看前 200 名
+//   node service/discovery/main.mjs --config=service/discovery/config.json
+//   node service/discovery/main.mjs --limit=20 --no-push  # 测试：仅扫前 20，落盘但不推 TG
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, isAbsolute, resolve } from "node:path";
@@ -136,7 +136,7 @@ async function main() {
   const configPath = flags.config
     ? (isAbsolute(flags.config) ? flags.config : resolve(process.cwd(), flags.config))
     : join(__dirname, "config.json");
-  const watchConfigPath = join(__dirname, "..", "watch.config.json");
+  const watchConfigPath = join(__dirname, "..", "watch", "config.json");
   const logDir = join(__dirname, "log");
 
   const rawConfig = loadConfig(configPath);

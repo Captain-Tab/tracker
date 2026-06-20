@@ -1,6 +1,6 @@
 # 通过钱包地址查询仓位与委托
 
-`script/query-account.mjs` 的配套文档：解释它调用的接口、参数与执行流程，并附本地 `watch` 模式查看方式。
+`service/watch/query.mjs` 的配套文档：解释它调用的接口、参数与执行流程，并附本地 `watch` 模式查看方式。
 
 ## 一、目标
 
@@ -57,7 +57,7 @@
 ## 三、执行流程
 
 ```
-node script/query-account.mjs 0xAddress
+node service/watch/query.mjs 0xAddress
         │
         ├─【主】queryNext(address)
         │     并发 GET /api/v1/perps/accounts/{address}/state
@@ -79,11 +79,11 @@ node script/query-account.mjs 0xAddress
 ## 四、脚本用法
 
 ```bash
-node script/query-account.mjs 0xYourAddress                                  # 生产环境，仅 next 主路
-node script/query-account.mjs 0xYourAddress --raw                            # 附原始响应（首次跑用它校准字段名）
-node script/query-account.mjs 0xYourAddress --enable-web-fallback            # next 主路 + web 兜底
-node script/query-account.mjs 0xYourAddress --enable-web-fallback --source=web  # 强制只走 sodex-web 备路
-node script/query-account.mjs 0xYourAddress --env=preview                    # 切 preview 环境
+node service/watch/query.mjs 0xYourAddress                                  # 生产环境，仅 next 主路
+node service/watch/query.mjs 0xYourAddress --raw                            # 附原始响应（首次跑用它校准字段名）
+node service/watch/query.mjs 0xYourAddress --enable-web-fallback            # next 主路 + web 兜底
+node service/watch/query.mjs 0xYourAddress --enable-web-fallback --source=web  # 强制只走 sodex-web 备路
+node service/watch/query.mjs 0xYourAddress --env=preview                    # 切 preview 环境
 ```
 
 | flag | 说明 |

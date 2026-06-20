@@ -1,6 +1,6 @@
 # 跟单候选发现系统：方案 / 流程 / 核心算法
 
-`script/discovery/` 的方案文档。定位：周期性（每周）从公开排行榜筛出**值得合约跟单**的一批地址，产物喂给已有的 `script/watch-account.mjs` 实时监听。配套精确实现规格见 `.claude/kit/spec/2026-06-20-copy-trade-discovery.md`。
+`service/discovery/` 的方案文档。定位：周期性（每周）从公开排行榜筛出**值得合约跟单**的一批地址，产物喂给已有的 `service/watch/main.mjs` 实时监听。配套精确实现规格见 `.claude/kit/spec/2026-06-20-copy-trade-discovery.md`。
 
 > 本期只做**合约 perps**。现货 pnl 多为被动持仓浮盈、无可跟单动作，且 watcher 当前只监听 perps，故现货账户直接排除。
 
@@ -52,14 +52,14 @@
 
 ### 两个实测关键点
 
-- **`positions` 默认只返 40 条，必须带 `&limit=N`（实测 `limit=100` 返 100 条；`page`/`size`/`offset` 全部无效）**。逐笔指标靠 `limit` 拿全，否则老账户胜率/盈亏比失真。这条也适用于改进现有 `watch-account.mjs`。
+- **`positions` 默认只返 40 条，必须带 `&limit=N`（实测 `limit=100` 返 100 条；`page`/`size`/`offset` 全部无效）**。逐笔指标靠 `limit` 拿全，否则老账户胜率/盈亏比失真。这条也适用于改进现有 `service/watch/main.mjs`。
 - 后端榜单为**整点定时快照**（四个窗口共享同一 `snapshot_ts`），`[推理]` 小时级刷新。→ 比这更频繁地跑 discover 无意义，定每周一次。
 
 ### overview 字段（决定门槛）
 
 `total_pnl_usd` / `roi` / `account_value_usd` / `net_deposit_usd` / `spot_pnl_usd` / `perps_unrealized_pnl_usd` / `perps_closed_pnl_usd` / `vault_pnl_usd` / `volume_usd` / `first_trade_ts_ms`。
 
-> **ROI 不用作门槛/排序**：分母（本金/净值）接近 0 或为负时失真（实测 2119 的 `roi=106` 即 10600%），且系统性偏向微账户（小本金 ROI 虚高，但容量不足最不该跟）。其"赚得好不好"已被盈亏比 + Sharpe 更准刻画，冗余。
+> **ROI 不用作门槛/排序**：分母（本金/净值）接近 0 或为负时失真（实测 2119 的 `roi=106` 即 10600%），且系统性偏向微账户（小本金 ROI 虚高，但容量不足最不该跟）。其"赚得好不好"已被盈亏比 + 恢复比(RF) 更准刻画，冗余。
 
 ---
 
@@ -75,8 +75,8 @@
 | --- | --- | --- | --- | --- | --- |
 | **① 采集** Collect | `collect.mjs` | `/leaderboard` | ~4 | 12.6万 → ~150 | 漏斗拉候选，4 路并集去重，**剔除 watch.config 已监听地址** |
 | **② 筛选** Filter | `filter.mjs` | `/overview` | ~150 | ~150 → ~30 | 轻量粗筛，绝对额门槛砍 90%（省钱关键） |
-| **③ 评估** Evaluate | `evaluate.mjs` | `/chart` + `/positions?limit` | ~60 | ~30 → 十几个 | 深度画像 + 硬门槛一票否决 |
-| **④ 打分** Score | `score.mjs` | 无（纯算） | 0 | 十几个 → top10 | 6 维归一×权重→排序取 topK |
+| **③ 评估** Evaluate | `evaluate.mjs` | `/positions?limit`（v2 弃 chart，逐笔真账本） | ~40 | ~30 → 十几个 | 深度画像 + 硬门槛一票否决 |
+| **④ 打分** Score | `score.mjs` | 无（纯算） | 0 | 十几个 → top10 | 5 维归一×权重→排序取 topK |
 | **⑤ 输出** Output | `output.mjs` | 无 | 0 | top10 → 名单 | 生成 log/ 结果文件(json+md) + 推 TG（**不写 watch.config**） |
 
 **合计 ~215 个请求，只覆盖榜单前 100 名**（由 `pages` 控制：`pages=4` → 前 200 名、~400 请求）。绝不全量。
@@ -84,7 +84,7 @@
 ### 3.2 文件架构
 
 ```
-script/discovery/
+service/discovery/
   main.mjs              # 入口：CLI、读 config、读 watch.config 得 excludeAddresses、编排五阶段
   api/
     index.mjs          # 所有 HTTP 接口 + WS 声明（JSDoc：path/请求参数/返回字段）+ httpGetJson/限流
@@ -214,7 +214,7 @@ script/discovery/
 
 ### 6.1 输出多少个地址：推荐 `topK = 10`（上限，非目标）
 
-`topK` 是**上限**：合格者（过完所有硬门槛）不足 10 个时输出就少于 10，**不放宽门槛、不凑数**，宁缺毋滥。采集阶段已剔除 `watch.config.json` 已监听地址，故结果全是新发现。
+`topK` 是**上限**：合格者（过完所有硬门槛）不足 10 个时输出就少于 10，**不放宽门槛、不凑数**，宁缺毋滥。采集阶段已剔除 `service/watch/config.json` 已监听地址，故结果全是新发现。
 
 | 理由 | 说明 |
 | --- | --- |
@@ -223,7 +223,7 @@ script/discovery/
 | 门槛后稀缺 | 前 100 名经严格门槛后金字塔尖也就十几个，取 top 10 即精华 |
 | 可调 | `topK` 可配置，想激进跟更多调高 |
 
-### 6.2 结果文件（`script/discovery/log/`）
+### 6.2 结果文件（`service/discovery/log/`）
 
 每次运行生成两个带时间戳文件：
 
@@ -234,7 +234,7 @@ script/discovery/
 
 - TG 推送：把摘要推到 `output.tgChat`（复用 watch 的 bot）。手机友好排版（每指标独占一行）：头部 4 行（标题+日期 / 候选→通过→推荐 / 排除N在监听·不足topK不凑）+ **前 5 名详展卡片** + **第 6 起紧凑单行** + 尾部详情文件名。
 - **0 通过不算失败**：合格者为 0 时照常生成结果文件，TG 推「📭 本周无合格候选」提示（非静默，确认脚本活着）。
-- **不写 watch.config**：结果只产出文件 + TG。是否纳入监听由人工看结果后**手动**编辑 `watch.config.json`，再 `node script/watch-account.mjs --config=...` 接手实时跟单。
+- **不写 watch.config**：结果只产出文件 + TG。是否纳入监听由人工看结果后**手动**编辑 `service/watch/config.json`，再 `node service/watch/main.mjs --config=...` 接手实时跟单。
 
 ---
 
@@ -293,8 +293,8 @@ PLTR赚       17139  126501     -8375       42%   0.87   0.45   40   ✗ 当前3
 
 | 脚本 | 职责 | 入参 | 产物 |
 | --- | --- | --- | --- |
-| `query-account.mjs` | 单地址快照 | address | 仓位 + 委托 |
-| `watch-account.mjs` | 多地址实时监听 + 平仓历史 | address(es) | TG/console 跟单信号 |
+| `service/watch/query.mjs` | 单地址快照 | address | 仓位 + 委托 |
+| `service/watch/main.mjs` | 多地址实时监听 + 平仓历史 | address(es) | TG/console 跟单信号 |
 | **`discovery/`（本方案）** | 周期发现可跟单地址 | 无（拉榜） | log/ 结果文件 + TG（人工据此手动维护 watch.config） |
 
 闭环：**发现（discover）→ 监听（watch）→ 核查（query）**。

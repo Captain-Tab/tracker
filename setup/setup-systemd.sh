@@ -1,49 +1,21 @@
 #!/bin/bash
-# systemd 持久化部署脚本 — 填入配置后复制到 VPS 执行
-#
-# 配置区（按实际情况填写）
-# ======================================================
-# 两种模式二选一：
-#   A. 单地址：填 WALLET_ADDRESS，留空 CONFIG_PATH
-#   B. 多地址：填 CONFIG_PATH，留空 WALLET_ADDRESS
+# systemd 部署（薄壳）：在 VPS 执行。代码部署在 /root/service/（= 本地 service/ 同步过来）。
+# 装依赖 + 由 app 编排层按 config 生成/启停两个服务（watch + discovery），并迁移旧单元。
+# 开关/调度改 /root/service/app/config.json（缺则默认 both on）。
+set -e
 
-WALLET_ADDRESS=""                                    # 单地址模式：监听的钱包地址
-CONFIG_PATH="/root/watch-account/script/watch.config.json"  # 多地址模式：配置文件路径
-TG_TOKEN=""                                           # 单地址模式 Telegram Bot Token（可选）
-TG_CHAT=""                                            # 单地址模式 Telegram Chat ID（可选）
+cd /root/service
 
-# ======================================================
+echo "[1/3] 安装依赖 ws undici https-proxy-agent"
+npm install ws undici https-proxy-agent
 
-# 组装命令参数
-if [ -n "${CONFIG_PATH}" ]; then
-  NODE_CMD="/usr/bin/node /root/watch-account/script/watch-account.mjs --config=${CONFIG_PATH}"
-else
-  NODE_CMD="/usr/bin/node /root/watch-account/script/watch-account.mjs ${WALLET_ADDRESS}"
-  [ -n "${TG_TOKEN}" ] && NODE_CMD="${NODE_CMD} --tg-token=${TG_TOKEN}"
-  [ -n "${TG_CHAT}" ] && NODE_CMD="${NODE_CMD} --tg-chat=${TG_CHAT}"
-fi
+echo "[2/3] app apply：生成/同步 systemd 单元（自动迁移旧 watch-account.service）"
+node app/index.mjs apply
 
-cat > /etc/systemd/system/watch-account.service << END
-[Unit]
-Description=Sodex Account Watcher
-After=network-online.target
-After=warp-svc.service
-Requires=warp-svc.service
-Wants=network-online.target
+echo "[3/3] 状态"
+node app/index.mjs status
 
-[Service]
-Type=simple
-ExecStart=${NODE_CMD}
-Environment=HTTP_PROXY=http://127.0.0.1:40000
-Environment=HTTPS_PROXY=http://127.0.0.1:40000
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-END
-
-systemctl daemon-reload
-systemctl enable watch-account
-systemctl start watch-account
-systemctl status watch-account --no-pager
+# 提示：
+#   - 单独开关/改调度：编辑 /root/service/app/config.json 后重跑 `node app/index.mjs apply`
+#   - 监听地址：/root/service/watch/config.json（多地址 + TG，含密钥不入 git）
+#   - 发现配置：/root/service/discovery/config.json（TG，含密钥不入 git）

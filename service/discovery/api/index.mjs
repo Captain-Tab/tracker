@@ -1,6 +1,10 @@
 // 接口收口：所有 HTTP 接口 + WS 订阅声明集中于此，其余阶段文件只 import 调用，不散落 URL。
-// 零依赖（Node18 内置 fetch），全链路 public 只读（无鉴权，同 query-account.mjs）。
-// 自带轻量限流（并发≤4 + 每请求小间隔 + 429/409 退避），与 watch-account.mjs 限流单例隔离。
+// Node18+ 内置 fetch，全链路 public 只读（无鉴权）；自带轻量限流（并发≤4 + 间隔 + 429/409 退避）。
+// VPS 走 WARP 时经 lib/WARP installFetchProxy 走代理（无代理时零依赖；有代理按需 import undici）。
+import { installFetchProxy } from "../../lib/WARP/index.mjs";
+
+// fetch 走代理（WARP，仅 HTTP_PROXY 存在时生效）
+await installFetchProxy();
 
 const BASE_DATA = "https://mainnet-data.sodex.dev";
 

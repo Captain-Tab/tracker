@@ -1,6 +1,32 @@
 # 更新日志（tracker）
 
-`script/`（perps 账户监听 watch + 跟单候选发现 discovery + 共享 tool）的版本变更记录。最新在上。
+`service/`（perps 账户监听 watch + 跟单候选发现 discovery + 编排 app + 基建 lib + 共享 tool）的版本变更记录。最新在上。
+
+---
+
+## app 编排层 + 统一代理 + service 改名 — 2026-06-20
+
+集中编排两个服务（watch / discovery）+ 统一 WARP 代理 + discovery 可配调度；顶层 `script/` 改名 `service/`。
+
+### 新增
+
+- **`service/app/`（编排层）**：`config.json`（开关 + discovery 调度，gitignore）+ `config.example.jsonc`（注释枚举全部取值）+ `index.mjs`（`render`/`apply`/`status`）。按 config 生成 systemd 单元 `watch.service` + `discovery.service`(oneshot) + `discovery.timer`（OnCalendar 带 `Asia/Shanghai` + `Persistent=true`）。两个独立单元 = **进程隔离**；单 config + CLI = **集中管理**。`apply` 幂等（仅 unit 内容变才 restart，不误重启 watch）+ 自动迁移旧 `watch-account.service`。
+- **`service/lib/WARP/`（统一代理）**：`installFetchProxy`(undici) + `installWsProxy`(ws)。**修复 discovery 无代理 bug**（VPS 走 WARP 不再裸连/泄漏 IP）+ 去重 watch 的 fetch/WS 代理。
+- **discovery 可配调度**：`app/config.json` 的 `discovery.schedule`——`freq`(weekly/monthly/daily) + `day`（weekly 用 cron 0-6：0=周日..6=周六；monthly 1-28）+ `hour`(0-23，Asia/Shanghai)。
+
+### 变更
+
+- **目录改名 `script/` → `service/`**（整树改名，相对 import 不变）；VPS 部署根 `/root/watch-account` → `/root/service`；单元名 `watch-account.service` → `watch.service`（apply 自动迁移）。`setup/{setup-systemd.sh,Makefile}` + `docs` + `.gitignore` 同步。
+- discovery/watch 改用 `lib/WARP`（discovery/api、watch/api、watch/watcher）。
+
+### discovery 算法 v2（同期）
+
+弃 `chart`（实测 pnl_usd 是累计曲线非单日，致 Sharpe/maxDD 全错）/ 日级 `Sharpe`（稀疏离散低信号）/ `maxDD/总盈利`比（分母趋零爆炸）；改 **positions 逐笔真账本** + **Recovery Factor**（净盈利/maxDD，永不爆炸）；freshness 改用 positions 近 7 天逐笔实现（overview 短窗是快照口径，与榜单误导同源）。
+
+### 验证
+
+- `node --check` 全过；`node --test` 基线 40/41（1 既有 formatDisplayId fail）。
+- 本地实测：`app render` 三单元正确（OnCalendar 含 Asia/Shanghai）；discovery 前 5 名 + watch snapshot（0x8d56…）行为正常、不推 TG；day 0-6 → OnCalendar 三种正确。
 
 ---
 

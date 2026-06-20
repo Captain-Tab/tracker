@@ -2,20 +2,10 @@
 // 纯 REST，不含 WS（WS polyfill 在 process/watcher.mjs，避免 query 被迫依赖 ws）。
 // 共享可变状态（sharedRateLimitUntil / watcherRegistry / 符号缓存）经 ES module live binding 供 watcher 读写。
 import { baseCoin, toPositionHistoryRecords } from "../process/parse.mjs";
+import { installFetchProxy } from "../../lib/WARP/index.mjs";
 
-// 代理支持：Node 22 内置 fetch 不认 HTTP_PROXY 环境变量，需显式处理
-export const PROXY_URL = process.env.HTTP_PROXY || process.env.http_proxy || null;
-
-// fetch 走代理（undici ProxyAgent，Node 22 fetch 底层即 undici）
-if (PROXY_URL) {
-  try {
-    const { ProxyAgent, setGlobalDispatcher } = await import("undici");
-    setGlobalDispatcher(new ProxyAgent(PROXY_URL));
-    console.error(`[proxy] fetch 走代理 ${PROXY_URL}`);
-  } catch {
-    console.error("警告：未安装 undici，fetch 不走代理（真实 IP 会暴露）\n  npm install undici");
-  }
-}
+// fetch 走代理（WARP，统一封装在 lib/WARP；仅 HTTP_PROXY 存在时生效）
+await installFetchProxy();
 
 // ---------- 环境配置 ----------
 export const ENVS = {

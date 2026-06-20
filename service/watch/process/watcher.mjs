@@ -12,8 +12,9 @@ import {
 import {
   log, parseJsonSafe, fetchPositionHistory, sendTelegram, resolveAccountIdViaChain,
   enterSharedRateLimit, nextSharedBackoffMs, resetSharedBackoff, watcherRegistry,
-  sharedRateLimitUntil, THROTTLE_STATUSES, SEEN_IDS_CAP, symbolMetaBySymbol, PROXY_URL,
+  sharedRateLimitUntil, THROTTLE_STATUSES, SEEN_IDS_CAP, symbolMetaBySymbol,
 } from "../api/index.mjs";
+import { installWsProxy } from "../../lib/WARP/index.mjs";
 import { msUntilNextShanghai } from "./snapshot.mjs";
 
 const CHANNELS = ["accountState", "accountUpdate", "accountOrderUpdate", "accountTrade"];
@@ -23,25 +24,9 @@ const PONG_TIMEOUT_MS = 10_000;
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
 
-// WebSocket 走代理（Node 22 内置 WS 不支持 HTTP CONNECT 代理，统一用 ws 包）
+// WS 代理 polyfill：统一封装在 lib/WARP；缺 ws 包 → exit(1)（保留现有行为）
 try {
-  const WS = (await import("ws")).default || (await import("ws")).WebSocket;
-  const WSBase = WS.prototype ? WS : WS.WebSocket;
-  let wsAgent = undefined;
-  if (PROXY_URL) {
-    try {
-      const { HttpsProxyAgent } = await import("https-proxy-agent");
-      wsAgent = new HttpsProxyAgent(PROXY_URL);
-      console.error(`[proxy] WebSocket 走代理 ${PROXY_URL}`);
-    } catch {
-      console.error("警告：未安装 https-proxy-agent，WebSocket 不走代理（真实 IP 会暴露）\n  npm install https-proxy-agent");
-    }
-  }
-  globalThis.WebSocket = function (url, protocols) {
-    const opts = { handshakeTimeout: 10000, headers: { "User-Agent": "node" } };
-    if (wsAgent) opts.agent = wsAgent;
-    return new WSBase(url, protocols, opts);
-  };
+  await installWsProxy();
 } catch {
   console.error("需要安装 ws 包:\n  npm install ws");
   process.exit(1);

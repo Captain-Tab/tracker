@@ -3,11 +3,11 @@
 // 主路 sodex-next（直接用 address），失败降级到备路 sodex-web（需先解析 accountId）。
 //
 // 用法：
-//   node script/watch/query.mjs 0xYourAddress
-//   node script/watch/query.mjs 0xYourAddress --env=preview   # 默认 production
-//   node script/watch/query.mjs 0xYourAddress --raw           # 打印原始响应
-//   node script/watch/query.mjs 0xYourAddress --enable-web-fallback        # 开启 sodex-web 备用/兜底
-//   node script/watch/query.mjs 0xYourAddress --enable-web-fallback --source=web  # 强制只走备路
+//   node service/watch/query.mjs 0xYourAddress
+//   node service/watch/query.mjs 0xYourAddress --env=preview   # 默认 production
+//   node service/watch/query.mjs 0xYourAddress --raw           # 打印原始响应
+//   node service/watch/query.mjs 0xYourAddress --enable-web-fallback        # 开启 sodex-web 备用/兜底
+//   node service/watch/query.mjs 0xYourAddress --enable-web-fallback --source=web  # 强制只走备路
 //
 // 默认只走 sodex-next 主路；sodex-web 备用/兜底默认关闭，需 --enable-web-fallback 才启用。
 // 零依赖：Node 18+ 内置 fetch。httpGetJson / resolveAccountIdViaChain 复用 api/index.mjs。
@@ -109,7 +109,7 @@ async function main() {
   const { address, flags } = parseArgs(process.argv.slice(2));
 
   if (!isAddress(address)) {
-    console.error("用法: node script/watch/query.mjs 0xAddress [--env=production|preview] [--raw] [--enable-web-fallback] [--source=next|web]");
+    console.error("用法: node service/watch/query.mjs 0xAddress [--env=production|preview] [--raw] [--enable-web-fallback] [--source=next|web]");
     process.exit(1);
   }
 

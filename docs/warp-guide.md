@@ -53,7 +53,7 @@ systemctl enable warp-svc
 ## 脚本依赖（VPS 上安装）
 
 ```bash
-cd /root/watch-account && npm install undici https-proxy-agent ws
+cd /root/service && npm install undici https-proxy-agent ws
 ```
 
 ## 常用命令
