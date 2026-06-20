@@ -235,7 +235,10 @@ export class AccountWatcher {
 
       const tgText = buildTgMessage(displayId, kind, clock, this.positions, reduceOnly, records, newPosIds, this.historyLimit);
       this.tgReason = "event";
-      sendTelegram(this.tgToken, this.tgChat, tgText);
+      // 定时镜像快照：当前无持仓则不推 TG（仅 console 留痕）；事件驱动的平仓提醒不受此限
+      const hasOpenPositions = this.positions.some((p) => Number(p.size) !== 0);
+      if (kind === "SNAPSHOT" && !hasOpenPositions) log("定时镜像：当前无持仓，跳过 Telegram 推送");
+      else sendTelegram(this.tgToken, this.tgChat, tgText);
 
       // 离场单提醒在主报告之后单发，便于 TG 区分"账户状态" vs "前瞻信号"
       if (exitChanges.length) {

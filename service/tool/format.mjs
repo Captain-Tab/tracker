@@ -12,7 +12,7 @@ export function shortAddress(address) {
   return `${address.slice(0, 4)}...${address.slice(-4)}`;
 }
 
-// banner 头 id：默认【短地址】；有 label 时🎯 label（如【0x58...7027】🎯 xiao）
+// banner 头 id：默认【短地址】；有 label 时🎯 label（如【0x58...7027】 🎯 xiao）
 export function formatDisplayId(address, label) {
   const head = `【${shortAddress(address)}】`;
   return label ? `${head} 🎯 ${label}` : head;

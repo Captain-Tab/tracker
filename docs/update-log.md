@@ -4,6 +4,22 @@
 
 ---
 
+## 定时镜像无持仓不推 TG + formatDisplayId 测试对齐 — 2026-06-20
+
+定时/镜像快照当前无持仓时不再推送 Telegram（仅 console 留痕）；顺带修掉既有 formatDisplayId 测试失败。
+
+### 变更
+
+- **镜像快照无持仓跳过 TG**：`watch/process/snapshot.mjs` 纯快照模式当前无持仓（`positions.some(size!==0)` 为假）时早返回，不推 TG；`watch/process/watcher.mjs` 每日定时镜像（`kind === "SNAPSHOT"`）同理跳过，**事件驱动的开/平仓提醒不受影响**仍照常推送。
+- **formatDisplayId 测试对齐**：保留实现的 `】 🎯 label` 空格格式（更易读），把注释示例与 `tool/format.test.mjs` 预期同步为带空格，修掉历史遗留的 1 个 fail。
+
+### 验证
+
+- `node --test` 41/41 全绿（消除既有 formatDisplayId fail）。
+- 本地实测 `0x8d56…7480`（当前无持仓）：snapshot 模式正确输出 `镜像快照：当前无持仓，跳过 Telegram 推送`，console 仍完整渲染仓位/平仓历史。
+
+---
+
 ## app 编排层 + 统一代理 + service 改名 — 2026-06-20
 
 集中编排两个服务（watch / discovery）+ 统一 WARP 代理 + discovery 可配调度；顶层 `script/` 改名 `service/`。

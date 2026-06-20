@@ -157,6 +157,6 @@ test("formatDisplayId: 无 label → 仅【短地址】", () => {
   assert.equal(formatDisplayId("0x584743497098d00733d5d29fe80e020280427027", ""), "【0x58...7027】");
 });
 
-test("formatDisplayId: 有 label → 【短地址】🎯 label", () => {
-  assert.equal(formatDisplayId("0x584743497098d00733d5d29fe80e020280427027", "xiao"), "【0x58...7027】🎯 xiao");
+test("formatDisplayId: 有 label → 【短地址】 🎯 label", () => {
+  assert.equal(formatDisplayId("0x584743497098d00733d5d29fe80e020280427027", "xiao"), "【0x58...7027】 🎯 xiao");
 });

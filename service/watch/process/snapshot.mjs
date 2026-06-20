@@ -90,6 +90,9 @@ export class SnapshotMode {
       if (this.flags.raw && result?.raw) { console.log("\n--- raw positions ---"); console.log(JSON.stringify(result.raw, null, 2)); }
       console.log("=".repeat(60) + "\n");
 
+      // 镜像快照：当前无持仓则不推 TG（仅 console 留痕）
+      const hasOpenPositions = snap.positions.some((p) => Number(p.size) !== 0);
+      if (!hasOpenPositions) { log("镜像快照：当前无持仓，跳过 Telegram 推送"); return; }
       const tgText = buildTgMessage(displayId, "SNAPSHOT", clock, snap.positions, reduceOnly, records, newPosIds, this.historyLimit);
       sendTelegram(this.tgToken, this.tgChat, tgText);
     } catch (e) { log(`快照失败：${e.message}`); }
