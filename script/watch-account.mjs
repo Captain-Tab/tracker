@@ -107,10 +107,10 @@ export function shortAddress(address) {
   return `${address.slice(0, 4)}...${address.slice(-4)}`;
 }
 
-// banner 头 id：默认【短地址】；有 label 在括号外追加「- label」（如【0x58...7027】- xiao）
+// banner 头 id：默认【短地址】；有 label 时🎯 label（如【0x58...7027】🎯 xiao）
 export function formatDisplayId(address, label) {
   const head = `【${shortAddress(address)}】`;
-  return label ? `${head} - ${label}` : head;
+  return label ? `${head} 🎯 ${label}` : head;
 }
 
 export function isValidHHMM(v) {
@@ -297,7 +297,7 @@ function buildTgMessage(displayId, kind, clock, positions, reduceOnly, posHistor
 // 离场挂单变化轻提醒（独立 banner）。changes: { placed, modified, canceled }（含 view/mark 上下文）
 function buildExitOrderBanner(displayId, clock, changes) {
   const verb = { place: "设置", cancel: "撤销", modify: "调整" };
-  const lines = [`⚡ ${displayId}`, `离场挂单`, `${clock}`];
+  const lines = [`🏹 离场挂单`, `🕐 ${clock}`, `📡 ${displayId}`];
   for (const c of changes) {
     const tag = c.label ? `${c.label} ` : "";
     lines.push(`${verb[c.action]} ${tag}${c.coin} ${c.dirCN} @ ${c.priceStr}`);
@@ -478,23 +478,32 @@ function exitTpSlLabel(view, order) {
   return isTp ? "止盈" : "止损";
 }
 
-// banner 文案：动词化仓位状态，全部带【displayId】
-const BANNER_LABEL = {
+// banner 三行：动作(emoji+动词) / 时间(🕐) / 身份(📡+displayId)
+// displayId 已含【短地址】🎯 label（由 formatDisplayId 产出）
+const BANNER_EMOJI = {
+  START: "👀",
+  OPEN: "🟢",
+  CLOSE: "🔴",
+  INCREASE: "📈",
+  REDUCE: "📉",
+  SNAPSHOT: "📸",
+  CHANGE: "🔄",
+};
+
+const BANNER_VERB = {
   START: "START WATCH",
   OPEN: "OPEN POSITION",
   CLOSE: "CLOSE POSITION",
   INCREASE: "INCREASE POSITION",
   REDUCE: "REDUCE POSITION",
-  UPDATE: "POSITION UPDATE",
-  CHANGE: "POSITION CHANGE",
   SNAPSHOT: "SNAPSHOT",
+  CHANGE: "POSITION CHANGE",
 };
 
 function bannerHead(displayId, kind, clock) {
-  const label = BANNER_LABEL[kind] ?? "POSITION CHANGE";
-  // 三行：用户 id / 操作动词 / 完整时间各独立一行，避免长动词或完整时间在手机 TG 折行
-  // displayId 已含【短地址】(如【0x58...7027】，可带 -label)，此处不再重复包【】
-  return `⚡ ${displayId}\n${label}\n${clock}`;
+  const emoji = BANNER_EMOJI[kind] ?? "🔄";
+  const verb = BANNER_VERB[kind] ?? "POSITION CHANGE";
+  return `${emoji} ${verb}\n🕐 ${clock}\n📡 ${displayId}`;
 }
 
 // 由仓位 diff events 判定 banner 类型（START / SNAPSHOT 由调用方按 baseline/reason 决定）。

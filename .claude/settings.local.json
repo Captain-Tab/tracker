@@ -168,7 +168,8 @@
       "Bash(git *)",
       "Bash(cd *)",
       "Bash(make restart *)",
-      "Bash(make status *)"
+      "Bash(make status *)",
+      "Bash(make sync-config *)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",
