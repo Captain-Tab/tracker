@@ -101,10 +101,16 @@ function isAddress(v) {
 }
 
 // 每日快照时间格式校验：HH:MM（0-23 : 0-59）。config / CLI 写错时不致定时器失效。
-// 短地址：0x前6...后4（如 0xbead...1c8a）
+// 短地址：前 4 位(含 0x)...后 4 位（如 0x58...7027）
 export function shortAddress(address) {
   if (!address || typeof address !== "string" || address.length < 10) return address ?? "?";
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  return `${address.slice(0, 4)}...${address.slice(-4)}`;
+}
+
+// banner 头 id：默认【短地址】；有 label 在括号外追加「- label」（如【0x58...7027】- xiao）
+export function formatDisplayId(address, label) {
+  const head = `【${shortAddress(address)}】`;
+  return label ? `${head} - ${label}` : head;
 }
 
 export function isValidHHMM(v) {
@@ -174,6 +180,12 @@ export function fmtTime(tsMs) {
   if (Number.isNaN(d.getTime())) return "-";
   // sv-SE → "2026-06-18 10:45:48"，仅日期段是 "-"（时间段用 ":"），全替换为 "/"
   return d.toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).replace(/-/g, "/");
+}
+
+// 平仓历史精简时间：MM/DD HH:mm（去年份/秒，省横向宽度，降低手机折行）
+export function fmtTimeShort(tsMs) {
+  const full = fmtTime(tsMs);
+  return full === "-" ? "-" : full.slice(5, 16);
 }
 
 // 方向中文映射（仓位方向只有 LONG / SHORT / BOTH，BOTH 已在 positionDirection 按符号判定）
@@ -248,7 +260,7 @@ async function sendTelegram(token, chatId, text) {
 // 构建 Telegram 消息（样式 F 卡片）。banner 头一行 + 仓位卡片(含离场挂单) + 平仓历史。
 function buildTgMessage(displayId, kind, clock, positions, reduceOnly, posHistory, newPosIds, limit) {
   const lines = [];
-  const SEP = "━━━━━━━━━━━━━━━━";
+  const SEP = "━━━━━━━━━━"; // 隔断线缩为原宽 50%（8 段）
 
   // 1) banner 头（去重：明细行已删，动作由头部动词表达）
   lines.push(bannerHead(displayId, kind, clock));
@@ -285,7 +297,7 @@ function buildTgMessage(displayId, kind, clock, positions, reduceOnly, posHistor
 // 离场挂单变化轻提醒（独立 banner）。changes: { placed, modified, canceled }（含 view/mark 上下文）
 function buildExitOrderBanner(displayId, clock, changes) {
   const verb = { place: "设置", cancel: "撤销", modify: "调整" };
-  const lines = [`⚡ 【${displayId}】 离场挂单 · ${clock}`];
+  const lines = [`⚡ ${displayId}`, `离场挂单`, `${clock}`];
   for (const c of changes) {
     const tag = c.label ? `${c.label} ` : "";
     lines.push(`${verb[c.action]} ${tag}${c.coin} ${c.dirCN} @ ${c.priceStr}`);
@@ -480,7 +492,9 @@ const BANNER_LABEL = {
 
 function bannerHead(displayId, kind, clock) {
   const label = BANNER_LABEL[kind] ?? "POSITION CHANGE";
-  return `⚡ 【${displayId}】 ${label} · ${clock}`;
+  // 三行：用户 id / 操作动词 / 完整时间各独立一行，避免长动词或完整时间在手机 TG 折行
+  // displayId 已含【短地址】(如【0x58...7027】，可带 -label)，此处不再重复包【】
+  return `⚡ ${displayId}\n${label}\n${clock}`;
 }
 
 // 由仓位 diff events 判定 banner 类型（START / SNAPSHOT 由调用方按 baseline/reason 决定）。
@@ -549,9 +563,10 @@ function renderPositionHistory(records, newIds, limit) {
     const coin = meta.baseCoin || `#${r.symbolId}`;
     const star = newIds && newIds.has(r.positionId) ? "★ " : "";
     const full = Math.abs(Number(r.cumClosedSize)) >= Math.abs(Number(r.maxSize)) - 1e-12;
-    lines.push(`  ${star}${fmtTime(r.updatedAt)}  ${coin} ${positionSideCN(r.positionSide)} · ${full ? "全平" : "部分"}`);
-    lines.push(`  开仓 ${fmtNum(r.avgEntryPrice, meta.pricePrecision)} → 平仓 ${fmtNum(r.avgClosePrice, meta.pricePrecision)}  数量 ${fmtNum(r.cumClosedSize, meta.quantityPrecision)}`);
-    lines.push(`  已实现盈亏 ${fmtUsd(r.realizedPnl, true)}  资金费 ${fmtUsd(r.fundingFee, true)}`);
+    lines.push(`  ${star}${coin} ${positionSideCN(r.positionSide)} ${full ? "全平" : "部分"}  ${fmtTimeShort(r.updatedAt)}`);
+    lines.push(`  开仓 ${fmtNum(r.avgEntryPrice, meta.pricePrecision)} → 平仓 ${fmtNum(r.avgClosePrice, meta.pricePrecision)}`);
+    lines.push(`  数量：${fmtNum(r.cumClosedSize, meta.quantityPrecision)}`);
+    lines.push(`  盈亏 ${fmtUsd(r.realizedPnl, true)}  资金费 ${fmtUsd(r.fundingFee, true)}`);
     lines.push("");
   }
   return lines.join("\n");
@@ -636,7 +651,7 @@ function boxBanner(lines) {
 
 // console banner = 头部一行（明细行已删，banner 去重）
 function buildEventBanner(displayId, kind, clock) {
-  return boxBanner([bannerHead(displayId, kind, clock)]);
+  return boxBanner(bannerHead(displayId, kind, clock).split("\n"));
 }
 
 // ---------- 监听器 ----------
@@ -676,9 +691,8 @@ class AccountWatcher {
     this.lastOutFp = null;
   }
 
-  // 有 label 显示 label，无 label 显示短地址
   makeDisplayId() {
-    return this.label ?? shortAddress(this.address);
+    return formatDisplayId(this.address, this.label);
   }
 
   start() { watcherRegistry.add(this); this.connect(); }
@@ -919,7 +933,7 @@ class SnapshotMode {
     this.running = false;
   }
 
-  makeDisplayId() { return this.label ?? shortAddress(this.address); }
+  makeDisplayId() { return formatDisplayId(this.address, this.label); }
 
   async start() {
     await this.fetchAndReport("启动快照");

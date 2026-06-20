@@ -6,12 +6,20 @@
 
 ## v2.1 — 2026-06-20
 
-banner 头去 accountId，改用 label / 短地址。
+通知样式优化（手机 TG 防折行）+ displayId 改地址 + 每地址镜像时刻。
 
 ### 变更
 
-- **`makeDisplayId` 不再拼接 accountId**：有 label 只显示 label（如 `MW`），无 label 显示短地址（如 `0xbead...1c8a`），不再显示交易所内部 accountId 数字。
-- 新增 `shortAddress()` 工具函数：`0x前6...后4` 格式。
+- **displayId 改用地址**：banner 头默认 `【短地址】`（前 4 位含 `0x` + `...` + 后 4，如 `【0x58...7027】`）；config 项有 `label` 时在括号外追加 `- label`（如 `【0x58...7027】- xiao`），不再显示交易所内部 accountId。新增 `shortAddress()` / `formatDisplayId()` 工具。
+- **通知防折行**（手机 TG 窄屏）：仓位卡片隔断线缩为原宽 50%（8 段）；banner 头分**三行**（id / 操作动词 / 完整时间各独立一行），离场单提醒同步三行；平仓历史时间精简为 `MM/DD HH:mm` 挪到行尾、`已实现盈亏→盈亏`、**数量单独成行 `数量：N`**（开仓→平仓行不再被数量挤折）。
+
+### 新增
+
+- **每地址独立每日镜像时刻 `at`**：config 项可选 `at`（`HH:MM`），每地址各自触发 SNAPSHOT 可错峰；优先级 地址项 `at` > 全局 `--at` > 默认 `20:00`，非法值告警回退。
+
+### 验证
+
+- `node --check` 通过；`node --test` 41/41 全绿（v2.0 基础上新增 at / fmtTimeShort / formatDisplayId 测试）。
 
 ---
 
@@ -23,15 +31,14 @@ banner 头去 accountId，改用 label / 短地址。
 
 - **多地址监听**：`--config=script/watch.config.json`，一进程同时盯多个地址，各自独立 WS（物理隔离）+ 独立 Telegram 会话（全局 `tgToken` + 每地址 `tgChat`，地址项可选 `tgToken` 覆盖）。
 - **离场挂单（reduceOnly）前瞻**：仓位卡片末尾显示该仓的止盈/止损出场计划 `离场挂单 {止盈|止损} @ 价 (全平/部分 量)`；挂/改/撤离场单另发独立轻提醒。这是唯一的前瞻信号。
-- **`label` 别名**：config 项可选 `label`，banner 头从 `【accountId】` 变为 `【accountId-label】`（如 `【1046-xiao】`）。
-- **每地址独立每日镜像时刻 `at`**：config 项可选 `at`（`HH:MM`），每地址各自触发 SNAPSHOT 可错峰；优先级 地址项 `at` > 全局 `--at` > 默认 `20:00`，非法值告警回退。
+- **`label` 别名**：config 项可选 `label` 给地址起别名，banner 头显示（具体格式见 v2.1）。
 - **模块级共享限流**：所有地址 REST 走同一闸，一处 429/409 全员退避；冷却结束唤醒**全部** watcher（防其余地址漏报冷却期内变化）。
 - **内存限容**：长跑去重集合超阈值用当前数据重建，防泄漏。
 
 ### 变更
 
 - **平仓历史替换成交历史**：原逐笔成交（trades）+ 客户端回放估算 Realized PnL → 改用 `perps/positions` 的**权威** `realized_pnl` / 资金费 / 均价（更准，直接表达"这个仓位平掉赚了多少"）。客户端按 `updated_at` 降序取最近 N（接口按 position_id 返回，非平仓时间）。
-- **banner 去重**：删掉与仓位卡片重复的 `OPENED/CLOSED…` 明细行，banner = 头部一行（动词由头部表达、币/量/价由仓位卡片表达、平仓由「平仓历史」表达）。
+- **banner 去重**：删掉与仓位卡片重复的 `OPENED/CLOSED…` 明细行，banner = 头部（动词由头部表达、币/量/价由仓位卡片表达、平仓由「平仓历史」表达）。通知样式的进一步防折行优化见 v2.1。
 - **★ 新记录改键**：从成交 `trade_id` 换为平仓 `position_id`，沿用首帧基线不标、之后标新的机制。
 
 ### 删除

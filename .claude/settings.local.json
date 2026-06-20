@@ -165,7 +165,10 @@
       "Bash(git -C /Users/tabcaptain/Documents/code/tracker diff --stat HEAD)",
       "Bash(git -C /Users/tabcaptain/Documents/code/tracker diff HEAD)",
       "Bash(git -C /Users/tabcaptain/Documents/code/tracker remote -v)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(cd *)",
+      "Bash(make restart *)",
+      "Bash(make status *)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",

@@ -132,24 +132,27 @@ Telegram 卡片每项独占一行，末尾追加离场挂单。console 与 TG �
 - **排序（G3）**：接口按 `position_id` 返回（非平仓时间），pid 小但 `updated_at` 新会排后 → **客户端按 `updated_at` 降序**再取最近 N（默认 2，`--history-limit=N`）。
 - 每条两行：
   ```
-  {★ }平仓时间  币种 方向 · {全平|部分}
-    开仓 {均开} → 平仓 {均平}  数量 {cum_closed_size}
-    已实现盈亏 {realized_pnl 带符号} 资金费 {funding_fee 带符号}
+  {★ }币种 方向 {全平|部分}  {MM/DD HH:mm}
+    开仓 {均开} → 平仓 {均平}
+    数量：{cum_closed_size}
+    盈亏 {realized_pnl 带符号}  资金费 {funding_fee 带符号}
   ```
 - **★ 新记录**：首帧基线全部不标（避免满屏 ★），之后新出现的已平仓位（新 `position_id`）标 ★，沿用 `seenPositionIds` + `baselineLogged` 机制。
 - **限制**：`perps/positions` 只返已平仓（size=0），**部分减仓（仓仍开）期间无平仓历史记录**；其可见性靠 WS 实时持仓 diff（DECREASED），权威 PnL 待全平才出现。
 
 ### banner（去重，头部一行）
 
-每次变化打印方框 banner，**只有头部一行**（原 `OPENED/CLOSED…` 明细行已删，与仓位卡片重复）。头部 `bannerHead(displayId, kind, clock)`，时间统一 `YYYY/MM/DD HH:mm:ss`（上海 UTC+8）：
+每次变化打印方框 banner，**只有头部**（原 `OPENED/CLOSED…` 明细行已删，与仓位卡片重复）。头部 `bannerHead(displayId, kind, clock)` 分三行——**用户 id / 操作动词 / 完整时间各独立一行**（避免长动词或完整时间在手机 TG 折行），时间统一 `YYYY/MM/DD HH:mm:ss`（上海 UTC+8）：
 
 ```
-╔══════════════════════════════════════════════╗
-║ ⚡ 【3602-xiao】 OPEN POSITION · 2026/06/20 …  ║
-╚══════════════════════════════════════════════╝
+╔═════════════════════════╗
+║ ⚡ 【0x58...7027】- xiao ║
+║ OPEN POSITION           ║
+║ 2026/06/20 22:24:03     ║
+╚═════════════════════════╝
 ```
 
-- **displayId**：`label ? accountId-label : accountId`（config 项可选 `label` 起别名，如 `【1046-xiao】`；无 label 仍只 `【1046】`）。
+- **displayId**：默认 `【短地址】`（前 4 位含 `0x` + `...` + 后 4，如 `【0x58...7027】`）；config 项有 `label` 时在括号外追加 `- label`（如 `【0x58...7027】- xiao`）。
 - banner 类型（kind）由仓位 diff 动词判定：`START WATCH`（基线）/ `OPEN/CLOSE/INCREASE/REDUCE POSITION` / `POSITION CHANGE`（无 diff，如纯离场单变化）/ `SNAPSHOT`（每日/快照）。
 - "什么动作"由头部动词、"什么币/量/价"由仓位卡片、平仓由「平仓历史」表达——消除重复。
 
@@ -158,7 +161,9 @@ Telegram 卡片每项独占一行，末尾追加离场挂单。console 与 TG �
 reduceOnly 单集合 diff（按 orderId）检测 PLACE/MODIFY/CANCEL → 主报告之后单发：
 
 ```
-⚡ 【3602】 离场挂单 · 时间
+⚡ 【0x58...7027】- xiao
+离场挂单
+时间
 设置/撤销/调整 {止盈|止损} {coin} {方向} @ {价}
 ```
 

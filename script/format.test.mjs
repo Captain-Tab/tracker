@@ -3,9 +3,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  fmtNum, fmtUsd, fmtPct, fmtTime, directionCN, derivePositionView,
+  fmtNum, fmtUsd, fmtPct, fmtTime, fmtTimeShort, directionCN, derivePositionView,
   canonicalReduceOnlyOrders, toPositionHistoryRecords, positionSideCN, marginModeNumLabel,
-  exitOrderLines, diffReduceOnly, isValidHHMM, pickAt, shortAddress,
+  exitOrderLines, diffReduceOnly, isValidHHMM, pickAt, shortAddress, formatDisplayId,
 } from "./watch-account.mjs";
 
 const approx = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
@@ -96,6 +96,12 @@ test("fmtTime: 缺省取当前(返回合法格式)", () => {
 test("fmtTime: 非法 → -", () => {
   assert.equal(fmtTime(NaN), "-");
   assert.equal(fmtTime("abc"), "-");
+});
+
+test("fmtTimeShort: MM/DD HH:mm（去年份/秒）", () => {
+  // 1750000000000 → 上海 2025/06/15 23:06:40 → 短格式 06/15 23:06
+  assert.equal(fmtTimeShort(1750000000000), "06/15 23:06");
+  assert.equal(fmtTimeShort(NaN), "-");
 });
 
 test("directionCN: 映射", () => {
@@ -285,8 +291,8 @@ test("pickAt: 优先级 地址项 > CLI > 默认 20:00", () => {
 
 // ---------- shortAddress ----------
 test("shortAddress: 标准以太坊地址缩短", () => {
-  assert.equal(shortAddress("0xbeadbf314a7b17140f5964249803d649d5491c8a"), "0xbead...1c8a");
-  assert.equal(shortAddress("0x584743497098d00733d5d29fe80e020280427027"), "0x5847...7027");
+  assert.equal(shortAddress("0xbeadbf314a7b17140f5964249803d649d5491c8a"), "0xbe...1c8a");
+  assert.equal(shortAddress("0x584743497098d00733d5d29fe80e020280427027"), "0x58...7027");
 });
 
 test("shortAddress: 短地址原样返回", () => {
@@ -298,4 +304,14 @@ test("shortAddress: 空/非法 → 占位", () => {
   assert.equal(shortAddress(""), "");
   assert.equal(shortAddress(null), "?");
   assert.equal(shortAddress(undefined), "?");
+});
+
+// ---------- formatDisplayId（banner 头 id）----------
+test("formatDisplayId: 无 label → 仅【短地址】", () => {
+  assert.equal(formatDisplayId("0x584743497098d00733d5d29fe80e020280427027", null), "【0x58...7027】");
+  assert.equal(formatDisplayId("0x584743497098d00733d5d29fe80e020280427027", ""), "【0x58...7027】");
+});
+
+test("formatDisplayId: 有 label → 【短地址】- label（label 在括号外）", () => {
+  assert.equal(formatDisplayId("0x584743497098d00733d5d29fe80e020280427027", "xiao"), "【0x58...7027】- xiao");
 });
