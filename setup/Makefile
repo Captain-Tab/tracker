@@ -1,4 +1,4 @@
-.PHONY: sync sync-config pull deploy app-apply app-status status logs-watch logs-discovery restart-watch
+.PHONY: sync sync-config pull pull-logs deploy app-apply app-status status logs-watch logs-discovery restart-watch
 
 HOST := root@107.172.90.184
 REMOTE_DIR := /root/service
@@ -16,6 +16,11 @@ sync-config:
 # 从 VPS 拉回代码（同样排除 config/log）
 pull:
 	rsync -avz --exclude='*/config.json' --exclude='discovery/log/' $(HOST):$(REMOTE_DIR)/ $(SERVICE_DIR)/
+
+# 下载 discovery 日志到本地 service/discovery/log/
+pull-logs:
+	mkdir -p $(SERVICE_DIR)/discovery/log
+	scp $(HOST):$(REMOTE_DIR)/discovery/log/discovery-*.{json,md} $(SERVICE_DIR)/discovery/log/
 
 # 一键部署：推代码 + 服务器装依赖并 app apply（自动迁移旧单元）
 deploy: sync

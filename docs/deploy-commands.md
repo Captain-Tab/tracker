@@ -9,6 +9,7 @@
 make sync            # 推送 service/ 代码到 VPS /root/service（排除 config/log）
 make sync-config     # 单独推送 watch/discovery 密钥配置（app/config.json 不推，服务器自管）
 make pull            # 从 VPS 拉回代码
+make pull-logs       # 下载 discovery 日志到本地 service/discovery/log/
 make deploy          # 一键：推代码 + 服务器装依赖并 app apply
 make app-apply       # 按 app/config.json 同步两个服务
 make app-status      # app 编排状态

@@ -4,6 +4,22 @@
 
 ---
 
+## discovery TG 消息钱包地址完整展示 + VPS 首次部署 — 2026-06-21
+
+### 变更
+
+- **TG 消息地址完整展示**：`output.mjs` 删除 `shortAddr()` 截断函数，`📡` 行展示完整钱包地址（`0x32649e956cda9b18acae74193d5839097f6144e5` 而非 `0x3264…44e5`），避免跟单地址信息丢失。
+- **VPS 首次部署**：`racknerd-25e541f`（107.172.90.184）完成新结构部署。从旧 `~/watch-account/`（扁平 `script/`）迁移到 `~/service/`（分层 `service/app/` + `watch/` + `discovery/` + `lib/WARP/` + `tool/`）。`app apply` 自动迁移旧 `watch-account.service` → 新 `watch.service` + `discovery.timer`。discovery 首次运行产出 163 候选 → 7 推荐。
+- **Makefile 新增 `pull-logs`**：一键下载 discovery 日志到本地 `service/discovery/log/`。
+
+### 验证
+
+- `output.test.mjs` 7/7 全通过，TG 消息地址已完整不含 `…` 截断。
+- `node --check` 通过；`app status` 两服务 active。
+- 旧 `watch-account.service` 已 disable+删除，无残留。
+
+---
+
 ## discovery TG 消息格式优化 — 2026-06-20
 
 通知消息标题与日期分行 + 移除紧凑单行格式（第 6 起不展示）。

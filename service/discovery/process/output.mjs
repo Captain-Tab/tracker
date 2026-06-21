@@ -26,10 +26,7 @@ function fmtPF(pf) {
   return x.toFixed(2);
 }
 
-function shortAddr(addr) {
-  if (!addr) return "-";
-  return addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr;
-}
+// TG 消息中完整展示钱包地址（不再截断）
 
 function profileType(p, config) {
   return p.nTrades >= config.gates.minTrades ? "中频稳健型" : "低频精准型";
@@ -93,7 +90,7 @@ function buildTgMessage(ranked, summary, mdFileName, generatedAt, config) {
     const n = i + 1;
     lines.push("");
     lines.push(`#${n} · 评分 ${p.score} · ${profileType(p, config)}`);
-    lines.push(`📡 ${shortAddr(p.walletAddress)}`);
+    lines.push(`📡 ${p.walletAddress}`);
     lines.push(`盈亏比 ${fmtPF(p.profitFactor)}`);
     lines.push(`胜率 ${fmtPct(p.winRate)}`);
     lines.push(`合约盈利 ${fmtUsd(p.perpsPnl)}`);
@@ -201,4 +198,4 @@ export async function output(ranked, ctx, config) {
   return { mdPath, jsonPath, md };
 }
 
-export const __internals = { buildTgMessage, buildMarkdown, shortAddr, profileType, localStamp };
+export const __internals = { buildTgMessage, buildMarkdown, profileType, localStamp };
