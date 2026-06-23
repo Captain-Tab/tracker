@@ -1,6 +1,6 @@
 // ⑤ 输出 Output：log/ 结果文件(json+md) + TG 推送。绝不写 watch.config。
-import { writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
+import { join, basename } from "node:path";
 
 const TG_TIMEOUT_MS = 8_000;
 const DETAIL_CARDS = 5; // 前 5 名详展卡片，超出部分不展示（TG 手机端紧凑格式易混淆）
@@ -69,8 +69,35 @@ async function sendTelegram(token, chatId, text) {
   }
 }
 
+// 上传 .md 文件到 Telegram（点击即下载）
+async function sendTelegramDocument(token, chatId, filePath, caption) {
+  if (!token || !chatId) return;
+  try {
+    const buffer = readFileSync(filePath);
+    const blob = new Blob([buffer], { type: "text/markdown" });
+    const form = new FormData();
+    form.append("chat_id", chatId);
+    form.append("document", blob, basename(filePath));
+    form.append("caption", caption);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TG_TIMEOUT_MS);
+    try {
+      await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
+        method: "POST",
+        body: form,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (e) {
+    console.error(`TG 文件推送失败：${e.message}`);
+  }
+}
+
 // 手机友好排版：逐行短文本，每指标独占一行，避免窄屏折行
-function buildTgMessage(ranked, summary, mdFileName, generatedAt, config) {
+function buildTgMessage(ranked, summary, generatedAt, config) {
   const lines = [];
   // 标题与时间分行，避免日期干扰标题语义
   lines.push(`🔭 跟单候选发现`);
@@ -99,7 +126,7 @@ function buildTgMessage(ranked, summary, mdFileName, generatedAt, config) {
   });
 
   lines.push("");
-  lines.push(`📄 详情 ${mdFileName}`);
+  lines.push(`📄 完整报告见附件`);
   return lines.join("\n");
 }
 
@@ -191,8 +218,9 @@ export async function output(ranked, ctx, config) {
   writeFileSync(mdPath, md, "utf8");
 
   if (!noPush) {
-    const tgText = buildTgMessage(ranked, summary, mdFileName, generatedAt, config);
+    const tgText = buildTgMessage(ranked, summary, generatedAt, config);
     await sendTelegram(tgToken, tgChat, tgText);
+    await sendTelegramDocument(tgToken, tgChat, mdPath, `跟单候选报告 · ${beijingDate(generatedAt)}`);
   }
 
   return { mdPath, jsonPath, md };

@@ -4,6 +4,27 @@
 
 ---
 
+## discovery TG 报告文件上传 — 2026-06-23
+
+两个 discovery 模块 TG 推送新增 `.md` 报告文件上传——点击即可下载到本地（Telegram `sendDocument`，永久有效）。
+
+### 新增
+
+- **`sendTelegramDocument`**（两个 `output.mjs`）：`readFileSync` + `Blob` + `FormData` → POST `sendDocument`，8s 超时，失败不阻断。
+- TG 文本消息尾部改为 `📄 完整报告见附件`（原为不可点击的文件名引用）。
+
+### 变更
+
+- `sodex-discovery/process/output.mjs` + `HYPE-discovery/process/output.mjs`：两 venue 对称新增 `sendTelegramDocument`，`--no-push` / `--dry-run` 自然跳过。
+- `buildTgMessage` 签名移除死参数 `mdFileName`（文案改为固定"见附件"后不再需要）。
+- `output.test.mjs`：测试断言同步 + 移除 `mdFileName` 变量。
+
+### 验证
+
+- `node --test` 10/10 全绿（HYPE-discovery 9 + sodex-discovery output 1）。
+
+---
+
 ## Phase 4：START WATCH 门控（仅新增地址推送）— 2026-06-23
 
 修掉 watch 每次部署对所有地址重推 `👀 START WATCH` 的噪音——只对 config 相比上次**新增**的地址推。

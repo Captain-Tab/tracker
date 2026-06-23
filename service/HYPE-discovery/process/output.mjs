@@ -1,6 +1,6 @@
 // ③ 输出 Output：log/ 结果文件(json+md) + TG 推送。绝不写 HYPE-watch/config。
-import { writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
+import { join, basename } from "node:path";
 
 const TG_TIMEOUT_MS = 8_000;
 const DETAIL_CARDS = 5; // 前 5 名详展，超出 TG 不展示
@@ -41,7 +41,34 @@ async function sendTelegram(token, chatId, text) {
   } catch (e) { console.error(`TG 推送失败：${e.message}`); }
 }
 
-function buildTgMessage(ranked, summary, mdFileName, generatedAt, window) {
+// 上传 .md 文件到 Telegram（点击即下载）
+async function sendTelegramDocument(token, chatId, filePath, caption) {
+  if (!token || !chatId) return;
+  try {
+    const buffer = readFileSync(filePath);
+    const blob = new Blob([buffer], { type: "text/markdown" });
+    const form = new FormData();
+    form.append("chat_id", chatId);
+    form.append("document", blob, basename(filePath));
+    form.append("caption", caption);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TG_TIMEOUT_MS);
+    try {
+      await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
+        method: "POST",
+        body: form,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (e) {
+    console.error(`TG 文件推送失败：${e.message}`);
+  }
+}
+
+function buildTgMessage(ranked, summary, generatedAt, window) {
   const lines = [];
   lines.push(`🔭 HYPE 跟单候选（粗筛）`);
   lines.push(`⌚ ${beijingDate(generatedAt)} · 窗口 ${window}`);
@@ -60,7 +87,7 @@ function buildTgMessage(ranked, summary, mdFileName, generatedAt, window) {
     lines.push(`账户净值 ${fmtUsd(c.accountValue)}`);
   });
   lines.push("");
-  lines.push(`📄 详情 ${mdFileName}`);
+  lines.push(`📄 完整报告见附件`);
   return lines.join("\n");
 }
 
@@ -111,7 +138,10 @@ export async function output(ranked, ctx) {
   writeFileSync(jsonPath, JSON.stringify({ generatedAt: generatedAt.toISOString(), window, gate, summary, recommended: ranked }, null, 2), "utf8");
   writeFileSync(mdPath, md, "utf8");
 
-  if (!noPush) await sendTelegram(tgToken, tgChat, buildTgMessage(ranked, summary, mdFileName, generatedAt, window));
+  if (!noPush) {
+    await sendTelegram(tgToken, tgChat, buildTgMessage(ranked, summary, generatedAt, window));
+    await sendTelegramDocument(tgToken, tgChat, mdPath, `HYPE 跟单候选报告 · ${beijingDate(generatedAt)}`);
+  }
   return { mdPath, jsonPath };
 }
 

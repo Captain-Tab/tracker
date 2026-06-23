@@ -69,12 +69,11 @@ const config = {
 };
 
 const generatedAt = new Date("2026-06-20T10:59:00+08:00");
-const mdFileName = "discovery-2026-06-20-1859.md";
 
 console.log("=".repeat(60));
 console.log("修改后的 TG 消息格式：");
 console.log("=".repeat(60));
-const tgText = buildTgMessage(ranked, summary, mdFileName, generatedAt, config);
+const tgText = buildTgMessage(ranked, summary, generatedAt, config);
 console.log(tgText);
 console.log("=".repeat(60));
 
@@ -119,12 +118,12 @@ const compactLine = lines.find((l) => /^#\d/.test(l) && !l.includes("· 评分")
 console.assert(!compactLine, `❌ 不应有紧凑单行，发现：${compactLine}`);
 console.log("✅ 无紧凑单行格式（#6 已移除）");
 
-// 7. 尾部有详情文件行
+// 7. 尾部提示见附件
 const lastLine = lines[lines.length - 1];
 console.assert(
-  lastLine === "📄 详情 discovery-2026-06-20-1859.md",
-  `❌ 最后一行应为详情文件，实际：${lastLine}`,
+  lastLine === "📄 完整报告见附件",
+  `❌ 最后一行应为附件提示，实际：${lastLine}`,
 );
-console.log("✅ 尾部：详情文件名");
+console.log("✅ 尾部：附件提示");
 
 console.log("\n✨ 所有检查通过！");

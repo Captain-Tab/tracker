@@ -169,7 +169,8 @@
       "Bash(cd *)",
       "Bash(make restart *)",
       "Bash(make status *)",
-      "Bash(make sync-config *)"
+      "Bash(make sync-config *)",
+      "Bash(bash .claude/kit/check/verify.sh)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",

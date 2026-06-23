@@ -1,6 +1,6 @@
 {
-  "tgToken": "",
-  "tgChat": "",
+  "tgToken": "8824056454:AAGCh7Tgx_iz5rdmsjzBM_U62ez901iunp0",
+  "tgChat": "-5405680500",
   "window": "month",
   "thresholds": {
     "minPnlUsd": { "month": 100000 },
