@@ -65,6 +65,8 @@ export class AccountWatcher {
     this.closing = false;
     this.fetching = false;
     this.positions = [];      // 来自 WS clearinghouseState（归一模型）
+    this.marginSummary = null; // { accountValue, totalMarginUsed, totalNtlPos }
+    this.withdrawable = null;
     this.wsOrders = [];       // 来自 WS openOrders（仅指纹用）
     this.lastPositions = [];
     this.prevExitOrders = new Map(); // oid → 离场单（离场单变化 diff 基线）
@@ -133,6 +135,8 @@ export class AccountWatcher {
     if (ch === "clearinghouseState") {
       const cs = msg.data?.clearinghouseState ?? msg.data ?? {};
       this.positions = parsePositions(cs.assetPositions, szDecimalsOf);
+      this.marginSummary = cs.marginSummary ?? null;
+      this.withdrawable = cs.withdrawable != null ? Number(cs.withdrawable) : null;
       this.recomputeStateFp();
       return;
     }
@@ -223,12 +227,12 @@ export class AccountWatcher {
       const displayId = this.makeDisplayId();
 
       console.log(""); console.log(buildEventBanner(displayId, kind, clock)); log(`address=${this.address}`);
-      console.log("\n--- 当前仓位 Positions ---"); console.log(renderPositions(this.positions, exitOrders));
+      console.log("\n--- 当前仓位 Positions ---"); console.log(renderPositions(this.positions, exitOrders, this.marginSummary));
       const histText = renderCloseHistory(closeRecords, newOids, this.historyLimit);
       console.log("\n--- 平仓历史 Position History ---"); console.log(histText ?? "  （无平仓记录）");
       console.log("=".repeat(60) + "\n");
 
-      const tgText = buildTgMessage(displayId, kind, clock, this.positions, exitOrders, closeRecords, newOids, this.historyLimit);
+      const tgText = buildTgMessage(displayId, kind, clock, this.positions, exitOrders, closeRecords, newOids, this.historyLimit, this.marginSummary, this.withdrawable);
       this.tgReason = "event";
       // 定时镜像快照：当前无持仓则不推 TG（仅 console 留痕）；事件驱动不受此限
       const hasOpenPositions = this.positions.length > 0;

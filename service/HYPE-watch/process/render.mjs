@@ -23,6 +23,7 @@ export function derivePositionView(p) {
     uPnl: p.unrealizedPnl,
     roe: Number.isFinite(p.roe) ? p.roe * 100 : null,
     liqPrice: p.liqPrice,
+    marginUsed: Number.isFinite(p.marginUsed) ? p.marginUsed : null,
     pricePrecision: p.pricePrecision,
     qtyPrecision: Math.min(p.szDecimals, 6),
   };
@@ -60,7 +61,7 @@ export function classifyBanner(events) {
 }
 
 // 构建 Telegram 消息（样式 F 卡片）。
-export function buildTgMessage(displayId, kind, clock, positions, exitOrders, closeRecords, newOids, limit) {
+export function buildTgMessage(displayId, kind, clock, positions, exitOrders, closeRecords, newOids, limit, marginSummary, withdrawable) {
   const lines = [];
   const SEP = "━━━━━━━━━━";
   lines.push(bannerHead(displayId, kind, clock));
@@ -77,7 +78,11 @@ export function buildTgMessage(displayId, kind, clock, positions, exitOrders, cl
       lines.push(`  标记价  ${v.mark !== null ? fmtNum(v.mark, v.pricePrecision) : "-"}`);
       lines.push(`  未结盈亏  ${fmtUsd(v.uPnl, true)}${v.roe !== null ? ` (${fmtPct(v.roe)})` : ""}`);
       lines.push(`  强平价  ${v.liqPrice !== null ? fmtNum(v.liqPrice, v.pricePrecision) : "-"}`);
-      if (v.value !== null) lines.push(`  保证金模式  ${marginModeLabel(v.marginMode)}`);
+      if (v.value !== null) {
+        const modeLabel = marginModeLabel(v.marginMode);
+        const marginStr = v.marginUsed !== null ? fmtUsd(v.marginUsed) : "-";
+        lines.push(`  保证金  ${marginStr} (${modeLabel})`);
+      }
       for (const line of exitOrderLines(p, v, exitOrders)) lines.push(`  ${line}`);
       lines.push(`${SEP}`);
     }
@@ -105,12 +110,13 @@ export function renderCloseHistory(records, newOids, limit) {
   return lines.join("\n");
 }
 
-export function renderPositions(positions, exitOrders) {
+export function renderPositions(positions, exitOrders, marginSummary) {
   if (!positions.length) return "  （无持仓）";
-  const header = ["Coin", "方向", "持仓量", "仓位价值", "Entry", "Mark", "Unrealized PnL (ROE%)", "Liq.Price", "Margin", "离场挂单"];
+  const header = ["Coin", "方向", "持仓量", "仓位价值", "Entry", "Mark", "Unrealized PnL (ROE%)", "Liq.Price", "保证金", "离场挂单"];
   const rows = positions.map((p) => {
     const v = derivePositionView(p);
     const pnlStr = fmtUsd(v.uPnl, true) + (v.roe !== null ? ` (${fmtPct(v.roe)})` : "");
+    const marginStr = v.marginUsed !== null ? `${fmtUsd(v.marginUsed)} ${marginModeLabel(v.marginMode)}` : marginModeLabel(v.marginMode);
     const exit = exitOrderLines(p, v, exitOrders).map((l) => l.replace(/^离场挂单\s+/, "")).join(" / ") || "-";
     return [
       `${v.coin} ${v.lev}x ${v.dir}`,
@@ -121,7 +127,7 @@ export function renderPositions(positions, exitOrders) {
       v.mark !== null ? fmtNum(v.mark, v.pricePrecision) : "-",
       pnlStr,
       v.liqPrice !== null ? fmtNum(v.liqPrice, v.pricePrecision) : "-",
-      marginModeLabel(v.marginMode),
+      marginStr,
       exit,
     ];
   });

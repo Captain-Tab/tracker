@@ -4,6 +4,21 @@
 
 ---
 
+## HYPE-watch 账户保证金展示 — 2026-06-23
+
+从 `clearinghouseState.marginSummary` 提取 per-position 保证金，TG 和 console 两端同步展示。
+
+### 变更
+
+- **`watcher.mjs`**：保存 `marginSummary` + `withdrawable`，传入 render 函数。
+- **`render.mjs`**：每仓位"保证金模式"改为"保证金 $XXX (Cross/Isolated)"，`buildTgMessage` 和 `renderPositions` 同步。
+
+### 验证
+
+- `node --test` 70/70 全绿。
+
+---
+
 ## discovery TG 报告文件上传 — 2026-06-23
 
 两个 discovery 模块 TG 推送新增 `.md` 报告文件上传——点击即可下载到本地（Telegram `sendDocument`，永久有效）。

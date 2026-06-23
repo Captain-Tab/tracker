@@ -170,7 +170,16 @@
       "Bash(make restart *)",
       "Bash(make status *)",
       "Bash(make sync-config *)",
-      "Bash(bash .claude/kit/check/verify.sh)"
+      "Bash(bash .claude/kit/check/verify.sh)",
+      "Bash(make deploy *)",
+      "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/app/config.json root@107.172.90.184:/root/service/app/config.json)",
+      "Bash(make restart-watch *)",
+      "Bash(make restart-hype-watch *)",
+      "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/discovery-2026-06-20-1300.* root@107.172.90.184:/root/service/sodex-discovery/log/)",
+      "Bash(make pull-logs *)",
+      "Bash(rm /Users/tabcaptain/Documents/code/tracker/service/HYPE-discovery/log/discovery-2026-06-23-0838.*)",
+      "Bash(rm /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/discovery-2026-06-20-1300.*)",
+      "Bash(curl *)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",
