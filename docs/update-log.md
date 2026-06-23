@@ -4,6 +4,75 @@
 
 ---
 
+## Phase 4：START WATCH 门控（仅新增地址推送）— 2026-06-23
+
+修掉 watch 每次部署对所有地址重推 `👀 START WATCH` 的噪音——只对 config 相比上次**新增**的地址推。
+
+### 新增
+
+- **`tool/seenAddresses.mjs`**：`loadSeenAddresses`/`computeNewAddresses`/`saveSeen` 纯函数门控，sodex-watch 与 HYPE-watch **共用**（+ 5 项单测）。
+- 状态文件 `{sodex,HYPE}-watch/.seen-addresses.json`（gitignore）：记录已通知过 START 的地址集合，跨部署比对；启动时并集落盘。
+
+### 变更
+
+- `sodex-watch/main.mjs` + `HYPE-watch/main.mjs`（多地址路径）：启动 load seen → computeNewAddresses → saveSeen，把 `isNew` 传入各 watcher。
+- 两 watcher 首帧 `kind==="START"` 时**仅 `isNew` 推 TG**（console banner 照常）；`isNew` 缺省 true → **单地址 CLI 模式不门控**。
+- **强制重推**：删 `.seen-addresses.json` 后下次启动全部地址重新推 START。
+
+### 验证
+
+- `node --test` 全绿（新增 tool 门控 5 项）。
+- 实测：seen 文件含 X、Y，config=[X,Y,Z] → 仅 Z 推 START，X/Y 日志"已知地址，跳过"；删文件 → 全部重推。
+
+---
+
+## HYPE Phase 1-3：监听 + 排行发现 + systemd 编排 — 2026-06-23
+
+为 Hyperliquid（HYPE）扩展监听 + 排行发现，与 Sodex 平行对称（spec-set `.claude/kit/spec/hype-watch-discovery/`）。
+
+### 新增
+
+- **`HYPE-watch/`**：HYPE 账号 WS 监听（聚焦频道 clearinghouseState/openOrders/userFills/orderUpdates，ping=`{method:ping}`）+ 每日镜像 + TG。归一模型（szi 带符号方向、mark=positionValue/|size| 反推、roe 直给）；平仓按 **oid 聚合**；**离场单变化提醒**（PLACE/MODIFY/CANCEL，MODIFY 仅认价格变，撤销/成交消歧）；无持仓不推；仅多地址 `--config`。
+- **`HYPE-discovery/`**：leaderboard 粗筛（pnl/vlm 门槛，不用 roi）+ 排除已监听 + 落盘/TG。**流式逐行解析**（`createRowScanner` + `streamLeaderboardRows`，不缓存 32MB 全文，内联门槛）——峰值 **264MB→98MB**；topK 截断显式记日志（不静默）。
+- **app systemd 扩展**：`buildUnits` 增 `HYPE-watch.service` + `HYPE-discovery.{service,timer}`（共 6 单元）；config 增 `hypeWatch`/`hypeDiscovery` 键（`watch`/`discovery` 仍控 sodex）；两 discovery **默认错峰**（sodex 9 点 / HYPE 10 点），相同 OnCalendar 时 render/apply/status 告警。
+
+### 变更
+
+- `setup/{Makefile,setup-systemd.sh}` 增 HYPE sync-config/logs/status；`docs/{systemd-setup,deploy-commands}` 四服务化；`.gitignore` 忽略 HYPE config/log。
+
+### 验证
+
+- `node --test` 60 项全绿（sodex + HYPE-watch 11 + HYPE-discovery 9）。
+- HYPE-watch 真实地址实测：有仓渲染（HYPE 3x LONG / mark 反推 / ROE）、空仓"无持仓"、TG 留空不报错。
+- HYPE-discovery dry-run 实测：39288 行 → 排除 2 已监听 → 粗筛 20，峰值 98MB（`/usr/bin/time -l`）。
+- `app render` 6 单元正确、错峰告警生效。
+
+### 已知限制 / 后续
+
+- 流式 scanner 一版曾因跨 push 状态残留重复计花括号 → 峰值反升 546MB，已修（spec 03 记 Pitfall）。
+- HYPE roi 受充提污染未实证；逐笔深度评估、`orderUpdates` 实时化离场提醒留第二步。
+
+---
+
+## service 多交易所重构 Phase 0：Sodex 重命名 — 2026-06-22
+
+为扩展 Hyperliquid（HYPE）监听 + 排行发现，把 `service/` 重构成「按交易所对称」布局。Phase 0 先重命名 Sodex 模块，逻辑零变更（详见 spec-set `.claude/kit/spec/hype-watch-discovery/`）。
+
+### 变更
+
+- **目录重命名**：`service/watch/` → `service/sodex-watch/`、`service/discovery/` → `service/sodex-discovery/`（`git mv` 整树改名，相对 import 不变）。
+- **systemd 单元改名**：`watch.service`→`sodex-watch.service`、`discovery.service`→`sodex-discovery.service`、`discovery.timer`→`sodex-discovery.timer`。`app/index.mjs` 的 ExecStart 路径、buildUnits 单元名、status 探测同步。
+- **迁移链泛化**：`OLD_WATCH_UNIT` 单值改为 `LEGACY_UNITS` 数组（`watch-account.service` / `watch.service` / `discovery.service` / `discovery.timer`），`apply` 时逐个 disable+删除，防新旧单元双开。
+- **涟漪同步**：`setup/{Makefile,setup-systemd.sh}`、`.gitignore`、docs（systemd-setup/deploy-commands/watch-account-plan/discover-traders-plan/query-account）路径与单元名全部更新。
+- **暂不改 config 键**：`app/config.json` 的 `watch`/`discovery` 键名保留，留 Phase 3 加 HYPE 键时统一重构 schema。
+
+### 验证
+
+- `node service/app/index.mjs render` 三单元名均为 sodex-*，ExecStart 指向 sodex-watch/sodex-discovery，迁移动作含旧单元。
+- `node --test` 41/41 不退化。
+
+---
+
 ## discovery TG 消息钱包地址完整展示 + VPS 首次部署 — 2026-06-21
 
 ### 变更

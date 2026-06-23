@@ -1,11 +1,15 @@
 # systemd 持久化部署（app 编排层）
 
-代码部署在 VPS **`/root/service/`**（= 本地 `service/` 同步过来），两个服务由 `service/app/` 编排层经 systemd 集中管理，**进程隔离、互不影响**：
+代码部署在 VPS **`/root/service/`**（= 本地 `service/` 同步过来），四个服务（sodex/HYPE 两交易所 × watch+discovery）由 `service/app/` 编排层经 systemd 集中管理，**进程隔离、互不影响**：
 
 | 服务 | 性质 | systemd 单元 |
 | --- | --- | --- |
-| **watch** | 7×24 长驻监听（WS 长连） | `watch.service`（Restart=always） |
-| **discovery** | 周期批处理（每周/每月，跑完即退） | `discovery.service`(oneshot) + `discovery.timer` |
+| **sodex-watch** | 7×24 长驻监听（WS 长连） | `sodex-watch.service`（Restart=always） |
+| **sodex-discovery** | 周期批处理（跑完即退） | `sodex-discovery.service`(oneshot) + `sodex-discovery.timer` |
+| **HYPE-watch** | 7×24 长驻监听（WS 长连） | `HYPE-watch.service`（Restart=always） |
+| **HYPE-discovery** | 周期批处理（跑完即退） | `HYPE-discovery.service`(oneshot) + `HYPE-discovery.timer` |
+
+> 两 discovery 务必**错峰**（`app/config.json` 的 `discovery` / `hypeDiscovery` 设不同 `hour`，默认 9 点 / 10 点）——避免两个 32MB 级 leaderboard 解析叠加内存峰值。`app render/apply/status` 对相同 OnCalendar 会告警。
 
 开关与调度集中在 `/root/service/app/config.json`，由 `node app/index.mjs` 翻译成 systemd 单元。
 
@@ -48,13 +52,13 @@ cd /root/service && npm install ws undici https-proxy-agent && node app/index.mj
 ```bash
 node app/index.mjs render    # 干跑：打印将生成的 unit + 计划动作（本机/任意机可跑，不调 systemctl）
 node app/index.mjs apply     # 写变化的 unit → 启停 → 仅内容变才 restart → 迁移旧单元（root + systemd）
-node app/index.mjs status    # config + watch.service / discovery.timer 状态 + 下次触发
+node app/index.mjs status    # config + sodex-watch.service / sodex-discovery.timer 状态 + 下次触发
 ```
 
 > 本机（开发机，无 systemd）只能跑 `render`（在仓库根用 `node service/app/index.mjs render`）；`apply`/`status` 仅 systemd 服务器可用。
 
 - **幂等**：`apply` 仅在 unit 内容变化时 `restart`——改 discovery 调度不会重启正在跑的 watch（不断 WS）。
-- **迁移**：`apply` 检测旧 `watch-account.service` → `disable --now` + 删除（防与新 `watch.service` 双开）。
+- **迁移**：`apply` 检测旧 `watch-account.service` → `disable --now` + 删除（防与新 `sodex-watch.service` 双开）。
 
 ## 单独控制某服务
 
@@ -66,8 +70,8 @@ node app/index.mjs apply
 
 ## 监听地址 / 发现配置（含密钥，不入 git）
 
-- `/root/service/watch/config.json`：多地址监听 + Telegram。
-- `/root/service/discovery/config.json`：发现门槛 + Telegram chat。
+- `/root/service/{sodex,HYPE}-watch/config.json`：多地址监听 + Telegram。
+- `/root/service/{sodex,HYPE}-discovery/config.json`：发现门槛 + Telegram chat。
 
 watch 多地址格式：
 
@@ -91,11 +95,11 @@ cd /root/service && npm install ws undici https-proxy-agent
 ## 运维命令
 
 ```bash
-systemctl status watch.service discovery.timer   # 两服务状态
-systemctl restart watch.service                  # 重启监听
-journalctl -u watch.service -f                   # 实时监听日志
-journalctl -u discovery.service -n 80            # 最近一次发现日志
-systemctl list-timers discovery.timer            # 下次发现触发时刻
+systemctl status sodex-watch.service sodex-discovery.timer HYPE-watch.service HYPE-discovery.timer  # 四服务状态
+systemctl restart sodex-watch.service                  # 重启监听
+journalctl -u sodex-watch.service -f                   # 实时监听日志
+journalctl -u sodex-discovery.service -n 80            # 最近一次发现日志
+systemctl list-timers sodex-discovery.timer            # 下次发现触发时刻
 ```
 
 或本地 `make`：`make status` / `make logs-watch` / `make logs-discovery` / `make app-apply` / `make app-status`。
@@ -109,7 +113,7 @@ systemctl list-timers discovery.timer            # 下次发现触发时刻
 mv /root/watch-account /root/service   # 或重新 git clone / make sync 到 /root/service
 cd /root/service && git pull
 npm install ws undici https-proxy-agent
-node app/index.mjs apply               # 自动 disable+删除旧 watch-account.service，建 watch.service + discovery
+node app/index.mjs apply               # 自动 disable+删除旧 watch-account.service，建 sodex-watch.service + discovery
 ```
 
 ## 效果

@@ -16,11 +16,16 @@
 //   单地址快照：node service/watch/main.mjs 0xYourAddress --snapshot
 //   多地址：node service/watch/main.mjs --config=service/watch/config.json
 //   Telegram：--tg-token=BOT_TOKEN --tg-chat=CHAT_ID（单地址）
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { isAddress, pickAt } from "../tool/format.mjs";
+import { loadSeenAddresses, computeNewAddresses, saveSeen } from "../tool/seenAddresses.mjs";
 import { ENVS, log, refreshSymbols, SYMBOLS_REFRESH_MS } from "./api/index.mjs";
 import { loadConfig } from "./process/config.mjs";
 import { AccountWatcher } from "./process/watcher.mjs";
 import { SnapshotMode } from "./process/snapshot.mjs";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function parseArgs(argv) {
   const positional = [];
@@ -48,6 +53,13 @@ async function main() {
   // 多地址模式：读 config，循环建 N 个 watcher
   if (configPath) {
     const cfg = loadConfig(configPath);
+    // START WATCH 门控：仅 config 中相比上次新增的地址推 START（避免每次部署对所有地址重推）。
+    const seenPath = join(__dirname, ".seen-addresses.json");
+    const seen = loadSeenAddresses(seenPath);
+    const configAddrs = cfg.watches.map((w) => w.address);
+    const newAddrs = computeNewAddresses(configAddrs, seen);
+    saveSeen(seenPath, configAddrs, seen);
+    log(`START WATCH 门控：新增 ${newAddrs.size} / 已知 ${configAddrs.length - newAddrs.size}（删 ${seenPath} 可强制全部重推）`);
     await refreshSymbols(env).catch((e) => log(`符号列表拉取失败（不阻断）：${e.message}`));
     setInterval(() => refreshSymbols(env).catch(() => {}), SYMBOLS_REFRESH_MS);
     const runners = cfg.watches.map((w) => new AccountWatcher(env, w.address, {
@@ -56,6 +68,7 @@ async function main() {
       "tg-chat": w.tgChat ?? null,
       label: w.label ?? null,
       at: pickAt(w.at, flags.at), // 每地址独立镜像时刻：地址项 at > 全局 --at > 默认 20:00
+      isNew: newAddrs.has(String(w.address).toLowerCase()),
     }));
     log(`模式：多地址实时 WS（${runners.length} 个地址，共享限流）`);
     for (const r of runners) r.start();

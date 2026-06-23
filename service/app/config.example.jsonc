@@ -1,10 +1,11 @@
 // service/app/config.json 填写参考（实际 config.json 是纯 JSON 不能带注释，已 gitignore，服务器本地维护）。
-// 缺 config.json 时 app/index.mjs 用内置默认（两服务均开、weekly 周一 9 点）。
+// 缺 config.json 时 app/index.mjs 用内置默认（四服务均开；sodex-discovery 周一 9 点 / HYPE-discovery 周一 10 点错峰）。
+// 键名说明：watch/discovery 控制 sodex-* 单元（沿用旧键名）；hypeWatch/hypeDiscovery 控制 HYPE-* 单元。
 {
-  // 监听服务开关
+  // sodex 监听服务开关
   "watch": { "enabled": true },
 
-  // 发现服务开关 + 运行周期
+  // sodex 发现服务开关 + 运行周期
   "discovery": {
     "enabled": true,
     "schedule": {
@@ -23,6 +24,15 @@
       // hour 0..23 整点；时区固定 Asia/Shanghai
       "hour": 9
     }
+  },
+
+  // HYPE 监听服务开关
+  "hypeWatch": { "enabled": true },
+
+  // HYPE 发现服务开关 + 运行周期（务必与 sodex discovery 错峰，避免两个 32MB 级解析叠加内存峰值）
+  "hypeDiscovery": {
+    "enabled": true,
+    "schedule": { "freq": "weekly", "day": 1, "hour": 10 }
   },
 
   // 部署：WARP 代理地址 + 是否依赖 warp-svc.service

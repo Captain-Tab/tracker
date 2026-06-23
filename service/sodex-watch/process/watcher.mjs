@@ -1,6 +1,7 @@
 // 有状态编排层：WS 连接生命周期 + 事件监听 + 去抖触发 + 拉取聚合 + 推送。
 // WS polyfill 在此（非 api，避免 query 被迫依赖 ws）；共享限流状态经 live binding 读 api。
 import { fmtTime, fmtNum, directionCN, pickAt, formatDisplayId } from "../../tool/format.mjs";
+import { reportSkipReason } from "../../tool/reportGate.mjs";
 import {
   parseWsPosition, parseReduceOnlyOrders, canonicalReduceOnlyOrders, canonicalPositionsFp,
   diffPositions, diffReduceOnly, baseCoin,
@@ -46,6 +47,7 @@ export class AccountWatcher {
     this.tgChat = flags["tg-chat"] ?? null;
     this.label = flags.label ?? null;
     this.at = pickAt(flags.at, undefined); // 非法 --at 回退默认 20:00
+    this.isNew = flags.isNew !== false; // START 门控：缺省 true（单地址 CLI 不门控）
     this.forceReport = false;
     this.dailyTimer = null;
     this.tgReason = "event";
@@ -237,7 +239,8 @@ export class AccountWatcher {
       this.tgReason = "event";
       // 定时镜像快照：当前无持仓则不推 TG（仅 console 留痕）；事件驱动的平仓提醒不受此限
       const hasOpenPositions = this.positions.some((p) => Number(p.size) !== 0);
-      if (kind === "SNAPSHOT" && !hasOpenPositions) log("定时镜像：当前无持仓，跳过 Telegram 推送");
+      const skipReason = reportSkipReason({ kind, hasOpenPositions, isNew: this.isNew });
+      if (skipReason) log(skipReason);
       else sendTelegram(this.tgToken, this.tgChat, tgText);
 
       // 离场单提醒在主报告之后单发，便于 TG 区分"账户状态" vs "前瞻信号"

@@ -1,6 +1,6 @@
 # 跟单候选发现系统：方案 / 流程 / 核心算法
 
-`service/discovery/` 的方案文档。定位：周期性（每周）从公开排行榜筛出**值得合约跟单**的一批地址，产物喂给已有的 `service/watch/main.mjs` 实时监听。配套精确实现规格见 `.claude/kit/spec/2026-06-20-copy-trade-discovery.md`。
+`service/sodex-discovery/` 的方案文档。定位：周期性（每周）从公开排行榜筛出**值得合约跟单**的一批地址，产物喂给已有的 `service/sodex-watch/main.mjs` 实时监听。配套精确实现规格见 `.claude/kit/spec/2026-06-20-copy-trade-discovery.md`。
 
 > 本期只做**合约 perps**。现货 pnl 多为被动持仓浮盈、无可跟单动作，且 watcher 当前只监听 perps，故现货账户直接排除。
 
@@ -52,7 +52,7 @@
 
 ### 两个实测关键点
 
-- **`positions` 默认只返 40 条，必须带 `&limit=N`（实测 `limit=100` 返 100 条；`page`/`size`/`offset` 全部无效）**。逐笔指标靠 `limit` 拿全，否则老账户胜率/盈亏比失真。这条也适用于改进现有 `service/watch/main.mjs`。
+- **`positions` 默认只返 40 条，必须带 `&limit=N`（实测 `limit=100` 返 100 条；`page`/`size`/`offset` 全部无效）**。逐笔指标靠 `limit` 拿全，否则老账户胜率/盈亏比失真。这条也适用于改进现有 `service/sodex-watch/main.mjs`。
 - 后端榜单为**整点定时快照**（四个窗口共享同一 `snapshot_ts`），`[推理]` 小时级刷新。→ 比这更频繁地跑 discover 无意义，定每周一次。
 
 ### overview 字段（决定门槛）
@@ -84,7 +84,7 @@
 ### 3.2 文件架构
 
 ```
-service/discovery/
+service/sodex-discovery/
   main.mjs              # 入口：CLI、读 config、读 watch.config 得 excludeAddresses、编排五阶段
   api/
     index.mjs          # 所有 HTTP 接口 + WS 声明（JSDoc：path/请求参数/返回字段）+ httpGetJson/限流
@@ -214,7 +214,7 @@ service/discovery/
 
 ### 6.1 输出多少个地址：推荐 `topK = 10`（上限，非目标）
 
-`topK` 是**上限**：合格者（过完所有硬门槛）不足 10 个时输出就少于 10，**不放宽门槛、不凑数**，宁缺毋滥。采集阶段已剔除 `service/watch/config.json` 已监听地址，故结果全是新发现。
+`topK` 是**上限**：合格者（过完所有硬门槛）不足 10 个时输出就少于 10，**不放宽门槛、不凑数**，宁缺毋滥。采集阶段已剔除 `service/sodex-watch/config.json` 已监听地址，故结果全是新发现。
 
 | 理由 | 说明 |
 | --- | --- |
@@ -223,7 +223,7 @@ service/discovery/
 | 门槛后稀缺 | 前 100 名经严格门槛后金字塔尖也就十几个，取 top 10 即精华 |
 | 可调 | `topK` 可配置，想激进跟更多调高 |
 
-### 6.2 结果文件（`service/discovery/log/`）
+### 6.2 结果文件（`service/sodex-discovery/log/`）
 
 每次运行生成两个带时间戳文件：
 
@@ -234,7 +234,7 @@ service/discovery/
 
 - TG 推送：把摘要推到 `output.tgChat`（复用 watch 的 bot）。手机友好排版（每指标独占一行）：头部 4 行（标题+日期 / 候选→通过→推荐 / 排除N在监听·不足topK不凑）+ **前 5 名详展卡片** + **第 6 起紧凑单行** + 尾部详情文件名。
 - **0 通过不算失败**：合格者为 0 时照常生成结果文件，TG 推「📭 本周无合格候选」提示（非静默，确认脚本活着）。
-- **不写 watch.config**：结果只产出文件 + TG。是否纳入监听由人工看结果后**手动**编辑 `service/watch/config.json`，再 `node service/watch/main.mjs --config=...` 接手实时跟单。
+- **不写 watch.config**：结果只产出文件 + TG。是否纳入监听由人工看结果后**手动**编辑 `service/sodex-watch/config.json`，再 `node service/sodex-watch/main.mjs --config=...` 接手实时跟单。
 
 ---
 
@@ -293,8 +293,8 @@ PLTR赚       17139  126501     -8375       42%   0.87   0.45   40   ✗ 当前3
 
 | 脚本 | 职责 | 入参 | 产物 |
 | --- | --- | --- | --- |
-| `service/watch/query.mjs` | 单地址快照 | address | 仓位 + 委托 |
-| `service/watch/main.mjs` | 多地址实时监听 + 平仓历史 | address(es) | TG/console 跟单信号 |
+| `service/sodex-watch/query.mjs` | 单地址快照 | address | 仓位 + 委托 |
+| `service/sodex-watch/main.mjs` | 多地址实时监听 + 平仓历史 | address(es) | TG/console 跟单信号 |
 | **`discovery/`（本方案）** | 周期发现可跟单地址 | 无（拉榜） | log/ 结果文件 + TG（人工据此手动维护 watch.config） |
 
 闭环：**发现（discover）→ 监听（watch）→ 核查（query）**。

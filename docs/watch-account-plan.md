@@ -1,6 +1,6 @@
 # WS 监听账户变化 → REST 拉平仓历史 / 离场挂单（perps）
 
-`service/watch/main.mjs` 的设计说明。配套已有的 `service/watch/query.mjs`（快照查询）。
+`service/sodex-watch/main.mjs` 的设计说明。配套已有的 `service/sodex-watch/query.mjs`（快照查询）。
 
 ## 一、目标
 
@@ -80,18 +80,18 @@
 
 ```bash
 # 多地址（推荐，各推各的 Telegram 会话）
-node service/watch/main.mjs --config=service/watch/config.json
+node service/sodex-watch/main.mjs --config=service/sodex-watch/config.json
 
 # 单地址（向后兼容）
-node service/watch/main.mjs 0xYourAddress                        # 实时 WS 监听（默认）
-node service/watch/main.mjs 0xYourAddress --snapshot             # 快照模式：启动抓一次 + 每日 20:00
-node service/watch/main.mjs 0xYourAddress --snapshot --at=08:30  # 改每日抓取时间
-node service/watch/main.mjs 0xYourAddress --tg-token=xxx --tg-chat=yyy  # 单地址 Telegram
-node service/watch/main.mjs 0xYourAddress --history-limit=5      # 平仓历史条数（默认 2）
-node service/watch/main.mjs 0xYourAddress --debounce-ms=500      # 自定义防抖
-node service/watch/main.mjs 0xYourAddress --max-wait-ms=8000     # 防抖封顶（活跃流最长等待）
-node service/watch/main.mjs 0xYourAddress --account-id=12345     # 跳过 accountId 解析
-node service/watch/main.mjs 0xYourAddress --raw                  # 附原始帧/响应
+node service/sodex-watch/main.mjs 0xYourAddress                        # 实时 WS 监听（默认）
+node service/sodex-watch/main.mjs 0xYourAddress --snapshot             # 快照模式：启动抓一次 + 每日 20:00
+node service/sodex-watch/main.mjs 0xYourAddress --snapshot --at=08:30  # 改每日抓取时间
+node service/sodex-watch/main.mjs 0xYourAddress --tg-token=xxx --tg-chat=yyy  # 单地址 Telegram
+node service/sodex-watch/main.mjs 0xYourAddress --history-limit=5      # 平仓历史条数（默认 2）
+node service/sodex-watch/main.mjs 0xYourAddress --debounce-ms=500      # 自定义防抖
+node service/sodex-watch/main.mjs 0xYourAddress --max-wait-ms=8000     # 防抖封顶（活跃流最长等待）
+node service/sodex-watch/main.mjs 0xYourAddress --account-id=12345     # 跳过 accountId 解析
+node service/sodex-watch/main.mjs 0xYourAddress --raw                  # 附原始帧/响应
 ```
 
 约束：`--config` 仅实时 WS 模式，与 `--snapshot` **互斥**（多地址快照本次不做）。
@@ -105,7 +105,7 @@ node service/watch/main.mjs 0xYourAddress --raw                  # 附原始帧/
 - **IP 暴露对比**：本机暴露住宅 IP（≈城市级定位 + ISP，凭法律程序可溯源）；VPS 暴露数据中心 IP（不直接暴露住宅位置，但 VPS 账单可溯源到本人）。两者对法律程序都非匿名。
 - **VPN/代理**：只是把你的 IP 换成它的（常规隐私手段），不等于匿名——信任转移到 VPN 方（有支付信息、可能记日志）。真正风险是**关联**：别用同一 IP/网络既监听又登录你本人账户。
 - **边界**：不为「规避运营方识别」做 IP 轮换/多跳/反关联工程；只做正常连接卫生（单连接、限速、抖动重连）+ 监听与本人账户隔离。
-- **配置隐私**：`service/watch/config.json` 含 Telegram bot token / chat_id → 已入 `.gitignore`，仅 VPS 本地存在。
+- **配置隐私**：`service/sodex-watch/config.json` 含 Telegram bot token / chat_id → 已入 `.gitignore`，仅 VPS 本地存在。
 
 ## 九、仓位与平仓历史展示
 
@@ -167,6 +167,15 @@ Telegram 卡片每项独占一行，末尾追加离场挂单。console 与 TG �
 
 - "什么动作"由头部动词、"什么币/量/价"由仓位卡片、平仓由「平仓历史」表达——消除重复。
 
+### START WATCH 门控（多地址模式，避免部署噪音）
+
+多地址 `--config` 模式下，**仅 config 中相比上次新增的地址**才推送 `👀 START WATCH` 到 Telegram；已监听过的地址重启/部署时只在内部建基线、不推 TG（console banner 照常打）。
+
+- 状态文件 `sodex-watch/.seen-addresses.json`（gitignore，跨部署比对），记录已通知过 START 的地址集合，启动时并集落盘。
+- 门控逻辑在 `tool/seenAddresses.mjs`（`loadSeenAddresses`/`computeNewAddresses`/`saveSeen`），sodex-watch 与 HYPE-watch 共用。
+- **单地址 CLI 模式不门控**（交互式，照常推 START）。
+- **强制全部重推**：删除 `.seen-addresses.json` 后下次启动所有 config 地址重新推 START。
+
 ### 离场挂单变化轻提醒（独立 banner）
 
 reduceOnly 单集合 diff（按 orderId）检测 PLACE/MODIFY/CANCEL → 主报告之后单发：
@@ -200,12 +209,12 @@ reduceOnly 单集合 diff（按 orderId）检测 PLACE/MODIFY/CANCEL → 主报�
 ## 十一、多地址模式（`--config`）
 
 ```bash
-node service/watch/main.mjs --config=service/watch/config.json
+node service/sodex-watch/main.mjs --config=service/sodex-watch/config.json
 ```
 
 - 进程内循环 `new AccountWatcher(addr)`，各自独立 WS（物理隔离：一地址断不影响其他），共享模块级限流器。
 - 配置：**全局一个 bot（`tgToken`）+ 每地址独立 `tgChat`**；地址项可选 `tgToken` 覆盖、可选 `label` 别名、可选 `at` 镜像时刻。
 - **每地址独立每日镜像时刻 `at`（可选）**：每个地址各自在自己的 `at`（上海时间 `HH:MM`）触发一次 SNAPSHOT，可错峰避免 N 地址同一时刻并发拉取。取值优先级 **地址项 `at` > 全局 `--at` > 默认 `20:00`**；非法值（非 `HH:MM`）告警并回退默认。
 - 错误处理（G8）：文件缺失 / JSON 解析失败 / `watches` 空 → 退出；非法 `address` 跳过告警；重复 address 去重保首个；非法 `at` 告警回退默认。
-- 配置含 TG 凭据 → **不入 git**（`.gitignore`），仅服务器本地填写 `service/watch/config.json`。
+- 配置含 TG 凭据 → **不入 git**（`.gitignore`），仅服务器本地填写 `service/sodex-watch/config.json`。
 - 容量：1GB/1 核 VPS 跑 5–10 地址内存/CPU 充裕；瓶颈是 data host 限流，由共享限流器兜。

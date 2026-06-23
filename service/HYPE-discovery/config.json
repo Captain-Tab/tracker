@@ -1,0 +1,11 @@
+{
+  "tgToken": "",
+  "tgChat": "",
+  "window": "month",
+  "thresholds": {
+    "minPnlUsd": { "month": 100000 },
+    "minVlmUsd": { "month": 5000000 }
+  },
+  "topK": 20,
+  "excludeWatched": true
+}

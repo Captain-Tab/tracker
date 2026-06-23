@@ -1,0 +1,7 @@
+{
+  "tgToken": "",
+  "watches": [
+    { "address": "0x7839e2f2c375dd2935193f2736167514efff9916", "tgChat": "", "label": "HYPE持仓测试", "at": "20:00" },
+    { "address": "0x85ecf584f25db6f146718b86d493e33c5af72052", "tgChat": "", "label": "空仓测试", "at": "20:00" }
+  ]
+}
