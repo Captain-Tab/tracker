@@ -7,6 +7,9 @@ import { installFetchProxy } from "../../lib/WARP/index.mjs";
 await installFetchProxy();
 
 const BASE_DATA = "https://mainnet-data.sodex.dev";
+const BASE_BIZ = "https://alpha-biz.sodex.dev"; // 币种元数据（symbol_id↔baseCoin），取自 sodex-watch env
+const BASE_CHAIN = "https://sodex.dev/mainnet"; // address→accountId 链上解析
+const BIZ_ENV = "mainnet";
 
 const REQUEST_TIMEOUT_MS = 10_000; // 单请求超时
 const CONCURRENCY = 4; // 全局并发上限（所有阶段共享此 gate）
@@ -171,6 +174,38 @@ export async function fetchPositions(accountId, limit = 200) {
   const url = `${BASE_DATA}/api/v1/perps/positions?account_id=${encodeURIComponent(accountId)}&limit=${limit}`;
   const json = await httpGetJson(url);
   return Array.isArray(json?.data) ? json.data : [];
+}
+
+/**
+ * 币种元数据（symbol_id → baseCoin 映射）：用于把 positions 的 symbol_id 显示成币名（如 2→ETH）。
+ * 失败 / 空返回空 Map，调用方缺失时回退 `#<symbol_id>`，不阻断。
+ * @returns {Promise<Map<number, string>>} - symbol_id → baseCoin
+ */
+export async function refreshSymbols() {
+  const url = `${BASE_BIZ}/biz/futures/symbols?env=${BIZ_ENV}`;
+  const map = new Map();
+  try {
+    const json = await httpGetJson(url);
+    const list = Array.isArray(json?.data) ? json.data : [];
+    for (const s of list) {
+      if (s?.id != null && s?.baseCoin) map.set(Number(s.id), String(s.baseCoin));
+    }
+  } catch {
+    // 接口不可用 → 返回空 Map，币种以 #<id> 显示
+  }
+  return map;
+}
+
+/**
+ * address → accountId 链上解析。
+ * @param {string} address - 钱包地址
+ * @returns {Promise<string|null>} - primaryAccountId（字符串，防大整数精度丢失），解析失败返回 null
+ */
+export async function resolveAccountId(address) {
+  const resp = await httpGetJson(`${BASE_CHAIN}/chain/address/${encodeURIComponent(address)}/accounts`).catch(() => null);
+  if (resp?.code !== 0 || !resp?.data) return null;
+  const id = resp.data.primaryAccountId;
+  return id != null ? String(id) : null;
 }
 
 // ---------- WS 声明（discovery 本身不调用，仅作整个跟单系统接口收口备查）----------

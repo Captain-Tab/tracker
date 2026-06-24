@@ -298,3 +298,21 @@ PLTR赚       17139  126501     -8375       42%   0.87   0.45   40   ✗ 当前3
 | **`discovery/`（本方案）** | 周期发现可跟单地址 | 无（拉榜） | log/ 结果文件 + TG（人工据此手动维护 watch.config） |
 
 闭环：**发现（discover）→ 监听（watch）→ 核查（query）**。
+
+---
+
+## 十、未来扩展：按币种维度的画像与发现
+
+> 本方案是**全币种合并总账**视角（胜率/PF/净盈利混所有币）。规划中的按币种维度三模块见 `.claude/kit/spec/2026-06-24-coin-trader-profile.md`。动机：实测全局 PNL 榜靠前 ≠ 在某币种上盈利（`account_id=3602` 全局靠前完全靠 ETH +$48069，其 BTC −$20342），"某币种谁在盈利"藏在账户内部，必须按 `symbol_id` 切片才看得到。
+
+| 模块 | 职责 | 状态 |
+| --- | --- | --- |
+| **模块1 用户币种画像** | 单账户按 `symbol_id` 切片，出各币种 笔数/胜率/PF/净盈利/集中度 + 专精·盈亏标签 | ✅ **已实现**（`profile.mjs` + `process/{metrics,coinSlice}.mjs`，evaluate 复用 metrics 内核）。spec：`.claude/kit/spec/2026-06-24-coin-trader-profile.md` |
+| 模块2 币种专精发现 | 对候选池逐个跑模块1 + 按某币种质量排名 | 暂不做——实测数据量稀薄（某币种盈利专精户个位数、净利中位 $40），参考价值低 |
+| 模块3 watcher 币种过滤 | watch 条目加 `coins` 字段，只跟目标指定币种的单 | 暂不做——与模块2 价值绑定（无它则"只跟某币种单"在执行端不成立，watcher 现状按地址全盘镜像） |
+
+专精口径：该币 `|已实现盈亏|` 占账户全币种 `Σ|盈亏|` 的比例（非笔数占比）。盈利口径同本方案——`positions.realized_pnl` 逐笔真账本历史回看。
+
+### HYPE 对称扩展（已 spec，待实现）
+
+HYPE（Hyperliquid）的同款画像因数据模型不同而口径有别，已单独 spec：`.claude/kit/spec/2026-06-24-hype-coin-trader-profile.md`。关键差异：盈利源用 `userFills.closedPnl`（逐笔权威）按 `coin` 切片；**不展示 PF/胜率**——实测每币完整仓位周期仅 1~2 笔（大仓滚仓 + 2000 笔上限截断），trade 级 PF/胜率失真，故只用 Σ closedPnl 净利 + 笔数 + 集中度 + 名义规模。代码落 `service/HYPE-discovery/`，复用本地 `aggregateTrades`，不跨服务复用 sodex 内核。

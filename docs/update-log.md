@@ -4,6 +4,43 @@
 
 ---
 
+## sodex-discovery 新增单账户按币种画像工具（coin-profile 模块1）— 2026-06-24
+
+回答现有工具答不了的问题：「这个地址擅长哪个币、做得怎样」。`query.mjs` 只给仓位快照、`evaluate.mjs` 只给全币种合并总账，都无币种粒度。实测证据：全局 PNL 榜靠前 ≠ 在某币种上盈利（account 3602 全靠 ETH +$48069，BTC −$20342）——必须按 `symbol_id` 切片才看得到。定位为分析/情报工具（数据已证伪「靠跟单小额币种专精户赚钱」：500 池 ETH 盈利户净利中位仅 $40）。设计 spec 见 `.claude/kit/spec/2026-06-24-coin-trader-profile.md`。
+
+### 新增
+
+- **`process/metrics.mjs`**（新建）：从 `evaluate.mjs` 抽出共享指标内核 `deriveMetricsFromClosed(closed, now)`，evaluate（全币种）与 coinSlice（按币种）共用，单一真相源。
+- **`process/coinSlice.mjs`**（新建）：`sliceByCoin` 按 `symbol_id` 分组 → 各币种调 metrics → 集中度 `pnlShare=|该币净盈亏|/Σ|全币种净盈亏|` + 笔数占比 → 标签（专精档 ≥0.7/0.4-0.7/<0.4 × 盈亏 × 样本不足<8笔）→ 整体画像一句话。
+- **`profile.mjs`**（新建入口）：CLI `--account=<id>` / `--address=<0x..>`（链上解析）/ `--save`；拉 positions + refreshSymbols → coinSlice → stdout 人读表 + 可选 `log/profile-<id>-<ts>.json`。
+
+### 变更
+
+- **`process/evaluate.mjs`**：`derivePositionMetrics` 改为 `filter(size=0)` + 调 `deriveMetricsFromClosed`，删 92 行内联重复；`__internals` 移除已外迁的 `dailyNetMap`。行为等价。
+- **`api/index.mjs`**：新增 `BASE_BIZ`/`BASE_CHAIN`/`BIZ_ENV` 常量 + `refreshSymbols()`（symbol_id→baseCoin 映射，失败回退 `#<id>`）+ `resolveAccountId(address)`（链上解析 primaryAccountId）。
+
+### 关键决策
+
+- **专精口径用 |盈亏|占比**（非笔数占比）：实测集中度中位仅 11%、纯专精户极稀，故集中度只作排名/展示与标签，**不设硬门槛**（避免清空榜单）。
+- **盈利口径历史回看**：`positions.realized_pnl` 逐笔真账本，不读 overview 污染字段。
+- **PF/胜率不设硬门槛、全币种全列**：单账户画像不做候选淘汰，所有币种打标由人工判断。
+- **A1 抽取而非复制**：metrics 内核单一真相源，承担 evaluate 改造回归风险，由 golden 对比兜底。
+
+### 验证
+
+- `node --check` 全 5 文件通过；`output.test.mjs` 1 pass/0 fail 不退化。
+- **回归等价**：account 1046（445 条平仓）改造前后 `derivePositionMetrics` 15 字段逐项相等（golden 对比）。
+- 5 验收场景全跑通：account=3602 多币种画像（ETH 盈利/BTC 亏损按集中度降序）、address 解析一致、样本不足标签不淘汰、币名映射不可用降级 `#<id>`、回归等价。
+- `/k:check` 三闸门（subagent + 主 review + verify.sh）一致 PASS。
+
+### 不做（边界）
+
+- **模块2 币种专精发现**（对候选池逐个跑画像 + 排名）：数据量稀薄（盈利专精户个位数、净利中位 $40），参考价值低，暂不做。
+- **模块3 watcher 币种过滤**（只跟目标指定币种单）：与模块2 价值绑定，暂不做，仅记录。
+- 现货 / 下单上链 / 预测建模 / TG 推送。
+
+---
+
 ## HYPE-discovery 加 poolMax 候选池上限 + 标题文案修正 — 2026-06-24
 
 新门槛 vlm≥$5万（vs 旧 $500万）使候选池从 557 膨胀到 817，深评阶段 VPS 内存 575MB + swap 81MB 接近 OOM。根因是 HYPE-discovery 缺少 sodex-discovery 的 `poolMax` 候选池硬上限。
