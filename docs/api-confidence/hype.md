@@ -108,11 +108,11 @@ HYPE-discovery 现状：`collect → filter(gate) → rankTopK(按pnl降序) →
 | ② "fills/天 ≤50 判 HFT" | fill 是"一笔交易拆数十 fill 执行"（#1: 529 fill = 10 笔交易），fills/天把**大单拆单误判高频** | **聚合成交易后用 trades/天** |
 | ③ "fill 级 closedPnl 算 PF/胜率" | fill 级指标全失真（#1 fill 级 PF155万/胜99.8% → 聚合后 6 笔交易/真实低频大单）| 按 `startPosition` **重建仓位周期，交易级**算所有指标 |
 
-**最终算法**：`collect(粗筛 pnl≥$5万 & vlm≥$5万 & pnl/vlm≥1%) → evaluate(拉 userFills → aggregateTrades 重建仓位周期 → 交易级 PF/胜率/RF/频率/名义/单笔利润) → score(PF/RF/胜率/净额 加权 × capped降权) → topK`。
+**最终算法**：`collect(粗筛 pnl≥$5万 & vlm≥$5万 & pnl/vlm≥1% & poolMax≤300) → evaluate(拉 userFills → aggregateTrades 重建仓位周期 → 交易级 PF/胜率/RF/频率/名义/单笔利润) → score(PF/RF/胜率/净额 加权 × capped降权) → topK`。
 
 **最终深评门槛**：交易数≥5 / 活跃≥7天 / 中位名义≥$1万 / 中位单笔利润≥$100 / trades/天≤20 / PF≥1.5 / RF≥1.0。
 
-**性能**：evaluate 每候选 **1 次 userFills**（去 clearinghouseState，请求减半）+ 聚合 O(fills)；全量 799 候选预估 5-8 分钟（限流 4 并发），离线批处理可接受。
+**性能**：evaluate 每候选 **1 次 userFills**（去 clearinghouseState，请求减半）+ 聚合 O(fills)。实测 vlm≥$5万 后幸存 817，深评阶段 VPS 内存 575MB+swap 81MB 接近 OOM。2026-06-24 加 `poolMax=300`（对标 sodex poolMax），硬上限截断到 300 候选进深评，耗时 ~3-5 分钟、内存 ~200-300MB。
 
 **最终画像**：低频（0.1~1.5 笔/天）+ 大单（名义中位 $3万~$733万）+ 大利润（中位单笔 $204~$32万）方向性交易者。§六 4 瑕疵已通过 capped 降权 + 净额维度 + 名义/活跃/单笔利润三门槛打磨收敛。
 

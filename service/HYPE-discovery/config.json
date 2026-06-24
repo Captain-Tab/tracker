@@ -8,5 +8,6 @@
   },
   "minEfficiency": 0.01,
   "topK": 20,
+  "poolMax": 300,
   "excludeWatched": true
 }

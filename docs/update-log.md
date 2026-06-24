@@ -4,6 +4,32 @@
 
 ---
 
+## HYPE-discovery 加 poolMax 候选池上限 + 标题文案修正 — 2026-06-24
+
+新门槛 vlm≥$5万（vs 旧 $500万）使候选池从 557 膨胀到 817，深评阶段 VPS 内存 575MB + swap 81MB 接近 OOM。根因是 HYPE-discovery 缺少 sodex-discovery 的 `poolMax` 候选池硬上限。
+
+### 变更
+
+- **`config.json`**：新增 `poolMax: 300`（对标 sodex poolMax，保守值因 HYPE userFills 更重）
+- **`main.mjs`**：解析 `poolMax` + collect 返回后 `slice(0, poolMax)` 截断（leaderboard 按 pnl 降序，取前 N 幸存者语义合理）
+- **`output.mjs` / `main.mjs`**：启动日志与 TG/MD 标题"粗筛"→"发现"（标题文案对齐深评改造后的实际管线）
+
+### 关键决策
+
+- poolMax 默认 300：sodex poolMax=1000 但 positions 仅 445 条/候选，HYPE userFills 2000 条/候选重 4-5 倍 → 300 约 3-5 分钟 / 200-300MB，1GB VPS 安全
+- leaderboard 按 pnl 降序 → 截断丢弃的是 pnl 最低的幸存者，深评后合格者数量影响小（低 pnl 尾部大概率被深评门槛淘汰）
+
+### 验证
+
+- `node --check` 通过；端到端 dry-run 待 VPS 实测
+
+### 不做（边界）
+
+- 不加 pages 分页机制（HYPE leaderboard 是单文件流式解析，非 REST 分页 API）
+- 不压缩 evaluate 并发数（4 并发合理，瓶颈是候选量不是并发）
+
+---
+
 ## HYPE-discovery 深评改造：fill 聚合成交易 + 踢做市 — 2026-06-24
 
 把 HYPE-discovery 从"只 leaderboard 粗筛→选出全是机器人"改为"深评筛低频大单方向性可跟单交易者"。诊断/数据/最终算法见 `docs/api-confidence/hype.md §五·六`。

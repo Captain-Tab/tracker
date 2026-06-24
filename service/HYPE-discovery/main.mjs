@@ -66,6 +66,7 @@ async function main() {
     thresholds: raw.thresholds ?? { minPnlUsd: {}, minVlmUsd: {} },
     minEfficiency: raw.minEfficiency ?? 0,
     topK: flags.top !== undefined ? Number(flags.top) : (raw.topK ?? 20),
+    poolMax: flags.poolMax !== undefined ? Number(flags.poolMax) : (raw.poolMax ?? 300), // 候选池硬上限，对标 sodex poolMax
   };
   const excludeAddresses = (raw.excludeWatched !== false) ? loadWatchConfig(watchConfigPath) : new Set();
 
@@ -85,6 +86,10 @@ async function main() {
   }
   log(`① 采集：扫描 ${scanned} 行（排除已监听 ${excludedCount}）`);
   log(`② 筛选：通过门槛 ${survivors.length} 个（淘汰 ${eliminatedCount}；门槛 pnl≥${gate.minPnl} vlm≥${gate.minVlm} pnl/vlm≥${gate.minEff}）`);
+
+  // poolMax 硬上限：leaderboard 按 pnl 降序，取前 N 幸存者进深评（对标 sodex-discovery poolMax）
+  const poolCapped = survivors.length > config.poolMax ? survivors.length - config.poolMax : 0;
+  if (poolCapped > 0) { survivors = survivors.slice(0, config.poolMax); log(`   poolMax=${config.poolMax} 截断：${poolCapped} 个超出上限不进入深评`); }
 
   // ③ 深评（拉 userFills，聚合成交易后：HFT 频率过滤 + 交易级 PF/胜率/回撤 + 下注规模/单笔利润）
   const { profiles, eliminated: evalEliminated } = await evaluate(survivors, config);
