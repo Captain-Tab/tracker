@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// 入口编排：CLI → 加载 config + 只读 HYPE-watch/config 得 excludeAddresses → collect→filter→output。
-// 第一步只做 leaderboard 粗筛（pnl/vlm 门槛），逐笔深度评估留第二步。
+// 入口编排：CLI → 加载 config + 只读 HYPE-watch/config 得 excludeAddresses → collect→filter→evaluate→score→output。
+// 完整管线：粗筛(collect+filter) → 深评(拉 userFills+聚合交易+交易级指标) → 打分(topK)。
 // 用法：
 //   node service/HYPE-discovery/main.mjs --dry-run         # 干跑：只 stdout，不落盘不推
 //   node service/HYPE-discovery/main.mjs --no-push         # 落盘但不推 TG
@@ -12,7 +12,9 @@ import { dirname, join, isAbsolute, resolve } from "node:path";
 
 import { ENVS, log } from "./api/index.mjs";
 import { collect } from "./process/collect.mjs";
-import { rankTopK, gateOf } from "./process/filter.mjs";
+import { gateOf } from "./process/filter.mjs";
+import { evaluate } from "./process/evaluate.mjs";
+import { score } from "./process/score.mjs";
 import { output } from "./process/output.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -62,11 +64,12 @@ async function main() {
   const config = {
     window,
     thresholds: raw.thresholds ?? { minPnlUsd: {}, minVlmUsd: {} },
+    minEfficiency: raw.minEfficiency ?? 0,
     topK: flags.top !== undefined ? Number(flags.top) : (raw.topK ?? 20),
   };
   const excludeAddresses = (raw.excludeWatched !== false) ? loadWatchConfig(watchConfigPath) : new Set();
 
-  log(`🔭 HYPE 跟单候选粗筛启动｜窗口=${window} topK=${config.topK}${dryRun ? " [dry-run]" : ""}`);
+  log(`🔭 HYPE 跟单候选发现启动｜窗口=${window} topK=${config.topK}${dryRun ? " [dry-run]" : ""}`);
   log(`   已监听排除集：${excludeAddresses.size} 个地址`);
 
   const gate = gateOf(config);
@@ -81,14 +84,18 @@ async function main() {
     process.exit(0);
   }
   log(`① 采集：扫描 ${scanned} 行（排除已监听 ${excludedCount}）`);
-  log(`② 筛选：通过门槛 ${survivors.length} 个（淘汰 ${eliminatedCount}；门槛 pnl≥${gate.minPnl} vlm≥${gate.minVlm}）`);
+  log(`② 筛选：通过门槛 ${survivors.length} 个（淘汰 ${eliminatedCount}；门槛 pnl≥${gate.minPnl} vlm≥${gate.minVlm} pnl/vlm≥${gate.minEff}）`);
 
-  // ③ 排序取 topK（不静默截断：truncated 显式记日志）
-  const { ranked, truncated } = rankTopK(survivors, config);
-  if (truncated > 0) log(`   topK=${config.topK} 截断：另有 ${truncated} 个过门槛者未列入（按 pnl 取前 ${config.topK}）`);
+  // ③ 深评（拉 userFills，聚合成交易后：HFT 频率过滤 + 交易级 PF/胜率/回撤 + 下注规模/单笔利润）
+  const { profiles, eliminated: evalEliminated } = await evaluate(survivors, config);
+  log(`③ 深评：合格 ${profiles.length} 个（淘汰 ${evalEliminated.length}；HFT/盈亏比/回撤门槛）`);
 
-  // ④ 输出
-  const summary = { scanned, excluded: excludedCount, passed: survivors.length, recommended: ranked.length, topK: config.topK, truncated };
+  // ④ 打分取 topK（不静默截断：truncated 显式记日志）
+  const { ranked, truncated } = score(profiles, config);
+  if (truncated > 0) log(`   topK=${config.topK} 截断：另有 ${truncated} 个合格者未列入（按评分取前 ${config.topK}）`);
+
+  // ⑤ 输出
+  const summary = { scanned, excluded: excludedCount, passed: survivors.length, evaluated: profiles.length, recommended: ranked.length, topK: config.topK, truncated };
   const ctx = {
     summary, generatedAt: new Date(), dryRun, noPush, logDir,
     tgToken: raw.tgToken ?? null, tgChat: raw.tgChat ?? null,

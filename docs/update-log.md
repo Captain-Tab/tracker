@@ -4,6 +4,111 @@
 
 ---
 
+## HYPE-discovery 深评改造：fill 聚合成交易 + 踢做市 — 2026-06-24
+
+把 HYPE-discovery 从"只 leaderboard 粗筛→选出全是机器人"改为"深评筛低频大单方向性可跟单交易者"。诊断/数据/最终算法见 `docs/api-confidence/hype.md §五·六`。
+
+### 新增
+
+- **`api/index.mjs`**：info 封装（`fetchClearinghouseState`/`fetchUserFills`/`fetchUserFillsByTime`）+ 限流 gate（并发≤4 + 间隔 + 429/503 退避）。
+- **`process/evaluate.mjs`**（新建）：拉 userFills → `aggregateTrades` 按 `startPosition` 重建仓位周期（持仓归 0 = 一笔交易）→ 交易级算 PF/胜率/RF/频率/名义/单笔利润 + 门槛过滤。
+- **`process/score.mjs`**（新建）：PF/RF/胜率/净额规模 归一加权 × capped 降权(0.9)。
+
+### 变更
+
+- **`config.json`**：vlm 门槛 $500万→$5万 + 新增 `minEfficiency`(pnl/vlm)≥1%（修入口——旧门槛系统性筛掉所有低频交易者）。
+- **`process/filter.mjs`**：粗筛加 pnl/vlm 效率门槛。
+- **`main.mjs`**：串接 collect→filter→evaluate→score→output（替换 rankTopK）。
+- **`process/output.mjs`**：展示交易级深评字段（PF/胜率/trades每天/名义/单笔利润）。
+- **`api/index.mjs`**：修预存 bug——leaderboard early-stop 用 `return` 替代 `controller.abort()`（abort 抛 AbortError 被误当采集失败）。
+
+### 关键决策（实施中两方案被实测推翻）
+
+- **fill 必须聚合成交易**：HYPE 一笔交易拆数十 fill 执行（#1: 529 fill=10 交易），fill 级 PF/胜率/频率/单笔利润**全失真**（#1 被误判 PF155万做市，实为低频大单高手）。改为交易级。
+- **HFT 判据用 trades/天（非 fills/天）**：fills/天会把大单拆单误判高频。
+- **去 clearinghouseState**：marginUsed 仅展示、不进 score，去掉使请求减半（性能优化）。
+- **踢做市**：中位单笔利润≥$100 门槛剔"名义够但单笔微利"的做市残留。
+- **capped 降权**：userFills 2000 上限→近期画像，PF∞ 乐观，评分×0.9。
+
+### 验证
+
+- `node --check` 全通过；端到端 dry-run（--limit=2000）：扫 2000→粗筛 116→深评合格 23→推荐 20。
+- 画像收敛：低频（0.1~1.5 笔/天）+ 大单（名义中位 $3万~$733万）+ 大利润（中位单笔 $204~$32万）方向性交易者；做市/高频/小单/微利全被门槛剔除。
+- closedPnl 聚合正确性手算验证（#1 6 笔交易/全赢，与代码一致）。
+
+### 不做（边界）
+
+- 不做 userFillsByTime 全史翻页（接受近期画像，capped 降权应对）；不动 sodex-discovery；下注规模维度未进 score（HYPE 名义锚点未校准，仅展示+用净额维度）。
+
+## sodex-discovery 新增下注规模（betSize）评分维度 — 2026-06-23
+
+算法原本只看比率（PF/RF/胜率），不看下注规模，导致"大量小单刷高 volume"被误判优质（ETH/PLTR volume $14M 拿高分，但中位保证金仅 $2.6k 全是小单）。新增 betSize 维度修正"可跟性"盲区。
+
+### 新增
+
+- **`evaluate.mjs`**：`derivePositionMetrics` 推算每仓保证金（`名义÷杠杆`；平仓历史 `initial_margin` 已清零=0，只能推算），输出 `medMargin`/`maxMargin`（中位/最大）。
+- **`score.mjs`**：第 6 评分维度 `betSize`，中位保证金对数归一。锚点经 **leaderboard 前 100 名实测分布校准**（75 有效样本：p50≈$700→0、p90≈$25k→1），专门修正 volume 的"小单刷量"盲区。
+- **`output.mjs`**：md 报告新增"投入保证金(名义÷杠杆推算)：中位/最大"展示行。
+
+### 变更
+
+- **`main.mjs`**：三 preset 权重新增 `betSize`（balanced 12 / conservative 8 / aggressive 15，从 volume 等匀出，各档和=100）。
+
+### 设计约束
+
+- betSize **只加分、不作硬门槛**——重仓亏更危险（须与 PF/RF 组合）；避免误杀小本金高手 + 阈值拍脑袋。
+- CROSS 模式保证金为"名义÷杠杆"**近似**（非精确占用），展示标注"推算"。
+- 锚点基于"30D pnl 前 100 名"池，换窗口/全市场可能略偏；样本少，待积累校准。
+
+### 验证
+
+- `node --test` 1/1 全绿；`node --check` 通过；三 preset 权重和均 = 100。
+- aggressive 实测：XAut（betSize 1.0、中位 $27k）由 #2 反超 #1；ETH/PLTR（betSize 0.36、小单）降分——精准修正 volume 小单刷量失真，判定门槛不变（仍 3 个通过，只改排名）。
+
+---
+
+## sodex-discovery nTrades 语义正名 + 滚仓盲区记录 — 2026-06-23
+
+`nTrades`（已平仓位数）此前被当"成交频率/经验"代理使用，实测证明仓位数严重低估真实成交频率（0727h 318 仓位 vs 111 笔/天成交；USTECH100 12 仓位 vs 384 笔/天，单仓由 3~83 笔成交拼成）。本次仅做**零成本正名**，不动判定逻辑、不加接口。
+
+### 变更
+
+- **`evaluate.mjs`**：`nTrades` 注释正名为"已平仓位数（非成交笔数）"；`classifyTradeEligibility` 加注滚仓型（持仓不平、仓位数少）可能因 `nTrades<8` 被误杀，指向 docs 盲区记录。判定门槛（`minTrades=20`/`lowFreq=8`）零改动。
+- **`output.mjs`**：md 报告展示文案正名——"近90D笔数"→"已平仓位数"、"近90D净额"→"已实现净额"（对齐全历史含义）；`profileType` 加注分档基于仓位数而非成交频率。
+- **`docs/api-confidence/sodex.md`**：第六节补充仓位生命周期、两接口（positions 平仓历史 / state 活跃仓位 `cr`）分工、完整已实现利润公式，及**处置决定表**。
+
+### 不做（边界，已记录为盲区）
+
+- **滚仓型资格误杀 / 评估不可靠**：彻底解需 trades 逐笔回放（盈亏质量必须基于已结束交易，活跃仓位 `cr` 无逐笔结构无法算 PF/胜率），该方案请求暴增（cursor 全量 ~17 次/账号）+ funding 回放风险，且滚仓型未在样本观测到，必要性未证明——暂不实现，等观测到真实样本再评估。
+- 不采用"低频候选查 trades 让其过资格"折中：过资格但 PF/胜率仍基于极少仓位、统计不可靠，半截子补丁。
+
+### 验证
+
+- `node --test` 1/1 全绿；`node --check` 通过；`/k:check` 三闸门（subagent + 主 review + verify.sh）一致 PASS。
+
+---
+
+## sodex-discovery 去污染字段 + 去截断 + 503 容错 — 2026-06-23
+
+修复粗筛/评估误用 `overview` 受污染字段，导致真盈利账户被误杀的链路问题。证据：账户 2566 近30天逐笔真账本 +$3072、全历史 +$19216，但 `overview.perps_closed_pnl_usd(30D)` 记 −$6129（混入充提/资金费），filter 据此把它在第一关淘汰。
+
+### 变更
+
+- **`filter.mjs`**：删除 `perps_closed_pnl_usd` 盈利门槛与 perps 主导判定（该字段实测污染）；粗筛只保留实测可信的 `volume` 门槛。盈利/合约主导判定下沉到 evaluate 用 positions 逐笔真账本。
+- **`evaluate.mjs`**：`perpsPnl` 改取 positions 逐笔净额 `pm.netProfit`（权威），不再读 `overview.perps_closed_pnl_usd`；antiAirdrop 同步基于逐笔净额。
+- **`main.mjs`**：`positionsLimit` 200 → 1000。原 200 会截断长历史账户（实测 ETH/PLTR 318 条、MW 445 条），致 `activeSpan/netProfit/maxDD/RF` 失真；实测单账户最多 445 条(~220KB)，1000 覆盖全历史且内存安全（契合 1G 服务器）。删除已无引用的 `FIXED.perpsMustDominate`。
+- **`api/index.mjs`**：重试集合纳入 `503`。overview 接口高频偶发 503（同账户时好时坏），原仅 429/409 重试，致 filter 把接口抖动误判为不合格——实测 25 候选 22 个被 503 误杀（88%）。
+
+### 验证
+
+- `node --test` 1/1 全绿；6 文件 `node --check` 通过。
+- 端到端 `--dry-run --limit=25` 实测：修复前 filter 幸存 3（22 淘汰中绝大多数为 503 误杀）→ 修复后幸存 20、淘汰 5；XAut 账户 192916 由"被误杀"恢复为推荐 #1（评分 94.2，合约盈利走逐笔真账本 $51,005、最大单笔 $42,703、活跃跨度 49 天）。
+
+### 不做（边界，需后续校准，不猜测）
+
+- **开仓名义 / 单笔盈利维度**：实测能区分重仓方向性（2566/XAut 中位开仓 $72k/$372k）与小额高频（MW $1.5k），有跟单参考价值；但门槛阈值需数据校准，本次不拍脑袋落地。
+- **evaluate 流式化**：当前 `pages=2` 候选 ~100、单账户 ≤220KB，无 OOM 证据，暂不改造（仅在调大 pages 时需注意）。
+
 ## HYPE-watch 账户保证金展示 — 2026-06-23
 
 从 `clearinghouseState.marginSummary` 提取 per-position 保证金，TG 和 console 两端同步展示。

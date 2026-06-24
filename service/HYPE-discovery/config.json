@@ -3,9 +3,10 @@
   "tgChat": "-5405680500",
   "window": "month",
   "thresholds": {
-    "minPnlUsd": { "month": 100000 },
-    "minVlmUsd": { "month": 5000000 }
+    "minPnlUsd": { "month": 50000 },
+    "minVlmUsd": { "month": 50000 }
   },
+  "minEfficiency": 0.01,
   "topK": 20,
   "excludeWatched": true
 }

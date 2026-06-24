@@ -18,6 +18,13 @@ function fmtPct(ratio) {
   return `${(x * 100).toFixed(1)}%`;
 }
 
+// 盈亏比 / 恢复比：Infinity（无亏损/无回撤）显示 ∞
+function fmtRatio(v) {
+  if (v === Infinity) return "∞";
+  const x = Number(v);
+  return Number.isFinite(x) ? x.toFixed(2) : "-";
+}
+
 const pad2 = (n) => String(n).padStart(2, "0");
 function localStamp(date) {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}-${pad2(date.getHours())}${pad2(date.getMinutes())}`;
@@ -70,7 +77,7 @@ async function sendTelegramDocument(token, chatId, filePath, caption) {
 
 function buildTgMessage(ranked, summary, generatedAt, window) {
   const lines = [];
-  lines.push(`🔭 HYPE 跟单候选（粗筛）`);
+  lines.push(`🔭 HYPE 跟单候选发现`);
   lines.push(`⌚ ${beijingDate(generatedAt)} · 窗口 ${window}`);
   lines.push(`扫描 ${summary.scanned} → 过门槛 ${summary.passed} → 推荐 ${summary.recommended} · 排除 ${summary.excluded} 在监听`);
 
@@ -80,11 +87,10 @@ function buildTgMessage(ranked, summary, generatedAt, window) {
     return lines.join("\n");
   }
   ranked.slice(0, DETAIL_CARDS).forEach((c, i) => {
-    const m = c.perf[window];
     lines.push("");
-    lines.push(`#${i + 1} · 📡 ${c.address}`);
-    lines.push(`盈亏 ${fmtUsd(m.pnl)} · 量 ${fmtUsd(m.vlm)} · ROI ${fmtPct(m.roi)}`);
-    lines.push(`账户净值 ${fmtUsd(c.accountValue)}`);
+    lines.push(`#${i + 1} · 评分 ${c.score} · 📡 ${c.address}`);
+    lines.push(`盈亏比 ${fmtRatio(c.profitFactor)} · 胜率 ${fmtPct(c.winRate)} · ${c.tradesPerDay.toFixed(1)} 笔交易/天`);
+    lines.push(`净额 ${fmtUsd(c.netProfit)} · 中位单笔 ${fmtUsd(c.medTradePnl)} · ${c.nTrades} 笔`);
   });
   lines.push("");
   lines.push(`📄 完整报告见附件`);
@@ -93,7 +99,7 @@ function buildTgMessage(ranked, summary, generatedAt, window) {
 
 function buildMarkdown(ranked, summary, generatedAt, window, gate) {
   const lines = [];
-  lines.push(`# HYPE 跟单候选（粗筛）· ${beijingDate(generatedAt)}`);
+  lines.push(`# HYPE 跟单候选发现 · ${beijingDate(generatedAt)}`);
   lines.push("");
   lines.push(`- 主窗口 **${window}** · 门槛 pnl≥${fmtUsd(gate.minPnl)} & vlm≥${fmtUsd(gate.minVlm)}`);
   lines.push(`- 扫描 **${summary.scanned}** → 过门槛 **${summary.passed}** → 推荐 **${summary.recommended}** · 排除已监听 ${summary.excluded} · topK=${summary.topK}${summary.truncated ? ` · 截断 ${summary.truncated}` : ""}`);
@@ -105,10 +111,11 @@ function buildMarkdown(ranked, summary, generatedAt, window, gate) {
     ranked.forEach((c, i) => {
       const m = c.perf[window];
       lines.push("");
-      lines.push(`### #${i + 1} · \`${c.address}\`${c.displayName ? ` · ${c.displayName}` : ""}`);
-      lines.push(`- ${window}：盈亏 ${fmtUsd(m.pnl)} · 量 ${fmtUsd(m.vlm)} · ROI ${fmtPct(m.roi)}`);
-      const a = c.perf.allTime;
-      if (a) lines.push(`- allTime：盈亏 ${fmtUsd(a.pnl)} · 量 ${fmtUsd(a.vlm)}`);
+      lines.push(`### #${i + 1} · 评分 ${c.score} · \`${c.address}\`${c.displayName ? ` · ${c.displayName}` : ""}`);
+      lines.push(`- 深评（交易级，已聚合 fill）：盈亏比 ${fmtRatio(c.profitFactor)} · 胜率 ${fmtPct(c.winRate)} · 恢复比 ${fmtRatio(c.recoveryFactor)} · ${c.tradesPerDay.toFixed(1)} 笔交易/天`);
+      lines.push(`- 已实现：净额 ${fmtUsd(c.netProfit)} · ${c.nTrades} 笔交易（${c.nFills} 个 fill）· 中位单笔 ${fmtUsd(c.medTradePnl)} · 活跃 ${c.activeDays} 天${c.capped ? "（近期 2000 fill，全史未覆盖）" : ""}`);
+      lines.push(`- 下注规模（名义）：中位 ${fmtUsd(c.medNotional)} · 最大 ${fmtUsd(c.maxNotional)}`);
+      lines.push(`- ${window} 榜：盈亏 ${fmtUsd(m.pnl)} · 量 ${fmtUsd(m.vlm)} · ROI ${fmtPct(m.roi)}（充提污染，仅参考）`);
       lines.push(`- 账户净值：${fmtUsd(c.accountValue)}`);
     });
   }

@@ -20,26 +20,26 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // riskPreset 展开映射：字符串 → 门槛 + 权重
 // 风险调整由 Recovery Factor(净盈利/最大回撤) 承担，替代不稳定的 ddRatio 与低信号的日级 Sharpe。
 const PRESETS = {
+  // betSize=下注规模权重（保守派看重低、激进派看重高）；conservative/aggressive 为 balanced 同思路类比
   conservative: {
     minProfitFactor: 2.0, minRecoveryFactor: 2.0, maxDayShare: 0.5,
-    weights: { profitFactor: 35, recoveryFactor: 30, winRate: 10, persist: 15, volume: 10 },
+    weights: { profitFactor: 33, recoveryFactor: 28, winRate: 9, persist: 14, volume: 8, betSize: 8 },
   },
   balanced: {
     minProfitFactor: 1.5, minRecoveryFactor: 1.0, maxDayShare: 0.7,
-    weights: { profitFactor: 30, recoveryFactor: 25, winRate: 20, persist: 15, volume: 10 },
+    weights: { profitFactor: 28, recoveryFactor: 22, winRate: 18, persist: 12, volume: 8, betSize: 12 },
   },
   aggressive: {
     minProfitFactor: 1.2, minRecoveryFactor: 0.7, maxDayShare: 0.9,
-    weights: { profitFactor: 25, recoveryFactor: 15, winRate: 25, persist: 20, volume: 15 },
+    weights: { profitFactor: 22, recoveryFactor: 13, winRate: 22, persist: 17, volume: 11, betSize: 15 },
   },
 };
 
 // 固定参数（硬编码，不读 config）
 const FIXED = {
   sortBy: "pnl",
-  positionsLimit: 200,
-  poolMax: 1000,
-  perpsMustDominate: true,
+  positionsLimit: 1000, // 拉全历史平仓：实测最多 445 条/单账户(~220KB)，1000 足够覆盖、内存安全；
+  poolMax: 1000,        // 200 会截断 318/445 条的长历史账户，致 activeSpan/netProfit/maxDD 失真
   concurrency: 4,
   httpTimeoutMs: 10_000,
 };

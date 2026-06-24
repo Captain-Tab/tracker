@@ -11,8 +11,10 @@ const BASE_DATA = "https://mainnet-data.sodex.dev";
 const REQUEST_TIMEOUT_MS = 10_000; // 单请求超时
 const CONCURRENCY = 4; // 全局并发上限（所有阶段共享此 gate）
 const MIN_INTERVAL_MS = 120; // 相邻请求最小启动间隔，平滑 QPS
-const MAX_RETRIES = 6; // 429/409 限流最大重试次数
-const THROTTLE_STATUSES = new Set([429, 409]); // 409 为本网关实测限流码
+const MAX_RETRIES = 6; // 暂时性错误最大重试次数
+// 暂时性错误集（值得退避重试）：429/409 限流（409 为本网关实测限流码）；
+// 503 为 overview 接口高频偶发的临时不可用（同账户时好时坏），不重试会致 filter 把接口抖动误判为不合格而大批误杀
+const THROTTLE_STATUSES = new Set([429, 409, 503]);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

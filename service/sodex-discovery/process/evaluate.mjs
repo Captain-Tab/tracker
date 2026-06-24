@@ -1,7 +1,7 @@
-// ③ 评估 Evaluate：positions(limit=200) 是「逐笔真账本」，交易形态 + 时效全部基于它（权威已实现）。
+// ③ 评估 Evaluate：positions(limit=1000) 是「逐笔真账本」，交易形态 + 时效 + 合约盈利全部基于它（权威已实现）。
 // 为什么不用 overview 的短窗字段：overview 窗口额基于账户净值快照(deposit-accounting)，混入转入/提现，
 // 与本系统开篇要消灭的「榜单 pnl 误导」同源——短窗噪声大（实测 192916 overview7D=−39805 实为提现误记，
-// 真账本近期两笔全盈利）。positions.realized_pnl 才是逐笔权威；limit=200 只截断旧记录，近窗完整可靠。
+// 真账本近期两笔全盈利）。positions.realized_pnl 才是逐笔权威；limit=1000 覆盖全历史（实测最多 445 条/账户）。
 import { fetchPositions } from "../api/index.mjs";
 
 const MS_PER_MIN = 60_000;
@@ -22,7 +22,7 @@ function dailyNetMap(closed) {
 function derivePositionMetrics(positions, now) {
   const closed = (Array.isArray(positions) ? positions : []).filter((p) => Number(p.size) === 0);
 
-  const nTrades = closed.length;
+  const nTrades = closed.length; // 已平仓位数，非成交笔数：一个仓位可由数十笔成交构成（滚仓型尤甚）
   let wins = 0;
   let sumProfit = 0;
   let sumLossAbs = 0;
@@ -83,10 +83,25 @@ function derivePositionMetrics(positions, now) {
     .filter((p) => Number(p.updated_at ?? 0) >= freshStart)
     .reduce((s, p) => s + Number(p.realized_pnl ?? 0), 0);
 
-  return { nTrades, winRate, profitFactor, avgHoldMin, netProfit, maxDD, recoveryFactor, activeSpanDays, maxDayShare, freshNet, maxWin, maxLoss, blowupRatio };
+  // 保证金投入规模（展示用，非门槛）：平仓历史 initial_margin 已清零(=0)，用 名义÷杠杆 推算；
+  // CROSS 模式下为近似占用、非精确保证金。max_size/均价缺失或 leverage=0 兜底为跳过。
+  const margins = closed
+    .map((p) => {
+      const noml = Math.abs(Number(p.max_size) * Number(p.avg_entry_price));
+      const lev = Math.max(1, Number(p.leverage) || 1);
+      return Number.isFinite(noml) ? noml / lev : 0;
+    })
+    .filter((m) => m > 0)
+    .sort((a, b) => a - b);
+  const medMargin = margins.length ? margins[Math.floor(margins.length / 2)] : 0;
+  const maxMargin = margins.length ? margins[margins.length - 1] : 0;
+
+  return { nTrades, winRate, profitFactor, avgHoldMin, netProfit, maxDD, recoveryFactor, activeSpanDays, maxDayShare, freshNet, maxWin, maxLoss, blowupRatio, medMargin, maxMargin };
 }
 
 // 交易资格双通道（D3）：中频路（nTrades≥minTrades）或 低频精准路（nTrades≥8 且 PF≥3 且 win≥70%）
+// nTrades=已平仓位数（非成交频率）。滚仓型（持仓不平、仓位数少但成交频繁）可能因 nTrades<8 被误杀——
+// 已知盲区，彻底解需 trades 逐笔回放，因未观测到样本暂不实现，见 docs/api-confidence/sodex.md §六
 function classifyTradeEligibility(nTrades, profitFactor, winRate, config) {
   const midFreq = nTrades >= config.gates.minTrades;
   const lowFreq =
@@ -126,7 +141,8 @@ export async function evaluate(survivors, config) {
     }
 
     const pm = derivePositionMetrics(positions, now);
-    const perpsPnl = Number(s.overview.perps_closed_pnl_usd ?? 0);
+    // 合约盈利取逐笔真账本净额（权威），不用 overview.perps_closed_pnl_usd（充提污染）
+    const perpsPnl = pm.netProfit;
     const volume = Number(s.overview.volume_usd ?? 0);
 
     const profile = {
@@ -150,6 +166,8 @@ export async function evaluate(survivors, config) {
       winRate: pm.winRate,
       profitFactor: pm.profitFactor,
       avgHoldMin: pm.avgHoldMin,
+      medMargin: pm.medMargin,
+      maxMargin: pm.maxMargin,
     };
 
     const fail = (reason) => eliminated.push({ accountId: s.accountId, stage: "evaluate", reason });
@@ -183,7 +201,7 @@ export async function evaluate(survivors, config) {
     // qualityFilters（默认开）
     if (config.qualityFilters) {
       const netDeposit = Number(s.overview.net_deposit_usd ?? 0);
-      // antiAirdrop：净入金为负且合约几乎不赚 → 空投/转入提走
+      // antiAirdrop：净入金为负且合约几乎不赚（逐笔真账本净额）→ 空投/转入提走
       if (netDeposit < 0 && Math.abs(perpsPnl) < config.gates.minPerpsPnl) {
         fail(`疑似空投农民 netDeposit=${netDeposit.toFixed(0)} perpsClosed≈0`);
         continue;

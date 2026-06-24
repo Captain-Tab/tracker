@@ -12,6 +12,9 @@ function normalize(profile, persistWindowsLen) {
     winRate: clamp(profile.winRate, 0, 1),
     persist: persistWindowsLen > 0 ? clamp(profile.hitWindows.size / persistWindowsLen, 0, 1) : 0,
     volume: profile.volume > 0 ? clamp((Math.log10(profile.volume) - 4.7) / 2, 0, 1) : 0, // 5万→0、500万→~0.86
+    // 下注规模（可跟性）：中位保证金对数归一。锚点取榜单前100名实测 p50/p90 校准（$700→0、$25k→1），
+    // 修正 volume "大量小单刷高量"的盲区——高 volume + 小 betSize = 小单刷量，非真重仓
+    betSize: profile.medMargin > 0 ? clamp((Math.log10(profile.medMargin) - 2.85) / 1.55, 0, 1) : 0,
   };
   return dims;
 }
@@ -33,7 +36,8 @@ export function score(profiles, config) {
       dims.recoveryFactor * weights.recoveryFactor +
       dims.winRate * weights.winRate +
       dims.persist * weights.persist +
-      dims.volume * weights.volume;
+      dims.volume * weights.volume +
+      dims.betSize * (weights.betSize ?? 0);
     return { ...p, dims, score: Math.round(total * 10) / 10 };
   });
 

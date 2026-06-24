@@ -13,14 +13,23 @@ export function passesThreshold(candidate, config) {
   const window = config.window ?? "month";
   const minPnl = config.thresholds?.minPnlUsd?.[window] ?? 0;
   const minVlm = config.thresholds?.minVlmUsd?.[window] ?? 0;
+  const minEff = config.minEfficiency ?? 0;
   const m = windowMetric(candidate, window);
-  return !!(m && m.pnl >= minPnl && m.vlm >= minVlm);
+  if (!m || !(m.pnl >= minPnl) || !(m.vlm >= minVlm)) return false;
+  // 成交效率 pnl/vlm：滤掉"大量小单刷量"的低效率账号，整体降频率倾向（仅辅助粗筛，精确判低频靠深评 fills/天）
+  if (minEff > 0 && !(m.vlm > 0 && m.pnl / m.vlm >= minEff)) return false;
+  return true;
 }
 
 // 门槛阈值取值（供日志展示）。
 export function gateOf(config) {
   const window = config.window ?? "month";
-  return { window, minPnl: config.thresholds?.minPnlUsd?.[window] ?? 0, minVlm: config.thresholds?.minVlmUsd?.[window] ?? 0 };
+  return {
+    window,
+    minPnl: config.thresholds?.minPnlUsd?.[window] ?? 0,
+    minVlm: config.thresholds?.minVlmUsd?.[window] ?? 0,
+    minEff: config.minEfficiency ?? 0,
+  };
 }
 
 // 通过门槛者按主窗口 pnl 降序取 topK。

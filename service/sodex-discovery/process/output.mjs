@@ -28,6 +28,7 @@ function fmtPF(pf) {
 
 // TG 消息中完整展示钱包地址（不再截断）
 
+// 按已平仓位数分档（非成交频率）：nTrades 是仓位数，滚仓型实际成交频率远高于仓位数，标签仅供参考
 function profileType(p, config) {
   return p.nTrades >= config.gates.minTrades ? "中频稳健型" : "低频精准型";
 }
@@ -150,9 +151,10 @@ function buildMarkdown(ranked, summary, eliminated, generatedAt, config) {
       lines.push(`- 地址：\`${p.walletAddress}\`（account_id=${p.accountId}）`);
       lines.push(`- 盈亏比：${fmtPF(p.profitFactor)} · 胜率：${fmtPct(p.winRate)}`);
       lines.push(`- 合约盈利：${fmtUsd(p.perpsPnl)} · 成交量：${fmtUsd(p.volume)}`);
-      lines.push(`- 恢复比 RF：${Number.isFinite(p.recoveryFactor) ? p.recoveryFactor.toFixed(2) : "∞"} · 最大回撤：${fmtUsd(p.maxDD)} · 近90D净额：${fmtUsd(p.netProfit)}`);
+      lines.push(`- 恢复比 RF：${Number.isFinite(p.recoveryFactor) ? p.recoveryFactor.toFixed(2) : "∞"} · 最大回撤：${fmtUsd(p.maxDD)} · 已实现净额：${fmtUsd(p.netProfit)}`);
       lines.push(`- 最大单笔盈利：${fmtUsd(p.maxWin)} · 最大单笔亏损：${fmtUsd(-p.maxLoss)}（爆仓比 ${Number.isFinite(p.blowupRatio) ? p.blowupRatio.toFixed(2) : "∞"}）`);
-      lines.push(`- 平均持仓：${p.avgHoldMin.toFixed(0)} 分钟 · 近90D笔数：${p.nTrades} · 活跃跨度：${p.activeDays}天`);
+      lines.push(`- 平均持仓：${p.avgHoldMin.toFixed(0)} 分钟 · 已平仓位数：${p.nTrades} · 活跃跨度：${p.activeDays}天`);
+      lines.push(`- 投入保证金(名义÷杠杆推算)：中位 ${fmtUsd(p.medMargin)} · 最大 ${fmtUsd(p.maxMargin)}`);
       lines.push(`- 命中窗：${windowsStr(p.hitWindows)}`);
     });
   }
