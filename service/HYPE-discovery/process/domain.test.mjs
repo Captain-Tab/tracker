@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { flattenRow } from "./collect.mjs";
 import { passesThreshold, rankTopK, windowMetric } from "./filter.mjs";
 import { createRowScanner } from "../api/index.mjs";
+import { __internals as evalInternals } from "./evaluate.mjs";
 
 // ---------- 流式 scanner ----------
 const LB = '{"leaderboardRows":[' +
@@ -78,4 +79,24 @@ test("rankTopK: pnl 降序 + topK 截断 + truncated 计数", () => {
 
 test("passesThreshold: 门槛缺省为 0（全通过）", () => {
   assert.equal(passesThreshold(mk("a", 1, 1), { window: "month", thresholds: {}, topK: 20 }), true);
+});
+
+// ---------- aggregateTrades 周期净额 = Σ(closedPnl − fee)（锁定 fee 符号修复）----------
+test("aggregateTrades: 一个完整周期 pnl = closedPnl 累加 − fee 累加", () => {
+  const fills = [
+    // 开多：startPosition 0 → +10，未平
+    { coin: "HYPE", side: "B", sz: "10", px: "100", startPosition: "0", closedPnl: "0", fee: "1", time: 1 },
+    // 平多：startPosition 10 → 0，周期结束
+    { coin: "HYPE", side: "A", sz: "10", px: "110", startPosition: "10", closedPnl: "100", fee: "1", time: 2 },
+  ];
+  const trades = evalInternals.aggregateTrades(fills);
+  assert.equal(trades.length, 1);
+  // 正确：(0−1)+(100−1)=98；若退回 +fee bug 则为 102
+  assert.equal(trades[0].pnl, 98);
+  assert.equal(trades[0].fills, 2);
+});
+
+test("aggregateTrades: 未平仓周期不计入", () => {
+  const fills = [{ coin: "BTC", side: "B", sz: "1", px: "60000", startPosition: "0", closedPnl: "0", fee: "5", time: 1 }];
+  assert.equal(evalInternals.aggregateTrades(fills).length, 0); // endPos=1≠0，未结束
 });

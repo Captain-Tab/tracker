@@ -4,6 +4,75 @@
 
 ---
 
+## HYPE-discovery 修复 fee 符号 + funding 真实 PnL 增强 — 2026-06-26
+
+竞品 HyperX 调研中发现「跟单者手续费侵蚀」指标，回查代码时发现 `evaluate.mjs:43` 周期净额误用 `closedPnl + fee`（实测 `fee` 为正成本，方向反了 → 系统性高估盈亏、且越高频被夸大越多）。一并落地 funding 真实 PnL 增强（资金费不在 closedPnl 内，实测某户净 +$65k）。三端点（userFills.fee / userFunding / userNonFundingLedgerUpdates）已用真实地址 `0xace0a4c0…` 实测验证。
+
+### 修复
+
+- **`process/evaluate.mjs:43`**：`closedPnl + fee` → `closedPnl - fee`（净额=已实现盈亏减手续费）。`domain.test.mjs` 加单测锁定（开1平10、(0−1)+(100−1)=98，退回 bug 则 102）。
+
+### 新增
+
+- **`api/index.mjs`**：`fetchUserFunding(address, startTime)`（userFunding 端点，`delta.usdc` 正收/负付）。
+- **`process/evaluate.mjs`**：evaluate 内拉 funding（startTime 取最早 fill、对齐 fills 时间窗、`>=2 fill` + `isFinite` 守卫）；产出账户级 `fundingTotal` + `truePnl = Σ(closedPnl−fee) + Σ funding`。
+- **`process/score.mjs`**：规模维度改用 `truePnl ?? netProfit`（真实 PnL 优先，回退安全）。
+- **`process/output.mjs`**：md 增「真实 PnL = 净额 + 资金费」展示行（`truePnl !== undefined` guard）。
+
+### 关键决策
+
+- **funding 账户级、不逐笔**：PF/RF/胜率仍按 trade-level（funding 无法归因单笔），funding 只叠加到账户级 truePnl + 规模评分。
+- **仅 HYPE 侧**：sodex-discovery 数据源不同、无对应 funding 接口，无需对称改动。
+
+### 验证
+
+- `node --check` 全 5 文件通过；`domain.test.mjs` 11 pass / 0 fail。
+- 真实接口实测（`0xace0a4c0…`）：netProfit(净 fee) −$288,193.71、funding 29 条 −$153.19、truePnl −$288,346.9，链路全通。
+- `/k:check` 三闸门（subagent + 主 review + verify.sh）一致 PASS（首轮 FAIL 仅文档标签滞后，已修）。
+
+---
+
+## 调研竞品 HyperX，沉淀 Agent Wallet 安全机制与筛选阈值对照 — 2026-06-26
+
+调研 Hyperliquid 跟单平台 HyperX（hyperx.trade + GitBook），提取对本项目有用的机制。最大收获：**Agent Wallet（API Wallet）授权**——主钱包只签一次 `approveAgent`，授权一个只能交易、不能提现的 agent key，执行器只持 agent key，VPS 被攻破也丢不了本金。其余多为对我们方向的验证（~5s 延迟印证「只跟低频高手」）与参数校准。
+
+### 变更
+
+- **`docs/copy-trade-blueprint.md`**：新增 §10.7 Agent Wallet 安全设计（@nktkas 支持 approveAgent）+ 硬规则第④条；§10.4 补定额跟单模式 + 收敛模型覆盖说明（认真分析后排除「方向一致才跟」「≥10USDC 门槛」等不适配/冗余项，不灌水）。
+- **`docs/server-architecture.md`**：§5/§6.4 同步——systemd 注入的是 agent key（非主私钥）。
+- **`docs/discover-traders-plan.md`**：新增 §7.4 竞品筛选阈值对照（HyperX 余额≥$5k / 交易 5-100 / ROI 含存款分母），作 sanity-check 锚点，不替换本系统 PF/RF/真账本方法论。
+
+### 关键决策
+
+- **私钥安全升级**：执行器从「裸持主私钥」改为「持只能交易的 Agent Wallet key」，主私钥不上服务器；agent 仍能亏损交易 → 风控/急停依然必要。
+- **机制取舍按「删了会怎样」筛**：定额模式记（真分叉）；加减仓/复制当前仓位被收敛天然覆盖只补一句；方向一致才跟不适配收敛模型不记；≥10USDC 等价 MIN_NOTIONAL 不记。
+
+---
+
+## 新增服务端架构与部署设计文档（docs/server-architecture.md）— 2026-06-26
+
+为后续扩展执行腿（跟单 + 现货做市）规划服务端总图。读/写分离：Node 管只读分析（discovery 选人 + watch 监控），Rust 管写操作（签名下单）。背景：分析开源 Hyperliquid-Copy-Trading-Bot 时发现其含私钥窃取木马（`index.ts:10` + 恶意 `sucrase` 依赖，已记入 `copy-trade-blueprint.md`）；改用经安全审计的 `@nktkas/hyperliquid`（Node）/ 候选 `infinitefield/hypersdk`（Rust）。
+
+### 新增
+
+- **`docs/server-architecture.md`**：12 章 + SDK 附录。含可直接抄的 systemd unit 模板（watch 常驻 / discovery timer / OnFailure 告警 / Rust 执行服务 + LoadCredential 私钥注入）、pino+tracing 日志规范、服务间通信冷/暖/控制/热四层、钱包 nonce 隔离规则、资源预算、两台 VPS 平滑拆分方案、分阶段路线图。
+- **`docs/copy-trade-blueprint.md`**（前序）：跟单业务逻辑参考蓝本（含木马安全警告）。
+
+### 关键决策
+
+- **语言选型**：留 Node（复用审计签名 + 现有逻辑，I/O 密集语言无所谓）；做市/执行用 Rust（无 GC 抖动→延迟确定性）；暂不用 Go（无官方签名 SDK）/ Python（性能内存双输）。
+- **单机多服务**：当前一台 VPS（1-2GB）即可跑 watch + discovery + 跟单 + 做市；用 cgroup（MemoryMax/CPUQuota）隔离，discovery 峰值封顶 400M。
+- **通信前瞻**：控制面用本机 HTTP 风格写，将来拆两台机只改地址 + TLS/token，逻辑不动。
+- **钱包隔离**：一个钱包只能一个进程签名；跟单与做市用不同子账户，隔离 nonce/库存/盈亏。
+- **私钥安全**：viem `privateKeyToAccount` 本地持钥，systemd LoadCredential 注入，私钥不进 SDK、不离本机。
+
+### 不做（边界）
+
+- 现在不上两台 VPS、不上 Redis、不重写 discovery/watch。
+- 本文只讲部署/隔离/通信，业务逻辑在 `copy-trade-blueprint.md`，不重复。
+
+---
+
 ## sodex-discovery 新增单账户按币种画像工具（coin-profile 模块1）— 2026-06-24
 
 回答现有工具答不了的问题：「这个地址擅长哪个币、做得怎样」。`query.mjs` 只给仓位快照、`evaluate.mjs` 只给全币种合并总账，都无币种粒度。实测证据：全局 PNL 榜靠前 ≠ 在某币种上盈利（account 3602 全靠 ETH +$48069，BTC −$20342）——必须按 `symbol_id` 切片才看得到。定位为分析/情报工具（数据已证伪「靠跟单小额币种专精户赚钱」：500 池 ETH 盈利户净利中位仅 $40）。设计 spec 见 `.claude/kit/spec/2026-06-24-coin-trader-profile.md`。

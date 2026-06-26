@@ -78,6 +78,8 @@ export const fetchClearinghouseState = (address) => postInfo({ type: "clearingho
 export const fetchUserFills = (address) => postInfo({ type: "userFills", user: address });
 // 按时间翻页拿历史成交（单次仍 2000 上限，startTime 递增翻页）
 export const fetchUserFillsByTime = (address, startTime) => postInfo({ type: "userFillsByTime", user: address, startTime });
+// 资金费历史（startTime 起；逐条 delta.usdc 正=净收/负=净付），用于真实 PnL 修正（不在 closedPnl 内）
+export const fetchUserFunding = (address, startTime) => postInfo({ type: "userFunding", user: address, startTime });
 
 // 流式逐行提取器：喂入文本片段，吐出花括号配对完整的 row JSON 子串。
 // 不缓存完整 32MB 文本——只在 buf 里留"尚未配对完整的尾巴"，把内存峰值压到几十 MB。

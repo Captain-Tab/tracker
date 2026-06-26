@@ -9,12 +9,14 @@ const DEFAULT_WEIGHTS = { profitFactor: 30, recoveryFactor: 20, winRate: 20, net
 function normalize(profile) {
   const pf = profile.profitFactor;
   const rf = profile.recoveryFactor;
+  // 规模口径优先用真实 PnL（Σ(closedPnl−fee)+funding）；无 truePnl 时回退 netProfit
+  const pnlScale = profile.truePnl ?? profile.netProfit;
   return {
     profitFactor: Number.isFinite(pf) ? clamp((pf - 1) / 2, 0, 1) : 1, // PF≥3 满分；∞ 满分
     recoveryFactor: Number.isFinite(rf) ? clamp(rf / 3, 0, 1) : 1,     // RF≥3 满分；无回撤满分
     winRate: clamp(profile.winRate, 0, 1),
     // 净额规模：对数归一，$1万→0 / $100万→1。区分一堆 PF∞/满分账号（瑕疵4），让真大户排前
-    netProfit: profile.netProfit > 0 ? clamp((Math.log10(profile.netProfit) - 4) / 2, 0, 1) : 0,
+    netProfit: pnlScale > 0 ? clamp((Math.log10(pnlScale) - 4) / 2, 0, 1) : 0,
   };
 }
 

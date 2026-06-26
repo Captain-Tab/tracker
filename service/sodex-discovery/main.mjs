@@ -136,7 +136,7 @@ async function main() {
   const configPath = flags.config
     ? (isAbsolute(flags.config) ? flags.config : resolve(process.cwd(), flags.config))
     : join(__dirname, "config.json");
-  const watchConfigPath = join(__dirname, "..", "watch", "config.json");
+  const watchConfigPath = join(__dirname, "..", "sodex-watch", "config.json");
   const logDir = join(__dirname, "log");
 
   const rawConfig = loadConfig(configPath);

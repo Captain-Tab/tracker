@@ -269,6 +269,21 @@ PLTR赚       17139  126501     -8375       42%   0.87   0.45   40   ✗ 当前3
 - 低频精准：`account_id=204502`（USTECH100赚，rank3，盈亏比5.55）
 - 反例（合约亏）：`account_id=17139`（PLTR赚，30D合约 −8375）
 
+### 7.4 竞品筛选阈值对照（HyperX，外部校准参考）
+
+来源：HyperX（hyperx.trade）GitBook `wallet-discover` / `smart-money-discovery`（2026-06-26 抓取）。仅作我们门槛的 sanity-check 锚点，**不替换本系统的 PF/RF/真账本方法论**。
+
+| HyperX 门槛 | 值 | 对我们的参考 |
+|------------|----|-------------|
+| 胜率 | ≥ 60% | 偏死板，会误杀低频高 PF 高手；我们故意收 35-85%（§4.2），**不学** |
+| 账户余额 | ≥ $5,000 | 余额下限锚点，可参照设下注规模/资金量地板 |
+| 已实现盈利 | ≥ $5,000 | 与我们 `minPerpsPnl`（$200）口径不同（它高得多）；按需校准 |
+| 完成交易数 | 5–100 笔 | 上限 100 防高频机器人 ≈ 我们 `trades/day≤20`（HYPE）思路一致；下限 5 ≈ 我们低频通道 ≥8 |
+| ROI | ≥ 20%，`PnL / max(100, 起始价值 + 最大净存款)` | **分母含存款是个轻量污染防护**；我们更彻底——直接禁用 ROI、用逐笔 realized_pnl 真账本（§二），不采纳但思路印证 |
+| 时间窗 | 默认近 30 天 | 与我们多窗口并集（§3.1）一致方向 |
+
+**结论**：HyperX 的筛选比我们简单（胜率/ROI/PnL 阈值），我们的 PF/RF/真账本/集中度/双通道**更抗污染、更严谨**；这些阈值只当对照锚点，方向不动摇。
+
 ---
 
 ## 八、边界与约束
@@ -316,3 +331,15 @@ PLTR赚       17139  126501     -8375       42%   0.87   0.45   40   ✗ 当前3
 ### HYPE 对称扩展（已 spec，待实现）
 
 HYPE（Hyperliquid）的同款画像因数据模型不同而口径有别，已单独 spec：`.claude/kit/spec/2026-06-24-hype-coin-trader-profile.md`。关键差异：盈利源用 `userFills.closedPnl`（逐笔权威）按 `coin` 切片；**不展示 PF/胜率**——实测每币完整仓位周期仅 1~2 笔（大仓滚仓 + 2000 笔上限截断），trade 级 PF/胜率失真，故只用 Σ closedPnl 净利 + 笔数 + 集中度 + 名义规模。代码落 `service/HYPE-discovery/`，复用本地 `aggregateTrades`，不跨服务复用 sodex 内核。
+
+### 真实 PnL 精修 + 污染清洗 + 跟单净收益（v2 增强，已实测接口；真实 PnL ✅ 已实现，余待实现）
+
+来源：竞品 HyperX 调研 + 2026-06-26 实测三端点（见 `api-confidence/hype.md`）。这三项把"盈利判定"从 closedPnl 单口径升级为更接近真实可跟收益，**仅 HYPE 侧**（接口已确认公开无鉴权）。
+
+| 增强 | 公式 / 做法 | 数据源（已实测） | 优先级 |
+| --- | --- | --- | --- |
+| **真实已实现 PnL** ✅已实现 | `Σ closedPnl + Σ funding − Σ fee` | userFills(`closedPnl`,`fee`) + **userFunding**(`delta.usdc`) | 中——funding 量级可观（实测某户净 +$65k）；已落 evaluate(`fundingTotal`/`truePnl`) + score 规模维度，每候选多一次 `userFunding` 调用（evaluate 阶段 +30~40 请求） |
+| **污染清洗 / 干净 ROI** | 用充提流水剥离存款，避免裸 ROI 失真 | **userNonFundingLedgerUpdates**(deposit/withdraw/send…) | 低——本方案本就不用 ROI（已用 closedPnl 真账本规避污染），仅当要展示 ROI 才需要 |
+| **跟单净收益估算** | `目标利润 − 手续费 − 滑点损耗 → 跟单者预期实拿`（HyperX 同款"fee erosion"指标） | userFills(`fee`) + 跟单延迟/滑点模型 | 中——更属执行腿，见 `copy-trade-blueprint.md` |
+
+> ✅ **关联 fee 修复（2026-06-26）**：`HYPE-discovery/process/evaluate.mjs:43` 原 `closedPnl + fee`（fee 正成本，方向反了）已改为 `closedPnl - fee`，单测锁定。

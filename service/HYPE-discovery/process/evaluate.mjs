@@ -4,7 +4,7 @@
 // 10 笔交易/单笔中位$2072/0.36笔每天的低频大单账号）。故所有指标必须在「交易级」算。
 // 仓位周期：按 coin 跟踪持仓（startPosition+sz±），持仓归 0 = 一笔交易完成。
 // 局限：userFills 2000/次上限 → 活跃账号近期画像（capped 标记，见 docs/api-confidence/hype.md §六）。
-import { fetchUserFills } from "../api/index.mjs";
+import { fetchUserFills, fetchUserFunding } from "../api/index.mjs";
 
 const MS_PER_DAY = 86_400_000;
 
@@ -26,7 +26,7 @@ function pct(arr, p) {
 }
 
 // 按 coin 重建仓位周期：持仓从 startPosition 出发，逐 fill 累加方向量，归 0 即一笔交易完成。
-// 每笔交易 = { pnl: 周期净额(closedPnl+fee 累加), notional: 名义累加, fills: 拆单数, openMs/closeMs }
+// 每笔交易 = { pnl: 周期净额(Σ closedPnl − Σ fee，fee 为正成本), notional: 名义累加, fills: 拆单数, openMs/closeMs }
 export function aggregateTrades(fills) {
   const sorted = [...fills].sort((a, b) => Number(a.time) - Number(b.time));
   const open = {}; // coin -> 累计中的周期
@@ -40,7 +40,7 @@ export function aggregateTrades(fills) {
     const endPos = startPos + signed;
     if (!open[coin]) open[coin] = { pnl: 0, notional: 0, fills: 0, openMs: Number(f.time) };
     const cur = open[coin];
-    cur.pnl += Number(f.closedPnl ?? 0) + Number(f.fee ?? 0);
+    cur.pnl += Number(f.closedPnl ?? 0) - Number(f.fee ?? 0); // 净额：已实现盈亏减手续费（fee 为正成本）
     cur.notional += Math.abs(sz * px);
     cur.fills += 1;
     cur.closeMs = Number(f.time);
@@ -99,15 +99,23 @@ export async function evaluate(survivors, config) {
   const profiles = [];
   const eliminated = [];
 
-  // 只拉 userFills（去掉 clearinghouseState：marginSummary 仅展示用，请求减半提速）
+  // 拉 userFills + userFunding（funding 用于真实 PnL 修正，不在 closedPnl 内）
   const results = await Promise.all(
     survivors.map(async (s) => {
-      try { return { s, fills: await fetchUserFills(s.address), error: null }; }
-      catch (err) { return { s, fills: null, error: err }; }
+      try {
+        const fills = await fetchUserFills(s.address);
+        // funding 与 fills 对齐同一时间窗：startTime 取最早 fill 时间（活跃账号 fills 被 2000 截断时 funding 也只算近期窗口）
+        let funding = [];
+        if (Array.isArray(fills) && fills.length >= 2) {
+          const startTime = Math.min(...fills.map((f) => Number(f.time)).filter(Number.isFinite));
+          if (Number.isFinite(startTime)) funding = await fetchUserFunding(s.address, startTime);
+        }
+        return { s, fills, funding, error: null };
+      } catch (err) { return { s, fills: null, funding: null, error: err }; }
     }),
   );
 
-  for (const { s, fills, error } of results) {
+  for (const { s, fills, funding, error } of results) {
     if (error) { eliminated.push({ address: s.address, stage: "evaluate", reason: `画像拉取失败: ${error.message}` }); continue; }
     if (!Array.isArray(fills) || fills.length < 2) { eliminated.push({ address: s.address, stage: "evaluate", reason: "成交记录不足" }); continue; }
 
@@ -122,7 +130,13 @@ export async function evaluate(survivors, config) {
     if (!(pm.profitFactor >= g.minProfitFactor)) { fail(`盈亏比不足 ${pm.profitFactor === Infinity ? "∞" : pm.profitFactor.toFixed(2)} < ${g.minProfitFactor}`); continue; }
     if (!(pm.recoveryFactor >= g.minRecoveryFactor)) { fail(`回撤恢复比不足 ${Number.isFinite(pm.recoveryFactor) ? pm.recoveryFactor.toFixed(2) : "∞"} < ${g.minRecoveryFactor}`); continue; }
 
-    profiles.push({ ...s, ...pm });
+    // funding 真实 PnL 修正（账户级，非逐笔）：Σ delta.usdc（正=净收/负=净付）
+    const fundingTotal = Array.isArray(funding)
+      ? funding.reduce((sum, x) => sum + Number(x?.delta?.usdc ?? 0), 0)
+      : 0;
+    const truePnl = pm.netProfit + fundingTotal; // 真实已实现 = Σ(closedPnl−fee) + Σ funding
+
+    profiles.push({ ...s, ...pm, fundingTotal, truePnl });
   }
 
   return { profiles, eliminated };

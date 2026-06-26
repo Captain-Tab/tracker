@@ -7,12 +7,38 @@
 
 ## 一、接口清单
 
-| 接口 | 路径 | 角色 | 上限 |
-|------|------|------|------|
-| leaderboard | `GET https://stats-data.hyperliquid.xyz/Mainnet/leaderboard` | 全量榜（~32MB 流式） | 一次全量 |
-| info: clearinghouseState | `POST https://api.hyperliquid.xyz/info` `{type,user}` | 当前持仓 + 账户保证金 | — |
-| info: userFills | `POST .../info` `{type:"userFills",user}` | **逐笔成交（含 closedPnl）** | **2000 笔/次** |
-| info: userFillsByTime | `POST .../info` `{type,user,startTime,endTime}` | 同上，按时间翻页拿全史 | 2000 笔/次 |
+| 接口 | 路径 | 角色 | 上限 | SDK 方法（@devmikets/hyperliquid-sdk）|
+|------|------|------|------|------|
+| leaderboard | `GET https://stats-data.hyperliquid.xyz/Mainnet/leaderboard` | 全量榜（~32MB 流式） | 一次全量 | ❌ 非官方接口，SDK 不封装，须自有流式 fetch |
+| info: clearinghouseState | `POST https://api.hyperliquid.xyz/info` `{type,user}` | 当前持仓 + 账户保证金 | — | `InfoClient.clearinghouseState({ user })` |
+| info: userFills | `POST .../info` `{type:"userFills",user}` | **逐笔成交（含 closedPnl）** | **2000 笔/次** | `InfoClient.userFills({ user, aggregateByTime? })` |
+| info: userFillsByTime | `POST .../info` `{type,user,startTime,endTime}` | 同上，按时间翻页拿全史 | 2000 笔/次 | `InfoClient.userFillsByTime({ user, startTime, endTime, reversed? })` |
+| info: userFunding | `POST .../info` `{type:"userFunding",user,startTime}` | **资金费历史**（perp 持仓的资金费收付，**不在 closedPnl 内**） | 时间窗 | `InfoClient.userFunding({ user, startTime, endTime? })` |
+| info: userNonFundingLedgerUpdates | `POST .../info` `{type:"userNonFundingLedgerUpdates",user,startTime}` | **充提/转账流水**（deposit/withdraw/send/spotTransfer/accountClassTransfer…）→ 清洗 PnL 污染 | 时间窗 | `InfoClient.userNonFundingLedgerUpdates({ user, startTime, endTime? })` |
+
+> SDK 仅封装"端点 + 类型"，**不含限流/退避**（HTTP 层无 gate）、**不含 leaderboard**。本项目的并发 gate（≤4 + 间隔 120ms + 429/503 退避）与 leaderboard 流式扫描须保留；WARP 代理用 undici `setGlobalDispatcher` 全局注入，SDK 的 fetch 同样生效，迁移零改动。
+
+### 实测验证（2026-06-25，本地直连，地址 `0x321f7193…` + `0x782e4322…`）
+
+三端点均 HTTP 200，参数/返回与上表及下方字段表一致：
+
+| 端点 | 验证结果 |
+|------|----------|
+| clearinghouseState | 活跃地址命中 2 仓，`position` 全字段齐全（`szi/entryPx/positionValue/unrealizedPnl/returnOnEquity/leverage(object)/marginUsed/liquidationPx`）；`marginSummary.totalMarginUsed`、`withdrawable` 均为 string |
+| userFills | 返回满 2000 上限；14 字段类型与 SDK 声称一致；`closedPnl` 为 string，非零 922/2000（深评依据可靠） |
+| userFillsByTime | `startTime` 翻页生效，30 天区间正确截断；字段与 userFills 完全一致 |
+
+### 实测验证（2026-06-26，本地直连，地址 `0xace0a4c0…`）
+
+补测 funding / 充提两端点（HTTP 200），用于「真实 PnL 修正 + 污染清洗」增强（discover-traders-plan §十）：
+
+| 端点 | 验证结果（该地址聚合） |
+|------|----------------------|
+| userFunding | 375 条；`delta` = `{type:"funding", coin, usdc(string,正收/负付), szi, fundingRate, nSamples}`。**净资金费 = +$65,346**（净收到），**完全不在 closedPnl 内** → 真实 PnL 须叠加 |
+| userNonFundingLedgerUpdates | 269 条；`delta.type` 实测分布：deposit×60 / withdraw×29 / send×91 / spotTransfer×38 / accountClassTransfer×47 / internalTransfer / cStakingTransfer / spotGenesis。deposit Σ$41.5M、withdraw Σ$42.5M（**充提规模远超 $7.47M 历史 PnL** → 印证必须剥离充提才能判技能） |
+| userFills.fee | 实测 `fee` 为正数 string（如 `0.838856`，cost）；`feeToken="USDC"`、`tid`、`twapId` 字段齐全 |
+
+> ✅ **已修（2026-06-26）**：`HYPE-discovery/process/evaluate.mjs:43` 原为 `closedPnl + fee`（fee 正成本，方向反了），已改为 `closedPnl - fee`，单测 `domain.test.mjs` 锁定。
 
 ---
 

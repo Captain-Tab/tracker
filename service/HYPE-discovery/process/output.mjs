@@ -114,6 +114,7 @@ function buildMarkdown(ranked, summary, generatedAt, window, gate) {
       lines.push(`### #${i + 1} · 评分 ${c.score} · \`${c.address}\`${c.displayName ? ` · ${c.displayName}` : ""}`);
       lines.push(`- 深评（交易级，已聚合 fill）：盈亏比 ${fmtRatio(c.profitFactor)} · 胜率 ${fmtPct(c.winRate)} · 恢复比 ${fmtRatio(c.recoveryFactor)} · ${c.tradesPerDay.toFixed(1)} 笔交易/天`);
       lines.push(`- 已实现：净额 ${fmtUsd(c.netProfit)} · ${c.nTrades} 笔交易（${c.nFills} 个 fill）· 中位单笔 ${fmtUsd(c.medTradePnl)} · 活跃 ${c.activeDays} 天${c.capped ? "（近期 2000 fill，全史未覆盖）" : ""}`);
+      if (c.truePnl !== undefined) lines.push(`- 真实 PnL：${fmtUsd(c.truePnl, true)}（净额 ${fmtUsd(c.netProfit, true)} + 资金费 ${fmtUsd(c.fundingTotal, true)}）`);
       lines.push(`- 下注规模（名义）：中位 ${fmtUsd(c.medNotional)} · 最大 ${fmtUsd(c.maxNotional)}`);
       lines.push(`- ${window} 榜：盈亏 ${fmtUsd(m.pnl)} · 量 ${fmtUsd(m.vlm)} · ROI ${fmtPct(m.roi)}（充提污染，仅参考）`);
       lines.push(`- 账户净值：${fmtUsd(c.accountValue)}`);
