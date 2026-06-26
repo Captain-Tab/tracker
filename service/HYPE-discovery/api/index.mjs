@@ -76,8 +76,13 @@ async function postInfo(body) {
 export const fetchClearinghouseState = (address) => postInfo({ type: "clearinghouseState", user: address });
 // 逐笔成交（含 closedPnl / fee / dir / time），单次上限 2000 笔
 export const fetchUserFills = (address) => postInfo({ type: "userFills", user: address });
-// 按时间翻页拿历史成交（单次仍 2000 上限，startTime 递增翻页）
-export const fetchUserFillsByTime = (address, startTime) => postInfo({ type: "userFillsByTime", user: address, startTime });
+// 按时间翻页拿历史成交（单次仍 2000 上限，startTime 递增翻页）。
+// startTime 为 0/null/undefined 时回退到 fetchUserFills——HYPE API 的 userFillsByTime 在 startTime=0
+// 时可能返回截断数据（实测某帐号漏了近 7 天 200 条 fill），无时间过滤的 userFills 更可靠。
+export const fetchUserFillsByTime = (address, startTime) =>
+  startTime
+    ? postInfo({ type: "userFillsByTime", user: address, startTime })
+    : fetchUserFills(address);
 // 资金费历史（startTime 起；逐条 delta.usdc 正=净收/负=净付），用于真实 PnL 修正（不在 closedPnl 内）
 export const fetchUserFunding = (address, startTime) => postInfo({ type: "userFunding", user: address, startTime });
 

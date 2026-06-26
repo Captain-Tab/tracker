@@ -24,6 +24,21 @@
 
 ---
 
+## fetchUserFillsByTime 修复 + HYPE-watch 候选刷新 — 2026-06-26
+
+`fetchUserFillsByTime(startTime=0)` 在 HYPE API 返回截断数据（实测某帐号漏近 7 天 200 条 fill），修复为 falsy startTime 时回退到 `fetchUserFills`。同时深评刷新 HYPE-watch 监听池——保留 ①/② 基准，新增 ③ 多币种活跃（#7）、④ 5仓大户（#6）、⑤ 净额 69 万（#5）。
+
+### 修复
+
+- **`api/index.mjs`**：`fetchUserFillsByTime` 加 startTime guard——0/null/undefined 回退 `fetchUserFills`。
+
+### 变更
+
+- **`HYPE-watch/config.json`**：替换 ② 全胜截断户、⑤ 最弱户 → 新增 ③/④/⑤ 三人。
+- **`HYPE-watch/watch-candidates.json`**：追加 4 个淘汰地址 + 原因。
+
+---
+
 ## HYPE-discovery 修复 fee 符号 + funding 真实 PnL 增强 — 2026-06-26
 
 竞品 HyperX 调研中发现「跟单者手续费侵蚀」指标，回查代码时发现 `evaluate.mjs:43` 周期净额误用 `closedPnl + fee`（实测 `fee` 为正成本，方向反了 → 系统性高估盈亏、且越高频被夸大越多）。一并落地 funding 真实 PnL 增强（资金费不在 closedPnl 内，实测某户净 +$65k）。三端点（userFills.fee / userFunding / userNonFundingLedgerUpdates）已用真实地址 `0xace0a4c0…` 实测验证。
