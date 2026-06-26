@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, isAbsolute, resolve } from "node:path";
 
+import { loadCandidates, candidateAddresses } from "../tool/watchCandidates.mjs";
 import { collect } from "./process/collect.mjs";
 import { filter } from "./process/filter.mjs";
 import { evaluate } from "./process/evaluate.mjs";
@@ -141,13 +142,17 @@ async function main() {
 
   const rawConfig = loadConfig(configPath);
   const { excludeAddresses, tgToken: watchTgToken } = loadWatchConfig(watchConfigPath);
+  // 合并历史候选记录（曾加入 watch 后移除的地址，不再推荐）
+  const candidatesPath = join(__dirname, "..", "sodex-watch", "watch-candidates.json");
+  const historyCandidates = candidateAddresses(loadCandidates(candidatesPath));
+  const excludeSet = new Set([...excludeAddresses, ...historyCandidates]);
   const config = buildEffectiveConfig(rawConfig, flags, watchTgToken);
 
   log(`🔭 跟单候选发现启动｜preset=${config.riskPreset} windows=${config.sampling.windows.join(",")} pages=${config.sampling.pages} topK=${config.topK}${dryRun ? " [dry-run]" : ""}`);
-  log(`   已监听排除集：${excludeAddresses.size} 个地址`);
+  log(`   排除集：${excludeSet.size} 个地址（当前监听 ${excludeAddresses.size} + 历史候选 ${historyCandidates.size}）`);
 
   // ① 采集
-  const { candidates, excluded } = await collect(config, excludeAddresses);
+  const { candidates, excluded } = await collect(config, excludeSet);
   log(`① 采集：候选 ${candidates.length} 个（排除已监听 ${excluded.length} 个）`);
 
   // ② 筛选

@@ -179,7 +179,8 @@
       "Bash(make pull-logs *)",
       "Bash(rm /Users/tabcaptain/Documents/code/tracker/service/HYPE-discovery/log/discovery-2026-06-23-0838.*)",
       "Bash(rm /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/discovery-2026-06-20-1300.*)",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Bash(bash *)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",

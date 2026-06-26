@@ -4,6 +4,26 @@
 
 ---
 
+## discovery 候选地址历史记录（watch-candidates）— 2026-06-26
+
+新增 `watch-candidates.json` 持久化存储所有曾加入 watch 的地址（追加不删），discovery 排除"当前监听 + 历史候选"并集，防止已移除的地址在下一轮重新出现。
+
+### 新增
+
+- **`service/tool/watchCandidates.mjs`**：`loadCandidates` / `saveCandidates` / `mergeCandidates` / `candidateAddresses` + 10 项单测。格式 `{"0x...": {"date":"...", "reason":"..."}}`，兼容旧纯日期字符串。
+- **`service/sodex-watch/watch-candidates.json`** + `service/HYPE-watch/watch-candidates.json`：初始空文件，手动维护（本地编辑 + scp 推送）。
+
+### 变更
+
+- **`sodex-discovery/main.mjs`** + **`HYPE-discovery/main.mjs`**：排除集从"仅 watch config"扩展为"watch config ∪ watch-candidates"，日志展示分项计数。
+- **`.gitignore`**：排除 `watch-candidates.json`。
+
+### 验证
+
+- `node --test` 82/82 全绿（tool 10 + watch 18 + discovery 54）。
+
+---
+
 ## HYPE-discovery 修复 fee 符号 + funding 真实 PnL 增强 — 2026-06-26
 
 竞品 HyperX 调研中发现「跟单者手续费侵蚀」指标，回查代码时发现 `evaluate.mjs:43` 周期净额误用 `closedPnl + fee`（实测 `fee` 为正成本，方向反了 → 系统性高估盈亏、且越高频被夸大越多）。一并落地 funding 真实 PnL 增强（资金费不在 closedPnl 内，实测某户净 +$65k）。三端点（userFills.fee / userFunding / userNonFundingLedgerUpdates）已用真实地址 `0xace0a4c0…` 实测验证。

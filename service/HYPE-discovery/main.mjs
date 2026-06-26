@@ -8,6 +8,7 @@
 //   node service/HYPE-discovery/main.mjs --config=...
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { loadCandidates, candidateAddresses } from "../tool/watchCandidates.mjs";
 import { dirname, join, isAbsolute, resolve } from "node:path";
 
 import { ENVS, log } from "./api/index.mjs";
@@ -69,9 +70,13 @@ async function main() {
     poolMax: flags.poolMax !== undefined ? Number(flags.poolMax) : (raw.poolMax ?? 300), // 候选池硬上限，对标 sodex poolMax
   };
   const excludeAddresses = (raw.excludeWatched !== false) ? loadWatchConfig(watchConfigPath) : new Set();
+  // 合并历史候选记录（曾加入 watch 后移除的地址，不再推荐）
+  const candidatesPath = join(__dirname, "..", "HYPE-watch", "watch-candidates.json");
+  const historyCandidates = candidateAddresses(loadCandidates(candidatesPath));
+  const excludeSet = new Set([...excludeAddresses, ...historyCandidates]);
 
   log(`🔭 HYPE 跟单候选发现启动｜窗口=${window} topK=${config.topK}${dryRun ? " [dry-run]" : ""}`);
-  log(`   已监听排除集：${excludeAddresses.size} 个地址`);
+  log(`   排除集：${excludeSet.size} 个地址（当前监听 ${excludeAddresses.size} + 历史候选 ${historyCandidates.size}）`);
 
   const gate = gateOf(config);
   const limit = flags.limit !== undefined ? Number(flags.limit) : 0; // --limit：扫够 N 行即停（测试）
@@ -79,7 +84,7 @@ async function main() {
   // ① 采集（流式 + 内联门槛；leaderboard 拉取失败 → 跳过本轮，不崩）
   let survivors, scanned, excludedCount, eliminatedCount;
   try {
-    ({ survivors, scanned, excludedCount, eliminatedCount } = await collect(env, excludeAddresses, config, limit));
+    ({ survivors, scanned, excludedCount, eliminatedCount } = await collect(env, excludeSet, config, limit));
   } catch (e) {
     console.error(`leaderboard 采集失败，跳过本轮：${e.message}`);
     process.exit(0);
