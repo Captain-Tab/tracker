@@ -343,6 +343,8 @@ journalctl -u 'sodex-*' -o cat | jq 'select(.event=="order_failed")'  # 按事�
 
 急停优先级最高：**`/flatten`（一键平仓）先做**，做市出事能立刻人工止损。
 
+> **跟单风控放在目标级 / 账户级，不放单笔级**（不止盈/不止损/不移动止损——理由见 [`principles/copy-trade-strategy.md`](./principles/copy-trade-strategy.md) §6）。控制面除 `/flatten` 全局急停外，跟单执行器再暴露 `/untrack?target=<addr>`（停跟单个目标并平掉跟他的仓 = 目标熔断的手动入口）。目标熔断可自动触发（目标累计回撤超阈值），也可经此 HTTP 手动触发；二者都只是把该目标的收敛目标归 0，与净仓位收敛兼容（见 copy-trade-blueprint §10.4.2）。
+
 ---
 
 ## 9. 钱包与 nonce 隔离规则

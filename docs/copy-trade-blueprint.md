@@ -146,6 +146,8 @@ fill.dir == 'Close Long'| 'Close Short'  → |startPosition| <= fill.sz ? 'close
 - 从 `targetPosition.leverage.value` 读，`capLeverage = min(leverage, MAX_LEVERAGE)`，默认 1
 - 下单前 `updateLeverage({ isCross:false })`（逐仓）；**失败仅告警不阻断下单**（潜在风险，见 §9）
 
+> **加固（爆仓点对齐）**：等比缩放的是 **size**，不是**保证金率**——直接复制目标杠杆数字，在双方 equity 结构/其他持仓/维持保证金不同时会让**爆仓价不一致**，叠加单仓占比封顶后你可能**先于目标爆仓**。落地时改用**保证金率约束**：保证本地「维持保证金距离 ≥ 目标的距离」，并对单目标敞口用**子账户隔离**。详见 [`principles/copy-trade-strategy.md`](./principles/copy-trade-strategy.md) §7.2。
+
 ---
 
 ## 4. 核心工作流（流程图）
@@ -473,7 +475,7 @@ SDK 自带 `SubscriptionClient.userFills(params, listener)`，**内置 30s 心�
 - **目标来源**：discovery 产出的低频高手（已天然规避「高频目标跟不动」的最大短板）。
 - **监听复用**：`HYPE-watch` 的多地址 WS + 共享限流可直接承载跟单监听。
 - **完整链路**：`discovery 选人 → watch 监听 → 跟单执行`，本蓝本补的是最后一环。
-- **当前形态**：**单账户 ↔ 单目标地址（1:1）**。nonce 串行无冲突、资源极小、最易测对，作为执行腿第一步。下面两节是把它「跟得稳」的核心设计。
+- **当前形态**：**单账户 ↔ 单目标地址（1:1）**。nonce 串行无冲突、资源极小、最易测对，作为执行腿第一步。下面两节是把它「跟得稳」的核心设计。分散到多目标是后续阶段，执行前置（N:1 净额收敛）见 §10.4.1。
 
 ### 10.4 对账设计（净仓位镜像收敛）
 
@@ -513,6 +515,34 @@ delta[coin]    = desired[coin] - myActual[coin]                     // 有符号
 
 **收敛模型已天然覆盖的场景**（无需额外开关）：「复制当前仓位」= 首轮对账（向目标当前净仓位收敛）；「跟随加仓/减仓」= 后续对账收敛 delta；「方向翻转」= 收敛到带符号净仓位自动处理。HyperX 的「方向一致才跟」是其逐 fill 镜像模式的产物，**不适配本收敛模型**，不引入。
 
+> **离场一律纯跟随，不在执行腿做任何单笔自主择时**（不止盈/不止损/不移动止损）。理由与推导见 [`principles/copy-trade-strategy.md`](./principles/copy-trade-strategy.md) §4、§6：移动止损的 peak 是链上查不到的本地状态，重启即丢，**破坏本节「重启全量重算即安全」的幂等性**；且它会与收敛对冲（止损平掉的仓，下一轮 `delta=desired−0` 又被买回）。风控改放目标级（见 §10.4.2）。
+
+### 10.4.1 N:1 净额收敛（多目标分散的执行前置）
+
+§10.4 的 `desired[coin] = ratio × targetNet[coin]` 是**单目标（1:1）**公式。strategy §7 主张「分散到多个低频目标」，落地前**必须**先把收敛升级为 N:1 净额：
+
+```
+desired[coin] = cap( Σ_t  ratio_t × targetNet_t[coin] × SIZE_MULTIPLIER )
+ratio_t       = (myEquity × weight_t) / targetEquity_t      // weight_t 为该目标的资金分配权重，Σ weight_t ≤ 1
+```
+
+- 多目标对**同一币种**的多空仓位**自动净额**（A 做多 BTC、B 做空 BTC → desired 取代数和）。
+- 每个目标分一份子预算 `weight_t`；`Σ weight_t ≤ 1` 防超配。
+- 收敛/容差/滑点逻辑不变，只是 `desired` 的来源从单目标变为多目标加权求和。
+- **没有这一步不准上多目标**——否则 strategy 的「分散」在执行层是空中楼阁。
+
+### 10.4.2 目标级风控（替代单笔止损，与收敛兼容）
+
+风控粒度放在**目标级 / 账户级**，不放单笔级。三者都只是「合法变更收敛目标」，不绕过、不对冲收敛：
+
+| 层 | 机制 | 实现要点 |
+|----|------|----------|
+| 仓位封顶 | 单目标 `desired` 占净值上限 | 复用 §7 `MAX_POSITION_SIZE_PERCENT` |
+| **目标熔断** | 目标整体回撤/破位超阈值 → 该目标 `weight_t`/`desired` 整体归 0、平掉跟他的仓、停跟 | 判定用**目标累计表现**（watch 已在算），可从链上+目标数据重建，**不引入不可重建本地状态**；`desired→0` 是合法收敛目标变更，幂等安全 |
+| 全局急停 | `/flatten` 一键平所有仓 | 见 server-architecture §8，**先于自动下单实现** |
+
+> 与「移动止损」的本质区别：移动止损是「我自己仓位的 peak 触发平仓」（链下状态、与收敛对冲）；目标熔断是「这个人整体不行了，不跟他了」（目标数据驱动、收敛目标合法归零）。前者撕裂系统，后者完全自洽。
+
 ### 10.5 滑点保护设计
 
 **用带保护价的 IOC 限价单代替裸市价单**（Bot 的裸市价无保护，是 §9 的 alpha 侵蚀源）。
@@ -542,6 +572,8 @@ limitPx/sz 用 formatPrice/formatSize（Decimal.js ROUND_DOWN）按 §8.3 舍入
 | `MAX_SLIPPAGE_BPS` | 10–50（主流币小、冷门币大，可按币覆盖） | IOC 保护价偏离 |
 | `MAX_CHASE_BPS` | 30–100 | 参考价偏离 fill.px 超此值放弃跟（防追高） |
 | `CORRECTION_RETRY_MAX` | 1–2 | 单轮内剩余量重试上限（在滑点预算内） |
+| `TARGET_WEIGHT` | 按目标，Σ≤1 | 多目标分散时每个目标的资金分配权重（N:1 收敛，§10.4.1） |
+| `TARGET_CB_DRAWDOWN_PCT` | 按风险偏好 | 目标熔断阈值：目标累计回撤超此值则停跟并平仓（§10.4.2） |
 
 > 这些参数与 §7 的风控参数合并进执行腿配置；做市引擎另有自己的一套，互不混用（见 server-architecture §9 钱包隔离）。
 
