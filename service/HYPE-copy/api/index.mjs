@@ -1,0 +1,233 @@
+// IO 横切层（Phase0 底座）：sodex 目标态读取 + hype 价格/meta 读取 + dry-run would-place 构造。
+// 纯 REST，无 WS（一期对账走轮询）。范式照搬 sodex-watch/api + HYPE-watch/api（共享限流退避）。
+// dry-run 非完全离线：仍连 sodex 读真实仓 + 连 hype 读真实价；只省略「签名 + 提交订单」。
+// 纯逻辑（mapping/sizing/reconcile/risk/recommend）只消费本层返回的纯数据，不直接碰网络。
+import { installFetchProxy } from "../../lib/WARP/index.mjs";
+import { formatPrice, formatSize, applySlippage, mul, div, absStr } from "../process/precision.mjs";
+
+// fetch 走代理（WARP；仅 HTTP_PROXY 存在时生效，无 proxy 时 no-op，import 不发网络）
+await installFetchProxy();
+
+// ---------- 环境配置（sodex gateway + hype info/allMids 双端点）----------
+export const ENVS = {
+  production: {
+    sodexGateway: "https://mainnet-gw.sodex.dev", // sodex perps state
+    hypeInfo: "https://api.hyperliquid.xyz/info", // hype 只读 info（allMids/meta/clearinghouseState）
+  },
+};
+
+const SODEX_PERPS_PREFIX = "/api/v1/perps";
+const REQUEST_TIMEOUT_MS = 10_000;
+export const META_REFRESH_MS = 6 * 60 * 60 * 1_000; // 与 HYPE-watch 一致
+const MIN_ORDER_NOTIONAL_USD = 10; // 交易所最小名义（占位，校验门在 03 复用 02 常量）
+
+const ts = () => new Date().toISOString().slice(11, 19);
+export const log = (...a) => console.log(ts(), ...a);
+
+export function parseJsonSafe(text) {
+  // sodex 大整数防溢出：16+ 位裸数字包成字符串（照搬 sodex-watch/api parseJsonSafe）
+  const guarded = text.replace(/([:[,]\s*)(-?\d{16,})(?=\s*[,}\]])/g, '$1"$2"');
+  return JSON.parse(guarded);
+}
+
+function parseRetryAfter(headerVal) {
+  if (!headerVal) return null;
+  const secs = Number(headerVal);
+  if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
+  const dateMs = Date.parse(headerVal);
+  if (Number.isFinite(dateMs)) return Math.max(0, dateMs - Date.now());
+  return null;
+}
+
+// ---------- sodex 读：GET（照搬 sodex-watch httpGetJson 范式）----------
+export async function httpGetJson(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { headers: { Accept: "application/json" }, signal: controller.signal });
+    const text = await res.text();
+    let json = null;
+    try { json = text ? parseJsonSafe(text) : null; } catch { json = { __nonJson: text }; }
+    if (!res.ok) {
+      const err = new Error(`HTTP ${res.status} ${url}`);
+      err.status = res.status; err.body = json; err.retryAfterMs = parseRetryAfter(res.headers.get("retry-after"));
+      throw err;
+    }
+    return json;
+  } finally { clearTimeout(timer); }
+}
+
+// ---------- hype 读：POST {type,...}（照搬 HYPE-watch infoPost 范式）----------
+export async function infoPost(env, body) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(env.hypeInfo, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    let json = null;
+    try { json = text ? parseJsonSafe(text) : null; } catch { json = { __nonJson: text }; }
+    if (!res.ok) {
+      const err = new Error(`HTTP ${res.status} info ${body.type}`);
+      err.status = res.status; err.body = json; err.retryAfterMs = parseRetryAfter(res.headers.get("retry-after"));
+      throw err;
+    }
+    return json;
+  } finally { clearTimeout(timer); }
+}
+
+// ---------- 两端共享限流退避（照搬 watch/api：秒级翻倍封顶 60s + ±20% jitter）----------
+// sodex 端：429/409（sodex-watch 实测 409 亦为限流码）；hype 端：429（按 IP weight）。
+export const SODEX_THROTTLE_STATUSES = new Set([429, 409]);
+export const HYPE_THROTTLE_STATUSES = new Set([429]);
+
+function makeRateLimiter() {
+  let rateLimitUntil = 0;
+  let backoff = 0;
+  return {
+    get until() { return rateLimitUntil; },
+    nextBackoffMs() {
+      backoff = Math.min((backoff || 1) * 2, 60);
+      const base = backoff * 1000;
+      return Math.round(base + base * 0.2 * (Math.random() * 2 - 1));
+    },
+    reset() { backoff = 0; },
+    enter(waitMs) { rateLimitUntil = Math.max(rateLimitUntil, Date.now() + waitMs); },
+  };
+}
+
+export const sodexLimiter = makeRateLimiter();
+export const hypeLimiter = makeRateLimiter();
+
+// 命中限流统一处理：优先 Retry-After，无则指数退避；推进对应端 limiter。
+function handleThrottle(err, limiter, throttleStatuses) {
+  if (!throttleStatuses.has(err?.status)) return false;
+  const waitMs = err.retryAfterMs ?? limiter.nextBackoffMs();
+  limiter.enter(waitMs);
+  return true;
+}
+
+// ---------- fetchTargetState：读 sodex perps state，归一化（只归一，不映射/不算可映射性）----------
+// 字段口径：authoritative api-confidence/sodex.md L89 已证实 P[] 缩写——
+//   sz=当前size(带符号张数) / ep=均价 / ms=max_size / cr=已实现 / ur=未实现。
+// ⚠️ TO-VERIFY（api spec 明确「字段名以实际 wire 为准，落地前 --raw 核对，不臆造」）：
+//   symbol / leverage / marginUsed 的 REST state 缩写键未在权威文档列出，下方用候选键回退 +
+//   派生 marginUsed=|sz|×ep/leverage（sodex 口径 docs/watch/sodex.md L119）。首次实跑务必 --raw 核对修正。
+function pickField(obj, keys) {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (v !== undefined && v !== null && v !== "") return v;
+  }
+  return undefined;
+}
+
+export function normalizeTargetPositions(rawPositions) {
+  if (!Array.isArray(rawPositions)) return [];
+  return rawPositions.map((p) => {
+    const symbol = String(pickField(p, ["s", "symbol", "sym"]) ?? "?");
+    const szi = String(pickField(p, ["sz", "szi", "size"]) ?? "0");
+    const entryPx = pickField(p, ["ep", "entryPx", "avgEntryPrice"]);
+    const leverage = Number(pickField(p, ["l", "leverage", "lev"]) ?? 0);
+    // marginUsed 优先显式字段；缺失则按 sodex 口径派生 |sz|×ep/leverage（leverage>0 时）。
+    let marginUsed = pickField(p, ["mu", "marginUsed", "im", "initialMargin"]);
+    if ((marginUsed === undefined || marginUsed === null) && entryPx && leverage > 0) {
+      // 派生口径 |sz|×ep/leverage（docs/watch/sodex.md L119）；走 precision 避免裸浮点（§3.3）
+      marginUsed = div(mul(absStr(szi), String(entryPx)), String(leverage));
+    }
+    return {
+      symbol,
+      szi,
+      marginUsed: marginUsed !== undefined && marginUsed !== null ? String(marginUsed) : "0",
+      leverage,
+      ...(entryPx !== undefined ? { entryPx: String(entryPx) } : {}),
+    };
+  });
+}
+
+export async function fetchTargetState(env, sodexAddr) {
+  const url = `${env.sodexGateway}${SODEX_PERPS_PREFIX}/accounts/${sodexAddr}/state`;
+  try {
+    const json = await httpGetJson(url);
+    sodexLimiter.reset();
+    const data = json?.data ?? json ?? {};
+    const rawPositions = data.P ?? data.positions ?? [];
+    return normalizeTargetPositions(rawPositions);
+  } catch (err) {
+    handleThrottle(err, sodexLimiter, SODEX_THROTTLE_STATUSES);
+    throw err;
+  }
+}
+
+// ---------- fetchHypePrices：allMids 原样 coin→midPx 字符串（不换算/不舍入）----------
+export async function fetchHypePrices(env) {
+  try {
+    const mids = await infoPost(env, { type: "allMids" });
+    hypeLimiter.reset();
+    const out = {};
+    for (const [coin, px] of Object.entries(mids ?? {})) out[coin] = String(px);
+    return out;
+  } catch (err) {
+    handleThrottle(err, hypeLimiter, HYPE_THROTTLE_STATUSES);
+    throw err;
+  }
+}
+
+// ---------- buildHypeAssetIndex：meta.universe 下标 → coin→{index, szDecimals}（下单参数必需）----------
+let assetIndexCache = new Map();
+let assetIndexCachedAt = 0;
+
+export function parseHypeMeta(metaJson) {
+  const universe = Array.isArray(metaJson?.universe) ? metaJson.universe : [];
+  const map = new Map();
+  universe.forEach((u, index) => {
+    map.set(String(u.name), { index, szDecimals: Number(u.szDecimals) });
+  });
+  return map;
+}
+
+export async function buildHypeAssetIndex(env, { force = false } = {}) {
+  const fresh = assetIndexCache.size > 0 && Date.now() - assetIndexCachedAt < META_REFRESH_MS;
+  if (fresh && !force) return assetIndexCache;
+  try {
+    const metaJson = await infoPost(env, { type: "meta" });
+    hypeLimiter.reset();
+    const map = parseHypeMeta(metaJson);
+    if (map.size) { assetIndexCache = map; assetIndexCachedAt = Date.now(); log(`asset index 缓存已更新：${map.size} 个 perps`); }
+    else log("meta universe 为空，沿用旧缓存");
+    return assetIndexCache;
+  } catch (err) {
+    handleThrottle(err, hypeLimiter, HYPE_THROTTLE_STATUSES);
+    throw err;
+  }
+}
+
+// ---------- placeDryRun：构造 would-place 订单参数（不签名不提交；真实提交占位 throw）----------
+// 对齐 blueprint §8.3 order action 形状；p/s 走 precision.mjs ROUND_DOWN（禁裸 parseFloat / tool/format）。
+export function placeDryRun(leg, { assetIndex, szDecimals, slippageBps, dryRun }) {
+  if (dryRun !== true) {
+    // 真实下单口子集中占位：后续阶段在此接 EIP-712 phantom agent 签名 + ExchangeClient.order。
+    throw new Error("real submit 留待后续阶段（一期仅 dry-run，不签名不提交）");
+  }
+  const limitPx = applySlippage(leg.refPx, slippageBps, leg.isBuy, szDecimals);
+  const size = formatSize(leg.size, szDecimals);
+  return {
+    ts: Date.now(),
+    action: "would-place",
+    coin: leg.coin,
+    order: {
+      a: assetIndex,
+      b: leg.isBuy,
+      p: limitPx,
+      s: size,
+      r: leg.reduceOnly === true,
+      t: { limit: { tif: "Ioc" } },
+    },
+    dryRun: true,
+  };
+}
+
+export { MIN_ORDER_NOTIONAL_USD, formatPrice };
