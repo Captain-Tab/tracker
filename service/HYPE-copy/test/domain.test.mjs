@@ -13,6 +13,8 @@ import { computeRatio, computeDesired } from "../process/sizing.mjs";
 import { recommendMinCapital } from "../process/recommend.mjs";
 import { decideLeg } from "../process/risk.mjs";
 import { diffDelta, planReconcile } from "../process/reconcile.mjs";
+import { buildActionText, toLogLine } from "../notify/index.mjs";
+import { aggregateStats } from "../process/stats.mjs";
 
 const ADDR = "0x321f7193eadbacb67eff00f76b975a487e5b1c84";
 
@@ -367,4 +369,62 @@ test("planReconcile: skip 类不进 would-place（顺序铁律）", () => {
   assert.equal(dust.decision, "skip-mindust");
   assert.equal(eth.decision, "place");
   assert.equal(actions.filter((a) => a.decision === "place").length, 1);
+});
+
+// ---------- 04 notify 文案 + 日志映射 ----------
+test("notify: buildActionText place 含 [DRY-RUN]/币·方向·量·价·ratio；noop → null（去重）", () => {
+  const place = buildActionText({ targetId: "whale1", coin: "ETH", side: "buy", size: "0.625", refPx: "3000", ratio: 0.0625, result: "place" });
+  assert.match(place, /\[DRY-RUN\]/);
+  assert.match(place, /ETH/);
+  assert.match(place, /多/);
+  assert.match(place, /0\.625/);
+  assert.match(place, /3000/);
+  assert.match(place, /0\.0625/);
+  assert.equal(buildActionText({ result: "noop", coin: "ETH" }), null); // 去重不推
+});
+
+test("notify: buildActionText 各告警分支", () => {
+  assert.match(buildActionText({ result: "skip-unmappable", coin: "PLTR", targetId: "x" }), /无 hype 映射/);
+  assert.match(buildActionText({ result: "skip-capped", coin: "ETH", targetId: "x" }), /资金上限/);
+  assert.match(buildActionText({ result: "min-capital", minCapital: 1680, canFollowCoins: "ETH", targetId: "x" }), /推荐最低本金=1680/);
+});
+
+test("notify: toLogLine action/side 映射 + 缺省落值", () => {
+  const place = toLogLine({ targetId: "x", coin: "ETH", side: "buy", size: "0.625", refPx: "3000", result: "place", dryRun: true });
+  assert.equal(place.action, "place");
+  assert.equal(place.side, "long"); // buy → long
+  assert.equal(place.fillPx, "3000"); // dry-run would-fill = refPx
+  assert.equal(place.fee, "0"); // 缺省落 "0"
+  assert.equal(place.slippageBps, 0);
+  assert.equal(toLogLine({ result: "skip-capped", coin: "ETH" }).action, "cap-warn");
+  assert.equal(toLogLine({ result: "noop", coin: "ETH" }).action, "skip");
+  assert.equal(toLogLine({ result: "error", coin: "ETH", side: "sell" }).action, "error");
+  assert.equal(toLogLine({ result: "place", side: "sell", coin: "ETH" }).side, "short"); // sell → short
+});
+
+// ---------- 04 stats 聚合 ----------
+test("stats: 聚合笔数/Σfee/滑点分布/净收益（04 场景4）", () => {
+  const lines = [
+    { result: "place", fee: "1.2", slippageBps: 12, dryRun: true },
+    { result: "place", fee: "0.8", slippageBps: 8, dryRun: true },
+    { result: "place", fee: "1.0", slippageBps: 20, dryRun: true },
+    { result: "noop", fee: "0", slippageBps: 0, dryRun: true },
+    { result: "noop", fee: "0", slippageBps: 0, dryRun: true },
+    { result: "skip-capped", fee: "0", slippageBps: 0, dryRun: true },
+  ];
+  const s = aggregateStats(lines);
+  assert.equal(s.trades, 3); // 只计 place/ok
+  assert.equal(s.totalFee, "3"); // 1.2+0.8+1.0 精度累加
+  assert.equal(s.slippage.min, 8);
+  assert.equal(s.slippage.median, 12);
+  assert.equal(s.slippage.max, 20);
+  assert.equal(s.netProfit, -3); // dry-run fee erosion 估算 = -Σfee
+  assert.equal(s.dryRun, true);
+});
+
+test("stats: 空输入安全零值", () => {
+  const s = aggregateStats([]);
+  assert.equal(s.trades, 0);
+  assert.equal(s.totalFee, "0");
+  assert.deepEqual(s.slippage, { min: 0, median: 0, max: 0, count: 0 });
 });

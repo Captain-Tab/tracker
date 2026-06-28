@@ -8,6 +8,7 @@ import { recommendMinCapital } from "./process/recommend.mjs";
 import { planReconcile } from "./process/reconcile.mjs";
 import { add } from "./process/precision.mjs";
 import { ENVS, fetchTargetState, fetchHypePrices, buildHypeAssetIndex, placeDryRun, log } from "./api/index.mjs";
+import { notifyAction } from "./notify/index.mjs";
 
 // 执行腿参数（blueprint §10.6 建议默认）
 const RECONCILE_INTERVAL_SEC = 15; // 周期对账兜底间隔
@@ -29,8 +30,9 @@ function parseArgs(argv) {
 const state = { phase: "idle", anchoredRatio: null };
 
 // 单轮对账（事件触发 + 周期触发共用，幂等）。顺序铁律见总纲 §2.2。
-async function reconcileOnce(env, target, avail) {
+async function reconcileOnce(env, target, avail, push) {
   const platform = target.source.platform;
+  const emit = (a) => notifyAction({ targetId: target.id, dryRun: target.dryRun, ...a }, push);
   const [rawPositions, prices, assetIndex] = await Promise.all([
     fetchTargetState(env, target.source.address),
     fetchHypePrices(env),
@@ -39,10 +41,9 @@ async function reconcileOnce(env, target, avail) {
 
   // 标的映射：sodex 走映射表（不可映射 → skip-unmappable 告警，不计 ratio 分母）；hype 同所直通。
   const mappable = [];
-  const unmappable = [];
   for (const p of rawPositions) {
     const coin = mapSymbol(p.symbol, platform);
-    if (coin === null) unmappable.push(p.symbol);
+    if (coin === null) await emit({ coin: p.symbol, side: "", result: "skip-unmappable", reason: "无 hype 映射" });
     else if (Number(p.szi) !== 0) mappable.push({ coin, szi: p.szi, marginUsed: p.marginUsed, leverage: p.leverage });
   }
 
@@ -53,7 +54,7 @@ async function reconcileOnce(env, target, avail) {
   if (mappable.length === 0 || !(Number(targetMappableMargin) > 0)) {
     state.phase = state.anchoredRatio == null ? "idle" : "flat";
     state.anchoredRatio = null; // flat → 下轮重锚
-    log(`[${target.id}] 目标无可映射净仓（phase=${state.phase}），不部署${unmappable.length ? `；跳过不可映射：${unmappable.join(",")}` : ""}`);
+    log(`[${target.id}] 目标无可映射净仓（phase=${state.phase}），不部署`);
     return;
   }
 
@@ -68,12 +69,13 @@ async function reconcileOnce(env, target, avail) {
 
   // 最低本金建议（开跟轮，供 04 推送）
   const rec = recommendMinCapital(mappable, prices, target.initialDeployPct, ratio);
-  log(`[${target.id}] 推荐最低本金=${rec.minCapital}，ratioMin=${rec.ratioMin}；可跟 ${rec.perLeg.filter((l) => l.canFollow).map((l) => l.coin).join(",") || "-"}`);
+  const canFollowCoins = rec.perLeg.filter((l) => l.canFollow).map((l) => l.coin).join(",") || "-";
+  await emit({ coin: "", side: "", result: "min-capital", minCapital: rec.minCapital, canFollowCoins, ratio });
 
   // 算 desired（缺价仓标记跳过 → 告警）
   const desiredRaw = computeDesired(mappable, ratio, prices);
   const desired = desiredRaw.filter((d) => !d.skipped);
-  for (const d of desiredRaw) if (d.skipped) log(`[${target.id}] skip-${d.reason}：${d.coin}（缺价，跳过本轮）`);
+  for (const d of desiredRaw) if (d.skipped) await emit({ coin: d.coin, side: "", result: "skip-no-price", reason: d.reason });
 
   // 校验门 + would-place（dry-run current 恒空 → 每轮 desired 即全量；总纲 §03）
   const caps = {
@@ -88,29 +90,33 @@ async function reconcileOnce(env, target, avail) {
   const { actions } = planReconcile(desired, [], caps, prices);
 
   for (const a of actions) {
+    const side = a.isBuy ? "buy" : "sell";
     if (a.decision !== "place") {
-      log(`[${target.id}] ${a.decision}：${a.coin} delta=${a.deltaSize}`);
+      await emit({ coin: a.coin, side, result: a.decision, size: a.size, refPx: a.refPx, reason: a.decision });
       continue;
     }
     const meta = assetIndex.get(a.coin);
-    if (!meta) { log(`[${target.id}] skip-unmappable：${a.coin}（hype universe 无此 coin）`); continue; }
+    if (!meta) { await emit({ coin: a.coin, side, result: "skip-unmappable", reason: "hype universe 无此 coin" }); continue; }
     const wp = placeDryRun(
       { coin: a.coin, isBuy: a.isBuy, size: a.size, refPx: a.refPx, reduceOnly: a.reduceOnly },
       { assetIndex: meta.index, szDecimals: meta.szDecimals, slippageBps: MAX_SLIPPAGE_BPS, dryRun: target.dryRun },
     );
-    log(`[${target.id}] [DRY-RUN] would-place ${a.coin} ${a.isBuy ? "buy" : "sell"} ${wp.order.s} @ ${wp.order.p}（IOC，ratio=${ratio}）`);
+    // dry-run fillPx 假定=refPx（总纲 §3.2 ActionResult）→ slippageBps 0、fee 估算 "0"
+    await emit({ coin: a.coin, side, result: "place", size: wp.order.s, refPx: a.refPx, fillPx: a.refPx, slippageBps: 0, fee: "0", ratio });
   }
 }
 
 async function main() {
   const flags = parseArgs(process.argv.slice(2));
   const configPath = flags.config ?? "service/HYPE-copy/targets.json";
-  const { target } = loadTargets(configPath);
+  const { tgToken, target } = loadTargets(configPath);
   if (flags.target && flags.target !== target.id) {
     throw new Error(`--target=${flags.target} 与 targets.json 实例 id=${target.id} 不符`);
   }
 
   const env = ENVS.production;
+  // 跟单推送独立配置：token 走文件根 tgToken，chat 走每目标 tgChat（与 watch 物理分离）
+  const push = { token: tgToken, chat: target.tgChat };
   // dry-run 我方可用余额：一期为模拟输入（availBalanceSim）。
   // 真实余额（hype clearinghouseState.withdrawable）拉取留待真实下单阶段接入。
   const avail = String(target.availBalanceSim ?? flags.avail ?? "");
@@ -121,7 +127,7 @@ async function main() {
   log(`HYPE-copy 启动：target=${target.id} dryRun=${target.dryRun} avail(sim)=${avail} 间隔=${RECONCILE_INTERVAL_SEC}s`);
 
   const tick = async () => {
-    try { await reconcileOnce(env, target, avail); }
+    try { await reconcileOnce(env, target, avail, push); }
     catch (e) { log(`[${target.id}] 对账失败：${e.message}`); }
   };
   await tick();
