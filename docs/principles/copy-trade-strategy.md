@@ -2,8 +2,8 @@
 
 > 本文是跟单的**思维与策略层**：跟单该用什么心智模型、遵守什么原则、离场与风控怎么定、分散怎么做。
 > 与另两份文档分工：
-> - 执行**怎么实现**（收敛/滑点/Agent Wallet）→ [`../copy-trade-blueprint.md`](../copy-trade-blueprint.md)
-> - **选谁**跟（发现可跟单目标）→ [`../discover-traders-plan.md`](../discover-traders-plan.md)
+> - 执行**怎么实现**（收敛/滑点/Agent Wallet）→ [`../hype/copy-trade-blueprint.md`](../hype/copy-trade-blueprint.md)
+> - **选谁**跟（发现可跟单目标）→ [`../discovery/sodex.md`](../discovery/sodex.md)
 > - 本文只讲**为什么这么跟、怎么决策**，不重复实现细节。
 >
 > **本版核心决断（2026-06-27 修订）**：跟单 = **完全跟随，不做任何单笔自主择时**（不止盈、不止损、不移动止损）。风控粒度从「单笔」上移到「目标」与「账户」。理由与推导见 §5、§6。

@@ -146,7 +146,7 @@ fill.dir == 'Close Long'| 'Close Short'  → |startPosition| <= fill.sz ? 'close
 - 从 `targetPosition.leverage.value` 读，`capLeverage = min(leverage, MAX_LEVERAGE)`，默认 1
 - 下单前 `updateLeverage({ isCross:false })`（逐仓）；**失败仅告警不阻断下单**（潜在风险，见 §9）
 
-> **加固（爆仓点对齐）**：等比缩放的是 **size**，不是**保证金率**——直接复制目标杠杆数字，在双方 equity 结构/其他持仓/维持保证金不同时会让**爆仓价不一致**，叠加单仓占比封顶后你可能**先于目标爆仓**。落地时改用**保证金率约束**：保证本地「维持保证金距离 ≥ 目标的距离」，并对单目标敞口用**子账户隔离**。详见 [`principles/copy-trade-strategy.md`](./principles/copy-trade-strategy.md) §7.2。
+> **加固（爆仓点对齐）**：等比缩放的是 **size**，不是**保证金率**——直接复制目标杠杆数字，在双方 equity 结构/其他持仓/维持保证金不同时会让**爆仓价不一致**，叠加单仓占比封顶后你可能**先于目标爆仓**。落地时改用**保证金率约束**：保证本地「维持保证金距离 ≥ 目标的距离」，并对单目标敞口用**子账户隔离**。详见 [`principles/copy-trade-strategy.md`](../principles/copy-trade-strategy.md) §7.2。
 
 ---
 
@@ -515,7 +515,7 @@ delta[coin]    = desired[coin] - myActual[coin]                     // 有符号
 
 **收敛模型已天然覆盖的场景**（无需额外开关）：「复制当前仓位」= 首轮对账（向目标当前净仓位收敛）；「跟随加仓/减仓」= 后续对账收敛 delta；「方向翻转」= 收敛到带符号净仓位自动处理。HyperX 的「方向一致才跟」是其逐 fill 镜像模式的产物，**不适配本收敛模型**，不引入。
 
-> **离场一律纯跟随，不在执行腿做任何单笔自主择时**（不止盈/不止损/不移动止损）。理由与推导见 [`principles/copy-trade-strategy.md`](./principles/copy-trade-strategy.md) §4、§6：移动止损的 peak 是链上查不到的本地状态，重启即丢，**破坏本节「重启全量重算即安全」的幂等性**；且它会与收敛对冲（止损平掉的仓，下一轮 `delta=desired−0` 又被买回）。风控改放目标级（见 §10.4.2）。
+> **离场一律纯跟随，不在执行腿做任何单笔自主择时**（不止盈/不止损/不移动止损）。理由与推导见 [`principles/copy-trade-strategy.md`](../principles/copy-trade-strategy.md) §4、§6：移动止损的 peak 是链上查不到的本地状态，重启即丢，**破坏本节「重启全量重算即安全」的幂等性**；且它会与收敛对冲（止损平掉的仓，下一轮 `delta=desired−0` 又被买回）。风控改放目标级（见 §10.4.2）。
 
 ### 10.4.1 N:1 净额收敛（多目标分散的执行前置）
 

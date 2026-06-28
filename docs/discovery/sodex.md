@@ -219,7 +219,7 @@ service/sodex-discovery/
 | 理由 | 说明 |
 | --- | --- |
 | 跟单精力 | 一个人能有效盯的标的有限，10 个够分散又不分心 |
-| VPS 容量 | 每地址一条 WS 长连，1G/1核 VPS 实测跑 5–10 地址最舒适（见 `watch-account-plan.md §十一`） |
+| VPS 容量 | 每地址一条 WS 长连，1G/1核 VPS 实测跑 5–10 地址最舒适（见 `../watch/sodex.md §十一`） |
 | 门槛后稀缺 | 前 100 名经严格门槛后金字塔尖也就十几个，取 top 10 即精华 |
 | 可调 | `topK` 可配置，想激进跟更多调高 |
 
@@ -300,7 +300,7 @@ PLTR赚       17139  126501     -8375       42%   0.87   0.45   40   ✗ 当前3
 - 幸存者偏差：榜单只看赢家，靠跨窗持续性 + `--dry-run` 分布缓解。
 - 标的过气：每周刷新 + 时效检查兜。
 
-**隐私**：同 `watch-account-plan.md §八` —— 读公开数据不通知对方，唯一可见方是网关运营方服务端日志（源 IP）；监听与本人账户隔离。
+**隐私**：同 `../watch/sodex.md §八` —— 读公开数据不通知对方，唯一可见方是网关运营方服务端日志（源 IP）；监听与本人账户隔离。
 
 ---
 
@@ -326,22 +326,8 @@ PLTR赚       17139  126501     -8375       42%   0.87   0.45   40   ✗ 当前3
 | 模块2 币种专精发现 | 对候选池逐个跑模块1 + 按某币种质量排名 | 暂不做——实测数据量稀薄（某币种盈利专精户个位数、净利中位 $40），参考价值低 |
 | 模块3 watcher 币种过滤 | watch 条目加 `coins` 字段，只跟目标指定币种的单 | 暂不做——与模块2 价值绑定（无它则"只跟某币种单"在执行端不成立，watcher 现状按地址全盘镜像） |
 
-> **目标风格标签的执行端用途**：discovery 由 `avgHoldMin`/PF/胜率推断的「趋势型 / 均值回归型」标签，在跟单执行端**只用于「跟不跟他、给他分配多少资金（`TARGET_WEIGHT`）」，不用于决定离场**——离场一律**纯跟随**（完整复制目标进出场，不做止盈/止损/移动止损）。依据见 [`principles/copy-trade-strategy.md`](./principles/copy-trade-strategy.md) §4、§6。
+> **目标风格标签的执行端用途**：discovery 由 `avgHoldMin`/PF/胜率推断的「趋势型 / 均值回归型」标签，在跟单执行端**只用于「跟不跟他、给他分配多少资金（`TARGET_WEIGHT`）」，不用于决定离场**——离场一律**纯跟随**（完整复制目标进出场，不做止盈/止损/移动止损）。依据见 [`../principles/copy-trade-strategy.md`](../principles/copy-trade-strategy.md) §4、§6。
 
 专精口径：该币 `|已实现盈亏|` 占账户全币种 `Σ|盈亏|` 的比例（非笔数占比）。盈利口径同本方案——`positions.realized_pnl` 逐笔真账本历史回看。
 
-### HYPE 对称扩展（已 spec，待实现）
-
-HYPE（Hyperliquid）的同款画像因数据模型不同而口径有别，已单独 spec：`.claude/kit/spec/2026-06-24-hype-coin-trader-profile.md`。关键差异：盈利源用 `userFills.closedPnl`（逐笔权威）按 `coin` 切片；**不展示 PF/胜率**——实测每币完整仓位周期仅 1~2 笔（大仓滚仓 + 2000 笔上限截断），trade 级 PF/胜率失真，故只用 Σ closedPnl 净利 + 笔数 + 集中度 + 名义规模。代码落 `service/HYPE-discovery/`，复用本地 `aggregateTrades`，不跨服务复用 sodex 内核。
-
-### 真实 PnL 精修 + 污染清洗 + 跟单净收益（v2 增强，已实测接口；真实 PnL ✅ 已实现，余待实现）
-
-来源：竞品 HyperX 调研 + 2026-06-26 实测三端点（见 `api-confidence/hype.md`）。这三项把"盈利判定"从 closedPnl 单口径升级为更接近真实可跟收益，**仅 HYPE 侧**（接口已确认公开无鉴权）。
-
-| 增强 | 公式 / 做法 | 数据源（已实测） | 优先级 |
-| --- | --- | --- | --- |
-| **真实已实现 PnL** ✅已实现 | `Σ closedPnl + Σ funding − Σ fee` | userFills(`closedPnl`,`fee`) + **userFunding**(`delta.usdc`) | 中——funding 量级可观（实测某户净 +$65k）；已落 evaluate(`fundingTotal`/`truePnl`) + score 规模维度，每候选多一次 `userFunding` 调用（evaluate 阶段 +30~40 请求） |
-| **污染清洗 / 干净 ROI** | 用充提流水剥离存款，避免裸 ROI 失真 | **userNonFundingLedgerUpdates**(deposit/withdraw/send…) | 低——本方案本就不用 ROI（已用 closedPnl 真账本规避污染），仅当要展示 ROI 才需要 |
-| **跟单净收益估算** | `目标利润 − 手续费 − 滑点损耗 → 跟单者预期实拿`（HyperX 同款"fee erosion"指标） | userFills(`fee`) + 跟单延迟/滑点模型 | 中——更属执行腿，见 `copy-trade-blueprint.md` |
-
-> ✅ **关联 fee 修复（2026-06-26）**：`HYPE-discovery/process/evaluate.mjs:43` 原 `closedPnl + fee`（fee 正成本，方向反了）已改为 `closedPnl - fee`，单测锁定。
+> HYPE（Hyperliquid）侧的发现系统与按币种画像（口径有别：closedPnl 逐笔 + funding 校正、不展示 PF/胜率）见 [hype.md](./hype.md) 与 [../coin-profile/hype.md](../coin-profile/hype.md)。

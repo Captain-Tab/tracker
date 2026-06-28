@@ -35,7 +35,7 @@ node service/sodex-discovery/profile.mjs --account=3602 --save
 
 `GET /api/v1/perps/positions?account_id=&limit=1000` —— 逐笔平仓真账本，每条带 `symbol_id` + 权威 `realized_pnl`。币种切片、集中度、各币种指标**全部从这一份数据派生，零额外请求**。币名映射走 `biz/futures/symbols`（symbol_id→baseCoin，失败回退 `#<id>`）。
 
-> 为什么只用 positions：`realized_pnl` 是唯一权威盈利源，overview 聚合字段受充提污染（详见 `api-confidence/sodex.md`）。
+> 为什么只用 positions：`realized_pnl` 是唯一权威盈利源，overview 聚合字段受充提污染（详见 `../api-confidence/sodex.md`）。
 
 ## 四、输出字段
 
@@ -61,15 +61,14 @@ node service/sodex-discovery/profile.mjs --account=3602 --save
 
 ## 五、已知限制
 
-- **活跃仓位 `cr` 缺口**：positions 只统计已平仓位（size=0），漏掉持仓中已实现的 `cr`（详见 `api-confidence/sodex.md §六`）。滚仓型/长期持仓型账户单币种统计会偏低估。
+- **活跃仓位 `cr` 缺口**：positions 只统计已平仓位（size=0），漏掉持仓中已实现的 `cr`（详见 `../api-confidence/sodex.md §六`）。滚仓型/长期持仓型账户单币种统计会偏低估。
 - **小样本噪声**：单币 < 8 笔的胜率/盈亏比是噪声，标 `样本不足`，不隐藏。
 - **截断**：positions 命中 limit 上限（≥1000 条）时整体标 `⚠截断`。
 - **币名映射依赖** `biz/futures/symbols` 可用性，缺失以 `#<id>` 显示，不阻断。
 
-## 六、HYPE 对称扩展（待实现）
+## 六、HYPE 版
 
-Hyperliquid 的同款画像因数据模型不同而口径有别，已单独 spec：`.claude/kit/spec/2026-06-24-hype-coin-trader-profile.md`。
-关键差异：盈利源用 `userFills.closedPnl`（逐笔权威）按 `coin` 切片；**不展示 PF/胜率**——实测每币完整仓位周期仅 1~2 笔（大仓滚仓 + 2000 笔上限截断），trade 级 PF/胜率失真，故只用 Σ closedPnl 净利 + 笔数 + 集中度 + 名义规模。代码落 `service/HYPE-discovery/profile.mjs`。
+Hyperliquid 同款画像（口径有别：`userFills.closedPnl` 逐笔切片、不展示 PF/胜率）见 [hype.md](./hype.md)。
 
 ## 七、与其它脚本的关系
 

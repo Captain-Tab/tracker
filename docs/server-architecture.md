@@ -2,7 +2,7 @@
 
 > tracker 服务端总图：多服务如何在服务器上摆放、隔离、通信、稳定运行、记录数据。
 > 涵盖现有 Node 服务（discovery / watch）与未来 Rust 执行服务（跟单 / 做市），作为后续扩展的施工依据。
-> 配套文档：跟单业务逻辑见 [`copy-trade-blueprint.md`](./copy-trade-blueprint.md)；本文只讲**部署/隔离/通信**，不重复业务逻辑。
+> 配套文档：跟单业务逻辑见 [`hype/copy-trade-blueprint.md`](./hype/copy-trade-blueprint.md)；本文只讲**部署/隔离/通信**，不重复业务逻辑。
 
 ---
 
