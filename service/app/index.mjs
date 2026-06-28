@@ -33,6 +33,9 @@ const DEFAULT_CONFIG = {
   discovery: { enabled: true, schedule: { freq: "weekly", day: 1, hour: 9 } },
   hypeWatch: { enabled: true },
   hypeDiscovery: { enabled: true, schedule: { freq: "weekly", day: 1, hour: 10 } },
+  // 跟单执行器（写侧，trader-exec 隔离）：默认关，避免误开未就绪执行器；
+  // targets = 要 enable 的实例 id 数组，留空则只装模板不 enable 实例（一期单目标）。
+  hypeCopy: { enabled: false, targets: [] },
   deploy: { proxyUrl: "http://127.0.0.1:40000", requiresWarp: true },
 };
 
@@ -59,6 +62,11 @@ function loadConfig() {
       discovery: { enabled: raw.discovery?.enabled !== false, schedule: normalizeSchedule(raw.discovery?.schedule) },
       hypeWatch: { enabled: raw.hypeWatch?.enabled !== false },
       hypeDiscovery: { enabled: raw.hypeDiscovery?.enabled !== false, schedule: normalizeSchedule(raw.hypeDiscovery?.schedule ?? DEFAULT_CONFIG.hypeDiscovery.schedule) },
+      // 跟单：enabled 默认 false（!==true）；targets 取字符串数组否则空
+      hypeCopy: {
+        enabled: raw.hypeCopy?.enabled === true,
+        targets: Array.isArray(raw.hypeCopy?.targets) ? raw.hypeCopy.targets.filter((t) => typeof t === "string" && t) : [],
+      },
       deploy: {
         proxyUrl: raw.deploy?.proxyUrl ?? DEFAULT_CONFIG.deploy.proxyUrl,
         requiresWarp: raw.deploy?.requiresWarp !== false,
@@ -142,16 +150,46 @@ function hypeDiscoveryTimerUnit(cfg) {
   ].join("\n");
 }
 
-// 单元清单。controlUnit = 实际 enable/start 的单元（discovery 控 timer，service 由 timer 触发不直接 enable）。
-function buildUnits(cfg) {
+// HYPE-copy 模板单元（trader-exec 用户/进程隔离 + 资源上限 + 加固，套 server-architecture §6.4 范式 Node 化）。
+// %i = target.id（systemd 实例化）；dry-run 不注入 LoadCredential（无主私钥/agent key），仅注释占位。
+function hypeCopyTemplateUnit(cfg) {
   return [
+    "[Unit]", "Description=HYPE Copy-Trade Executor (%i)", "After=network-online.target",
+    "Wants=network-online.target",
+    ...warpDeps(cfg),
+    "OnFailure=tracker-alert@%n.service", "", // 复用既有失败告警（server-architecture §6.3）
+    "[Service]", "Type=simple",
+    "User=trader-exec", "Group=trader-exec", // 写侧独立用户，与读侧 tracker 分离
+    `WorkingDirectory=${ROOT_DIR}/HYPE-copy`,
+    `ExecStart=${NODE_BIN} ${ROOT_DIR}/HYPE-copy/main.mjs --target=%i --config=${ROOT_DIR}/HYPE-copy/targets.json`,
+    ...envLines(cfg), "Restart=always", "RestartSec=10",
+    "MemoryMax=128M", "CPUQuota=80%", "TasksMax=32", // §6.4 资源上限
+    "NoNewPrivileges=true", "ProtectSystem=strict", "ProtectHome=true", "PrivateTmp=true", // §6.4 加固
+    "# 真实下单阶段启用（dry-run 不注入，无主私钥/agent key）：",
+    "# LoadCredential=agent-key:/etc/tracker/HYPE-copy-%i-agent.key",
+    "StandardOutput=journal", "StandardError=journal", "SyslogIdentifier=HYPE-copy-%i", "",
+    "[Install]", "WantedBy=multi-user.target", "",
+  ].join("\n");
+}
+
+// 单元清单。controlUnit = 实际 enable/start 的单元（discovery 控 timer，service 由 timer 触发不直接 enable）。
+// instance:true = systemd 模板实例（HYPE-copy@<id>.service），无独立文件，仅按名 enable/start。
+function buildUnits(cfg) {
+  const units = [
     { name: "sodex-watch.service", content: watchUnit(cfg), enabled: cfg.watch.enabled, control: true },
     { name: "sodex-discovery.service", content: discoveryServiceUnit(cfg), enabled: cfg.discovery.enabled, control: false },
     { name: "sodex-discovery.timer", content: discoveryTimerUnit(cfg), enabled: cfg.discovery.enabled, control: true },
     { name: "HYPE-watch.service", content: hypeWatchUnit(cfg), enabled: cfg.hypeWatch.enabled, control: true },
     { name: "HYPE-discovery.service", content: hypeDiscoveryServiceUnit(cfg), enabled: cfg.hypeDiscovery.enabled, control: false },
     { name: "HYPE-discovery.timer", content: hypeDiscoveryTimerUnit(cfg), enabled: cfg.hypeDiscovery.enabled, control: true },
+    // 模板本身只装文件、不 enable（control:false）
+    { name: "HYPE-copy@.service", content: hypeCopyTemplateUnit(cfg), enabled: false, control: false },
   ];
+  // 每个配置的 target id 装一份实例（无文件，按名 enable）；一期单目标
+  for (const id of cfg.hypeCopy.targets) {
+    units.push({ name: `HYPE-copy@${id}.service`, content: null, enabled: cfg.hypeCopy.enabled, control: true, instance: true });
+  }
+  return units;
 }
 
 // 错峰检查（NFR 硬约束）：两 discovery 都 enabled 且 OnCalendar 相同 → 返回告警串，否则 null。
@@ -182,12 +220,18 @@ function render(cfg) {
   console.log("# app 编排 render（干跑，不写不改）\n");
   console.log(`# config: sodex watch=${cfg.watch.enabled} discovery=${cfg.discovery.enabled}@${cfg.discovery.schedule.hour}时 → ${scheduleToOnCalendar(cfg.discovery.schedule)}`);
   console.log(`#         HYPE  watch=${cfg.hypeWatch.enabled} discovery=${cfg.hypeDiscovery.enabled}@${cfg.hypeDiscovery.schedule.hour}时 → ${scheduleToOnCalendar(cfg.hypeDiscovery.schedule)}`);
+  console.log(`#         copy  enabled=${cfg.hypeCopy.enabled} targets=[${cfg.hypeCopy.targets.join(",")}]（dry-run，trader-exec 隔离，无 LoadCredential）`);
   console.log(`#         deploy.proxyUrl=${cfg.deploy.proxyUrl} requiresWarp=${cfg.deploy.requiresWarp}`);
   const warn = staggerWarning(cfg);
   if (warn) console.log(`# ${warn}`);
   console.log("");
   for (const u of buildUnits(cfg)) {
-    console.log(`===== ${SYSTEMD_DIR}/${u.name} (${u.enabled ? "enable" : "disable"})${u.control ? "" : " [由 timer 触发，不直接 enable]"} =====`);
+    if (u.instance) {
+      console.log(`===== ${u.name} (${u.enabled ? "enable" : "disable"}) [HYPE-copy@.service 模板实例，无独立文件] =====`);
+      continue;
+    }
+    const note = u.name === "HYPE-copy@.service" ? " [模板，不直接 enable]" : u.control ? "" : " [由 timer 触发，不直接 enable]";
+    console.log(`===== ${SYSTEMD_DIR}/${u.name} (${u.enabled ? "enable" : "disable"})${note} =====`);
     console.log(u.content);
   }
   console.log("# 计划动作（apply 时执行）：");
@@ -214,6 +258,7 @@ function apply(cfg) {
   let anyChanged = false;
   const changedSet = new Set();
   for (const u of units) {
+    if (u.instance || u.content == null) continue; // 模板实例无独立文件，跳过写盘
     const installed = readInstalled(u.name);
     if (installed !== u.content) {
       writeFileSync(join(SYSTEMD_DIR, u.name), u.content, "utf8");
@@ -224,12 +269,15 @@ function apply(cfg) {
   }
   if (anyChanged) sh("systemctl daemon-reload");
 
+  const templateChanged = changedSet.has("HYPE-copy@.service");
   for (const u of units) {
-    if (!u.control) continue; // sodex-discovery.service 由 timer 触发，不直接 enable
+    if (!u.control) continue; // sodex-discovery.service / 裸模板由触发或不直接 enable
     if (u.enabled) {
       sh(`systemctl enable ${u.name}`);
+      // 实例内容随模板，模板变即重启；普通单元按自身内容变重启。均不误伤未变的在跑单元。
+      const changed = u.instance ? templateChanged : changedSet.has(u.name);
       if (!isActive(u.name)) sh(`systemctl start ${u.name}`);
-      else if (changedSet.has(u.name)) sh(`systemctl restart ${u.name}`); // 仅内容变才重启，不误伤在跑的 watch
+      else if (changed) sh(`systemctl restart ${u.name}`);
     } else {
       sh(`systemctl disable --now ${u.name}`);
     }
@@ -243,7 +291,8 @@ function status(cfg) {
   console.log(`        HYPE  watch=${cfg.hypeWatch.enabled} discovery=${cfg.hypeDiscovery.enabled}@${scheduleToOnCalendar(cfg.hypeDiscovery.schedule)}`);
   const warn = staggerWarning(cfg);
   if (warn) console.log(warn);
-  for (const u of ["sodex-watch.service", "sodex-discovery.timer", "HYPE-watch.service", "HYPE-discovery.timer"]) {
+  const copyInstances = cfg.hypeCopy.targets.map((id) => `HYPE-copy@${id}.service`);
+  for (const u of ["sodex-watch.service", "sodex-discovery.timer", "HYPE-watch.service", "HYPE-discovery.timer", ...copyInstances]) {
     const en = (() => { try { return execSync(`systemctl is-enabled ${u}`).toString().trim(); } catch { return "disabled/absent"; } })();
     const ac = isActive(u) ? "active" : "inactive";
     console.log(`  ${u}: enabled=${en} active=${ac}`);
