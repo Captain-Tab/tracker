@@ -24,5 +24,9 @@ service/HYPE-discovery/log/
 # app 编排开关：服务器本地各自维护（默认值在 app/index.mjs，缺文件即默认 both on）
 service/app/config.json
 
+# 跟单执行器：targets.json 含 tgToken / 目标地址 / agentKeyRef，仅 VPS 本地；log/ 为运行期 JSONL
+service/HYPE-copy/targets.json
+service/HYPE-copy/log/
+
 # 系统
 .DS_Store

@@ -35,6 +35,11 @@
     "schedule": { "freq": "weekly", "day": 1, "hour": 10 }
   },
 
+  // 跟单执行器（写侧，trader-exec 隔离，dry-run）：
+  //   enabled — 默认 false，避免误开未就绪执行器；true 才 enable 实例
+  //   targets — 要 enable 的实例 id 数组（= targets.json 的 target.id）；留空只装模板不 enable
+  "hypeCopy": { "enabled": false, "targets": [] },
+
   // 部署：WARP 代理地址 + 是否依赖 warp-svc.service
   "deploy": { "proxyUrl": "http://127.0.0.1:40000", "requiresWarp": true }
 }

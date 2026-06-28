@@ -1,0 +1,39 @@
+// service/HYPE-copy/targets.json 填写参考（实际 targets.json 是纯 JSON 不能带注释，已 gitignore，服务器本地维护）。
+// 一期硬限制：targets 数组只能有 1 个元素（targets.length>1 → loadTargets 拒绝启动）。
+// 执行端恒 hype；source.platform 决定信号源（sodex 跨所映射 / hype 同所直通），sodex 仅监听不下单。
+{
+  // 跟单推送独立 Bot token（与 watch 物理分离；dry-run 可留空 ""，留空则不推送只落 JSONL）
+  "tgToken": "",
+
+  "targets": [
+    {
+      // 实例 id：systemd 实例名 HYPE-copy@<id>.service、JSONL 文件名、日志前缀都用它
+      "id": "demo-1",
+
+      // 信号源：platform = "sodex"（跨所，走映射表）| "hype"（同所直通）；address = 被监听的目标地址
+      "source": { "platform": "sodex", "address": "0x321f7193eadbacb67eff00f76b975a487e5b1c84" },
+
+      // 执行所恒 "hype"（sodex 仅监听不下单，无 sodex 执行腿）
+      "exchange": "hype",
+
+      // agent key 凭据名（systemd LoadCredential 名）；dry-run 阶段可空占位，真实下单阶段才需
+      "agentKeyRef": "agent-key",
+      "subAccount": "",
+
+      "initialDeployPct": 0.5,   // 锚定首仓部署比例（默认 0.5）
+      "maxDeployPct": 0.9,       // 部署上限（默认 0.9，触顶 → capped）
+      "sizeMultiplier": 1,       // 整体放大系数（默认 1）
+      "capitalWeight": 1,        // 多目标资金分配权重（一期单目标=1，增量阶段用）
+      "maxPositionPct": 0.5,     // 单仓名义占余额上限（防目标高杠杆单仓打爆）
+      "minDeltaPct": 0.003,      // 最小变动阈值（< 此比例不修正，防碎步追单）
+
+      "dryRun": true,            // 一期恒 true（false 会被 placeDryRun 拒绝，真实下单未实现）
+
+      // 一期 dry-run 模拟可用余额（真实余额拉取 hype clearinghouseState 留后续阶段，见 go-live 文档）
+      "availBalanceSim": "500",
+
+      // 跟单推送独立 chat id（dry-run 可空）
+      "tgChat": ""
+    }
+  ]
+}
