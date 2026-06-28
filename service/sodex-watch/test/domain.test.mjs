@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { derivePositionView, exitOrderLines } from "../process/render.mjs";
 import {
   canonicalReduceOnlyOrders, toPositionHistoryRecords, positionSideCN, marginModeNumLabel, diffReduceOnly,
+  positionKeysFp,
 } from "../process/parse.mjs";
 
 const approx = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
@@ -61,6 +62,51 @@ test("canonicalReduceOnlyOrders: 空 / 非数组 → 空串", () => {
   assert.equal(canonicalReduceOnlyOrders([]), "");
   assert.equal(canonicalReduceOnlyOrders(null), "");
   assert.equal(canonicalReduceOnlyOrders([{ i: 1, p: "1", q: "1", R: false }]), "");
+});
+
+// ---------- 持仓键集合指纹（分档 debounce：结构变化 vs 滚仓）----------
+test("positionKeysFp: 仅 symbol:dir，不含 size（滚仓不改指纹）", () => {
+  // 同币同向，size 不同 → 键集合指纹相同（判为滚仓，走长档合并）
+  const a = positionKeysFp([{ symbol: "ETH-USD", posSide: "LONG", size: "100" }]);
+  const b = positionKeysFp([{ symbol: "ETH-USD", posSide: "LONG", size: "150" }]);
+  assert.equal(a, b);
+  assert.equal(a, "ETH-USD:LONG");
+});
+
+test("positionKeysFp: 开仓（新增键）→ 指纹变（结构变化，走短档）", () => {
+  const before = positionKeysFp([{ symbol: "ETH-USD", posSide: "LONG", size: "100" }]);
+  const after = positionKeysFp([
+    { symbol: "ETH-USD", posSide: "LONG", size: "100" },
+    { symbol: "BTC-USD", posSide: "SHORT", size: "1" },
+  ]);
+  assert.notEqual(before, after);
+});
+
+test("positionKeysFp: 平仓（键消失 / size=0 过滤）→ 指纹变", () => {
+  const before = positionKeysFp([{ symbol: "ETH-USD", posSide: "LONG", size: "100" }]);
+  const afterClose = positionKeysFp([{ symbol: "ETH-USD", posSide: "LONG", size: "0" }]);
+  assert.equal(afterClose, ""); // 全平后键集合为空
+  assert.notEqual(before, afterClose);
+});
+
+test("positionKeysFp: 反手（方向翻转，BOTH 按 size 符号）→ 指纹变", () => {
+  const long = positionKeysFp([{ symbol: "ETH-USD", posSide: "BOTH", size: "10" }]);
+  const short = positionKeysFp([{ symbol: "ETH-USD", posSide: "BOTH", size: "-10" }]);
+  assert.equal(long, "ETH-USD:LONG");
+  assert.equal(short, "ETH-USD:SHORT");
+  assert.notEqual(long, short);
+});
+
+test("positionKeysFp: 排序稳定（数组顺序漂移不改指纹）", () => {
+  const x = positionKeysFp([
+    { symbol: "BTC-USD", posSide: "SHORT", size: "1" },
+    { symbol: "ETH-USD", posSide: "LONG", size: "100" },
+  ]);
+  const y = positionKeysFp([
+    { symbol: "ETH-USD", posSide: "LONG", size: "100" },
+    { symbol: "BTC-USD", posSide: "SHORT", size: "1" },
+  ]);
+  assert.equal(x, y);
 });
 
 // ---------- 平仓历史归一化（G3 排序 + size=0 过滤）----------

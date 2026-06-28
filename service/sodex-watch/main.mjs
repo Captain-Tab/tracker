@@ -84,7 +84,10 @@ async function main() {
       "  --at=HH:MM  每日快照时间（上海，默认 20:00）\n" +
       "  Telegram：--tg-token=BOT_TOKEN --tg-chat=CHAT_ID\n" +
       "  通用：--history-limit=N（平仓历史条数，默认 2）/ --account-id=N / --raw\n" +
-      "  实时模式额外：--debounce-ms=N（默认 3000）/ --max-wait-ms=N（默认 5000，防抖封顶）");
+      "  实时模式额外：--debounce-ms=N（短档防抖，默认 3000）/ --max-wait-ms=N（短档封顶，默认 5000）\n" +
+      "    分档：开/平/反手/离场单走短档即时；同仓滚仓加减仓走长档合并\n" +
+      "    --tier-debounce-ms=N（长档防抖，默认 20000）/ --tier-max-wait-ms=N（长档封顶，默认 90000）\n" +
+      "    两个 tier 值设为与短档相同即回退旧的统一防抖行为");
     process.exit(1);
   }
 

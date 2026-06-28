@@ -4,7 +4,7 @@ import { fmtTime, fmtNum, directionCN, pickAt, formatDisplayId } from "../../too
 import { reportSkipReason } from "../../tool/reportGate.mjs";
 import {
   parseWsPosition, parseReduceOnlyOrders, canonicalReduceOnlyOrders, canonicalPositionsFp,
-  diffPositions, diffReduceOnly, baseCoin,
+  positionKeysFp, diffPositions, diffReduceOnly, baseCoin,
 } from "./parse.mjs";
 import {
   classifyBanner, buildEventBanner, renderPositions, renderPositionHistory,
@@ -40,8 +40,12 @@ export class AccountWatcher {
     this.address = address;
     this.flags = flags;
     this.historyLimit = Number(flags["history-limit"] ?? 2);
+    // 短档：开/平/反手/离场单等结构变化即时推（沿用原值）
     this.debounceMs = Number(flags["debounce-ms"] ?? 3000);
     this.maxWaitMs = Number(flags["max-wait-ms"] ?? 5000);
+    // 长档：同仓滚仓加减仓（仅 size 变）合并，治理刷屏。设为与短档相同即回退原行为。
+    this.tierDebounceMs = Number(flags["tier-debounce-ms"] ?? 20000);
+    this.tierMaxWaitMs = Number(flags["tier-max-wait-ms"] ?? 90000);
     this.accountId = flags["account-id"] ?? null;
     this.tgToken = flags["tg-token"] ?? null;
     this.tgChat = flags["tg-chat"] ?? null;
@@ -69,6 +73,12 @@ export class AccountWatcher {
     this.baselineLogged = false;
     this.stateFp = null;
     this.lastOutFp = null;
+    // 分档 debounce：与上次推送的"持仓键集合 / 离场单集合"比对判结构变化；
+    // pendingStructural = 当前 debounce 窗口内是否出现结构变化（只升不降，取最紧急）。
+    // 初值 null 表示"从未推送过"，使首帧 baseline（含空仓账户）必判结构变化 → 短档即时推 START WATCH。
+    this.lastKeysFp = null;
+    this.lastReduceFp = null;
+    this.pendingStructural = false;
   }
 
   makeDisplayId() {
@@ -117,7 +127,7 @@ export class AccountWatcher {
 
   scheduleDaily() {
     const ms = msUntilNextShanghai(this.at);
-    this.dailyTimer = setTimeout(() => { this.forceReport = true; this.lastOutFp = null; this.tgReason = "daily"; this.scheduleFetch(); this.scheduleDaily(); }, ms);
+    this.dailyTimer = setTimeout(() => { this.forceReport = true; this.lastOutFp = null; this.tgReason = "daily"; this.scheduleFetch(true); this.scheduleDaily(); }, ms);
     log(`下次每日快照：${this.at} 上海时间（约 ${Math.round(ms / 60000)} 分钟后）`);
   }
 
@@ -136,35 +146,45 @@ export class AccountWatcher {
       this.positions = Array.isArray(data.P) ? data.P.map(parseWsPosition) : [];
       this.ordersRaw = Array.isArray(data.O) ? data.O : [];
       // 触发指纹 = 仓位身份 + 离场单集合（reduceOnly 挂/改/撤即时触发；开仓单不计，避免 churn）
-      const fp = canonicalPositionsFp(this.positions) + "|" + canonicalReduceOnlyOrders(this.ordersRaw);
-      if (fp !== this.stateFp) { this.stateFp = fp; this.scheduleFetch(); }
+      const reduceFp = canonicalReduceOnlyOrders(this.ordersRaw);
+      const fp = canonicalPositionsFp(this.positions) + "|" + reduceFp;
+      // 结构变化（开仓/平仓/反手 → 键集合变；离场单挂改撤 → reduceOnly 变）相对上次推送 → 短档即时；
+      // 仅 abs(size) 变（同仓滚仓加减仓）→ 长档合并。
+      const structural = positionKeysFp(this.positions) !== this.lastKeysFp || reduceFp !== this.lastReduceFp;
+      if (fp !== this.stateFp) { this.stateFp = fp; this.scheduleFetch(structural); }
       return;
     }
-    // 成交 / 订单推送只作"重新评估"提示，状态以 accountState 全量快照为准
-    if (msg.channel === "accountTrade" || msg.channel === "accountOrderUpdate") this.scheduleFetch();
+    // 成交 / 订单推送只作"重新评估"提示，状态以 accountState 全量快照为准；
+    // 无持仓上下文，不改变档位（structural=false，pendingStructural 只升不降）。
+    if (msg.channel === "accountTrade" || msg.channel === "accountOrderUpdate") this.scheduleFetch(false);
   }
 
-  scheduleFetch() {
+  scheduleFetch(structural = false) {
     if (Date.now() < sharedRateLimitUntil) return;
+    if (structural) this.pendingStructural = true; // 只升级，取窗口内最紧急档
     const now = Date.now();
     if (this.firstPendingAt === 0) this.firstPendingAt = now;
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    // 分档：结构变化（开/平/反手/离场单）走短档即时；滚仓走长档合并。
+    const debounceMs = this.pendingStructural ? this.debounceMs : this.tierDebounceMs;
+    const maxWaitMs = this.pendingStructural ? this.maxWaitMs : this.tierMaxWaitMs;
     // maxWait 封顶：自首个待处理事件起超过 maxWaitMs 立即 flush，
     // 避免活跃成交流（事件间隔<debounceMs）让 trailing 防抖一直被推后而饥饿。
     const waited = now - this.firstPendingAt;
-    if (waited >= this.maxWaitMs) { this.flushFetch(); return; }
-    const delay = Math.min(this.debounceMs, this.maxWaitMs - waited);
+    if (waited >= maxWaitMs) { this.flushFetch(); return; }
+    const delay = Math.min(debounceMs, maxWaitMs - waited);
     this.debounceTimer = setTimeout(() => this.flushFetch(), delay);
   }
 
   flushFetch() {
     if (this.debounceTimer) { clearTimeout(this.debounceTimer); this.debounceTimer = null; }
     this.firstPendingAt = 0;
+    // pendingStructural 不在此重置——推送成功后才随基准一起清，避免 fetch 重入丢失紧急度。
     this.fetchAndReport();
   }
 
   async fetchAndReport() {
-    if (this.fetching) { this.scheduleFetch(); return; }
+    if (this.fetching) { this.scheduleFetch(this.pendingStructural); return; }
     // 冷却兜底：限流前已 armed 的 debounceTimer 可能在冷却期内 fire，
     // 此处再 gate 一次，避免在 sharedRateLimitUntil 内打出请求又触发限流。
     if (Date.now() < sharedRateLimitUntil) return;
@@ -199,6 +219,10 @@ export class AccountWatcher {
 
       const events = diffPositions(this.lastPositions, this.positions);
       this.lastPositions = this.positions;
+      // 推进档位判定基准（仅在确认推送时推进，去重/限流 return 不动）：下次以本次状态为对照判结构变化。
+      this.lastKeysFp = positionKeysFp(this.positions);
+      this.lastReduceFp = canonicalReduceOnlyOrders(this.ordersRaw);
+      this.pendingStructural = false;
 
       // ★ 复用：首帧基线全部不标，之后新出现的已平仓位（新 position_id）标 ★
       const newPosIds = new Set();
@@ -210,7 +234,7 @@ export class AccountWatcher {
       // G5/G6：检测到 CLOSED 仓位事件但平仓历史尚无对应新 position_id → positions 索引延迟，2s 补拉
       const hasClosed = events.some((e) => e.startsWith("CLOSED"));
       if (!force && !isBaseline && hasClosed && newPosIds.size === 0) {
-        if (!this.retryScheduled) { this.retryScheduled = true; this.lastOutFp = null; setTimeout(() => { this.retryScheduled = false; this.scheduleFetch(); }, 2000); }
+        if (!this.retryScheduled) { this.retryScheduled = true; this.lastOutFp = null; setTimeout(() => { this.retryScheduled = false; this.scheduleFetch(true); }, 2000); }
         return;
       }
       this.retryScheduled = false;

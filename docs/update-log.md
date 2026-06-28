@@ -4,6 +4,30 @@
 
 ---
 
+## sodex-watch 分档 debounce（治理滚仓刷屏）— 2026-06-28
+
+跟单监控账户**同一仓位内反复加减仓（滚仓）**会刷屏式推 Telegram。真实数据定位（account 17139 / ETH，408 笔成交）：瓶颈是 `scheduleFetch` 的 trailing debounce=3s，成交间隔 7~22s 全部 > 3s 各自 flush。按持仓 `{币种:方向}` 键集合是否变化分两档——开/平/反手/离场单走短档即时，滚仓走长档合并。
+
+### 新增
+
+- **`sodex-watch/process/parse.mjs`**：`positionKeysFp`——不含 size 的 `{symbol:dir}` 键集合指纹，用于区分结构变化（键变）与滚仓（仅 size 变）。
+- **`sodex-watch/test/domain.test.mjs`**：+5 单测（滚仓不改指纹 / 开仓 / 平仓 / 反手 / 排序稳定）。
+
+### 变更
+
+- **`sodex-watch/process/watcher.mjs`**：`scheduleFetch(structural)` 分档（短档 3s/5s、长档 20s/90s，pendingStructural 只升不降取最紧急）；`handleMessage` 比对键集合判结构变化，`accountTrade`/`accountOrderUpdate` 不改档位；基准与 pendingStructural 在推送成功处推进；CLOSED 补拉 / daily 快照走短档即时；首帧基准初值 null 保证 START WATCH 即时。
+- **`sodex-watch/main.mjs`**：usage 补 `--tier-debounce-ms` / `--tier-max-wait-ms`（设为短档同值即回退旧行为）。
+
+### 范围 / 效果
+
+- 仅 sodex-watch；HYPE-watch 独立同构，本次不动。开/平/反手即时性不变（实测开平延迟中位 3s）；滚仓合并（sim3 离线模拟 287→104 条）。
+
+### 验证
+
+- `node --test` 21/21 全绿（含新增 5 项 positionKeysFp）；`node --check` 三文件语法 OK。
+
+---
+
 ## discovery 候选地址历史记录（watch-candidates）— 2026-06-26
 
 新增 `watch-candidates.json` 持久化存储所有曾加入 watch 的地址（追加不删），discovery 排除"当前监听 + 历史候选"并集，防止已移除的地址在下一轮重新出现。

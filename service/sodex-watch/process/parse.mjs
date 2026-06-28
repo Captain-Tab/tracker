@@ -60,6 +60,17 @@ export function canonicalPositionsFp(positions) {
     .join(",");
 }
 
+// 持仓键集合指纹：仅 symbol:dir，不含 size。用于区分"结构变化"（开仓=新键/平仓=键消失/
+// 反手=键方向翻转，集合变）与"滚仓"（同币同向反复加减仓，集合不变仅 size 变）。
+// 不要复用 canonicalPositionsFp——那个含 abs(size)，滚仓也会变。
+export function positionKeysFp(positions) {
+  return positions
+    .filter((p) => Number(p.size) !== 0)
+    .map((p) => `${p.symbol}:${positionDirection(p)}`)
+    .sort()
+    .join(",");
+}
+
 export function marginModeLabel(m) {
   if (/cross/i.test(m)) return "Cross";
   if (/iso/i.test(m)) return "Isolated";
