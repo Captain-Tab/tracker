@@ -104,10 +104,31 @@ export function canonicalPositionsFp(positions) {
     .join(",");
 }
 
+// 持仓键集合指纹：仅 coin:dir，不含 size。用于区分"结构变化"（开仓=新键/平仓=键消失/
+// 反手=键方向翻转，集合变）与"滚仓"（同币同向反复加减仓，集合不变仅 size 变）。
+// 不要复用 canonicalPositionsFp——那个含 absSize，滚仓也会变。
+export function positionKeysFp(positions) {
+  return positions
+    .map((p) => `${p.coin}:${p.dir}`)
+    .sort()
+    .join(",");
+}
+
 // 开放挂单指纹（来源 WS openOrders，仅作变化触发；oid:limitPx:sz 排序）
 export function canonicalOpenOrdersFp(wsOrders) {
   if (!Array.isArray(wsOrders)) return "";
   return wsOrders
+    .map((o) => `${o.oid}:${o.limitPx}:${o.sz}`)
+    .sort()
+    .join(",");
+}
+
+// 离场单子集指纹：仅取 wsOrders 中 reduceOnly||isPositionTpsl 的单（前瞻信号），oid:limitPx:sz 排序。
+// 用于分档判别——离场单挂/撤/改属结构变化走短档；开仓单 sz 递减（滚仓成交中）不计，走长档。
+export function canonicalExitOrdersFp(wsOrders) {
+  if (!Array.isArray(wsOrders)) return "";
+  return wsOrders
+    .filter((o) => o && (o.reduceOnly === true || o.isPositionTpsl === true))
     .map((o) => `${o.oid}:${o.limitPx}:${o.sz}`)
     .sort()
     .join(",");

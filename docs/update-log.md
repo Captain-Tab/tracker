@@ -4,6 +4,30 @@
 
 ---
 
+## HYPE-watch 分档 debounce（对齐 sodex 治理滚仓刷屏）— 2026-06-28
+
+把 sodex-watch 的分档 debounce 对称移植到 HYPE-watch（两端 watcher 同构）。真实数据（地址 `0xaf0fdd39e5d92499b0ed9f68693da99c0ec1e92e`，5 仓 / 2000 fills / 502h）：HYPE 成交亚秒级密集（间隔 p50=0s / p90=64s），现状 3s 已合并簇内大半，长档主要合并簇间滚仓。实抓 WS openOrders 帧确认 `wsOrders` 带 `reduceOnly`/`isPositionTpsl`，故能完全对齐 sodex 的结构判别。
+
+### 新增
+
+- **`HYPE-watch/process/parse.mjs`**：`positionKeysFp`（`coin:dir` 键集合指纹，不含 size）+ `canonicalExitOrdersFp`（`wsOrders` 中 `reduceOnly||isPositionTpsl` 子集指纹）。
+- **`HYPE-watch/test/domain.test.mjs`**：+5 单测（滚仓不改指纹 / 开平反手 / 离场单子集 / 开仓单 sz 变不计 / 空数组）。
+
+### 变更
+
+- **`HYPE-watch/process/watcher.mjs`**：`scheduleFetch(structural)` 分档（短档 3s/5s、长档 **12s/45s**，HYPE 实测拐点；pendingStructural 只升不降）；`recomputeStateFp` 比对键集合+离场单子集判结构变化，`userFills`/`orderUpdates` 不升级；触发指纹保持全量挂单不变（灵敏度不变）；基准在推送处推进；daily 走短档；首帧基准初值 null 保证 START WATCH 即时。
+- **`HYPE-watch/main.mjs`**：usage 补 `--tier-debounce-ms` / `--tier-max-wait-ms`（设短档同值即回退）。
+
+### 范围 / 效果
+
+- 仅 HYPE-watch；不动 sodex-watch、不改触发灵敏度。开平/反手/离场单即时（中位 3s）；滚仓合并（sim 实测 330→256@12s）。
+
+### 验证
+
+- `node --test` 14/14 全绿（含新增 5 项）；`node --check` 三文件语法 OK。
+
+---
+
 ## sodex-watch 分档 debounce（治理滚仓刷屏）— 2026-06-28
 
 跟单监控账户**同一仓位内反复加减仓（滚仓）**会刷屏式推 Telegram。真实数据定位（account 17139 / ETH，408 笔成交）：瓶颈是 `scheduleFetch` 的 trailing debounce=3s，成交间隔 7~22s 全部 > 3s 各自 flush。按持仓 `{币种:方向}` 键集合是否变化分两档——开/平/反手/离场单走短档即时，滚仓走长档合并。

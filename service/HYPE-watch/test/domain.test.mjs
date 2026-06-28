@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   parsePositions, parseExitOrders, parseCloseRecords,
   canonicalPositionsFp, canonicalOpenOrdersFp, diffPositions, diffExitOrders, pricePrecisionOf, positionDirection,
+  positionKeysFp, canonicalExitOrdersFp,
 } from "../process/parse.mjs";
 
 const szOf = (coin) => ({ HYPE: 2, BTC: 5 }[coin] ?? 4);
@@ -107,4 +108,44 @@ test("diffPositions: OPENED / CLOSED / INCREASED / DECREASED", () => {
   assert.ok(events.some((e) => e.startsWith("INCREASED LONG HYPE")));
   assert.ok(events.some((e) => e.startsWith("OPENED LONG BTC")));
   assert.ok(events.some((e) => e.startsWith("CLOSED SHORT ETH")));
+});
+
+// ---------- 分档 debounce：持仓键集合 / 离场单子集指纹（结构变化 vs 滚仓）----------
+test("positionKeysFp: 仅 coin:dir，不含 size（滚仓不改指纹）", () => {
+  const a = positionKeysFp([{ coin: "SOL", dir: "LONG", size: 100 }]);
+  const b = positionKeysFp([{ coin: "SOL", dir: "LONG", size: 150 }]);
+  assert.equal(a, b);
+  assert.equal(a, "SOL:LONG");
+});
+
+test("positionKeysFp: 开仓/平仓/反手 → 指纹变（结构变化）；排序稳定", () => {
+  const base = positionKeysFp([{ coin: "ETH", dir: "SHORT", size: -2 }]);
+  const opened = positionKeysFp([{ coin: "ETH", dir: "SHORT", size: -2 }, { coin: "SOL", dir: "LONG", size: 1 }]);
+  assert.notEqual(base, opened); // 开仓：新增键
+  assert.notEqual(base, positionKeysFp([])); // 平仓：键消失
+  assert.notEqual(base, positionKeysFp([{ coin: "ETH", dir: "LONG", size: 2 }])); // 反手：方向翻转
+  // 数组顺序漂移不改指纹
+  const x = positionKeysFp([{ coin: "SOL", dir: "LONG", size: 1 }, { coin: "ETH", dir: "SHORT", size: -2 }]);
+  assert.equal(x, opened);
+});
+
+test("canonicalExitOrdersFp: 仅取 reduceOnly||isPositionTpsl，oid:limitPx:sz 排序", () => {
+  const ws = [
+    { oid: 3, limitPx: "100", sz: "9", reduceOnly: false, isPositionTpsl: false }, // 开仓单，不计
+    { oid: 1, limitPx: "85000", sz: "1.2", reduceOnly: true },                      // 离场单
+    { oid: 2, limitPx: "70", sz: "5", isPositionTpsl: true },                       // 持仓 TP/SL
+  ];
+  assert.equal(canonicalExitOrdersFp(ws), "1:85000:1.2,2:70:5");
+});
+
+test("canonicalExitOrdersFp: 仅开仓单变化（滚仓挂单 sz 递减）→ 指纹不变", () => {
+  const before = [{ oid: 3, limitPx: "100", sz: "9", reduceOnly: false }];
+  const after = [{ oid: 3, limitPx: "100", sz: "4", reduceOnly: false }]; // 部分成交 sz 减
+  assert.equal(canonicalExitOrdersFp(before), canonicalExitOrdersFp(after));
+  assert.equal(canonicalExitOrdersFp(before), ""); // 无离场单
+});
+
+test("canonicalExitOrdersFp: 空/非数组 → 空串", () => {
+  assert.equal(canonicalExitOrdersFp([]), "");
+  assert.equal(canonicalExitOrdersFp(null), "");
 });

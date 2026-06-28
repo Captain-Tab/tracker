@@ -3,7 +3,8 @@
 import { fmtTime, fmtNum, directionCN, pickAt, formatDisplayId } from "../../tool/format.mjs";
 import {
   parsePositions, parseExitOrders, parseCloseRecords,
-  canonicalPositionsFp, canonicalOpenOrdersFp, diffPositions, diffExitOrders, pricePrecisionOf,
+  canonicalPositionsFp, canonicalOpenOrdersFp, positionKeysFp, canonicalExitOrdersFp,
+  diffPositions, diffExitOrders, pricePrecisionOf,
 } from "./parse.mjs";
 import {
   classifyBanner, buildEventBanner, renderPositions, renderCloseHistory, buildTgMessage, buildExitOrderBanner,
@@ -45,8 +46,12 @@ export class AccountWatcher {
     this.address = address;
     this.flags = flags;
     this.historyLimit = Number(flags["history-limit"] ?? 2);
+    // 短档：开/平/反手/离场单等结构变化即时推（沿用原值）
     this.debounceMs = Number(flags["debounce-ms"] ?? 3000);
     this.maxWaitMs = Number(flags["max-wait-ms"] ?? 5000);
+    // 长档：同仓滚仓加减仓（仅 size 变）合并，治理刷屏。HYPE 实测拐点 12s；设为与短档相同即回退原行为。
+    this.tierDebounceMs = Number(flags["tier-debounce-ms"] ?? 12000);
+    this.tierMaxWaitMs = Number(flags["tier-max-wait-ms"] ?? 45000);
     this.tgToken = flags["tg-token"] ?? null;
     this.tgChat = flags["tg-chat"] ?? null;
     this.label = flags.label ?? null;
@@ -74,6 +79,12 @@ export class AccountWatcher {
     this.baselineLogged = false;
     this.stateFp = null;
     this.lastOutFp = null;
+    // 分档 debounce：与上次推送的"持仓键集合 / 离场单子集"比对判结构变化；
+    // pendingStructural = 当前 debounce 窗口内是否出现结构变化（只升不降，取最紧急）。
+    // 初值 null 表示"从未推送过"，使首帧 baseline（含空仓）必判结构变化 → 短档即时推 START WATCH。
+    this.lastKeysFp = null;
+    this.lastExitFp = null;
+    this.pendingStructural = false;
   }
 
   makeDisplayId() { return formatDisplayId(this.address, this.label); }
@@ -119,7 +130,7 @@ export class AccountWatcher {
 
   scheduleDaily() {
     const ms = msUntilNextShanghai(this.at);
-    this.dailyTimer = setTimeout(() => { this.forceReport = true; this.lastOutFp = null; this.tgReason = "daily"; this.scheduleFetch(); this.scheduleDaily(); }, ms);
+    this.dailyTimer = setTimeout(() => { this.forceReport = true; this.lastOutFp = null; this.tgReason = "daily"; this.scheduleFetch(true); this.scheduleDaily(); }, ms);
     log(`下次每日镜像：${this.at} 上海时间（约 ${Math.round(ms / 60000)} 分钟后）`);
   }
 
@@ -145,34 +156,45 @@ export class AccountWatcher {
       this.recomputeStateFp();
       return;
     }
-    // 成交 / 订单推送只作"重新评估"提示，状态以 REST 全量为准
-    if (ch === "userFills" || ch === "orderUpdates") this.scheduleFetch();
+    // 成交 / 订单推送只作"重新评估"提示，状态以 REST 全量为准；
+    // 无持仓上下文，不改变档位（structural=false，pendingStructural 只升不降）。
+    if (ch === "userFills" || ch === "orderUpdates") this.scheduleFetch(false);
   }
 
   recomputeStateFp() {
+    // 触发指纹保持全量挂单（灵敏度不变）；档位判别另用键集合 + 离场单子集。
     const fp = canonicalPositionsFp(this.positions) + "|" + canonicalOpenOrdersFp(this.wsOrders);
-    if (fp !== this.stateFp) { this.stateFp = fp; this.scheduleFetch(); }
+    // 结构变化（开仓/平仓/反手 → 键集合变；离场单挂改撤 → 离场单子集变）相对上次推送 → 短档即时；
+    // 仅 abs(size)/开仓单 sz 变（滚仓加减仓）→ 长档合并。
+    const structural = positionKeysFp(this.positions) !== this.lastKeysFp
+      || canonicalExitOrdersFp(this.wsOrders) !== this.lastExitFp;
+    if (fp !== this.stateFp) { this.stateFp = fp; this.scheduleFetch(structural); }
   }
 
-  scheduleFetch() {
+  scheduleFetch(structural = false) {
     if (Date.now() < sharedRateLimitUntil) return;
+    if (structural) this.pendingStructural = true; // 只升级，取窗口内最紧急档
     const now = Date.now();
     if (this.firstPendingAt === 0) this.firstPendingAt = now;
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    // 分档：结构变化（开/平/反手/离场单）走短档即时；滚仓走长档合并。
+    const debounceMs = this.pendingStructural ? this.debounceMs : this.tierDebounceMs;
+    const maxWaitMs = this.pendingStructural ? this.maxWaitMs : this.tierMaxWaitMs;
     const waited = now - this.firstPendingAt;
-    if (waited >= this.maxWaitMs) { this.flushFetch(); return; }
-    const delay = Math.min(this.debounceMs, this.maxWaitMs - waited);
+    if (waited >= maxWaitMs) { this.flushFetch(); return; }
+    const delay = Math.min(debounceMs, maxWaitMs - waited);
     this.debounceTimer = setTimeout(() => this.flushFetch(), delay);
   }
 
   flushFetch() {
     if (this.debounceTimer) { clearTimeout(this.debounceTimer); this.debounceTimer = null; }
     this.firstPendingAt = 0;
+    // pendingStructural 不在此重置——推送成功后才随基准一起清，避免 fetch 重入丢失紧急度。
     this.fetchAndReport();
   }
 
   async fetchAndReport() {
-    if (this.fetching) { this.scheduleFetch(); return; }
+    if (this.fetching) { this.scheduleFetch(this.pendingStructural); return; }
     if (Date.now() < sharedRateLimitUntil) return;
     this.fetching = true;
     try {
@@ -206,6 +228,10 @@ export class AccountWatcher {
 
       const events = diffPositions(this.lastPositions, this.positions);
       this.lastPositions = this.positions;
+      // 推进档位判定基准（仅确认推送时推进，去重/限流 return 不动）：下次以本次状态为对照判结构变化。
+      this.lastKeysFp = positionKeysFp(this.positions);
+      this.lastExitFp = canonicalExitOrdersFp(this.wsOrders);
+      this.pendingStructural = false;
 
       // 首帧基线全部不标；之后新出现的平仓 oid 标 ★
       const newOids = new Set();

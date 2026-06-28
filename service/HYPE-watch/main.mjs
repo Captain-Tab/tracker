@@ -36,7 +36,9 @@ async function main() {
   if (!configPath) {
     console.error("用法: node service/HYPE-watch/main.mjs --config=service/HYPE-watch/config.json\n" +
       "  仅多地址实时 WS + 每日镜像（默认 20:00 上海）\n" +
-      "  --at=HH:MM 每日镜像时间 / --history-limit=N（默认 2）/ --debounce-ms=N / --max-wait-ms=N");
+      "  --at=HH:MM 每日镜像时间 / --history-limit=N（默认 2）/ --debounce-ms=N（短档，默认 3000）/ --max-wait-ms=N（短档，默认 5000）\n" +
+      "  分档：开/平/反手/离场单走短档即时；同仓滚仓加减仓走长档合并\n" +
+      "    --tier-debounce-ms=N（长档，默认 12000）/ --tier-max-wait-ms=N（长档，默认 45000）；设为与短档相同即回退旧行为");
     process.exit(1);
   }
 
