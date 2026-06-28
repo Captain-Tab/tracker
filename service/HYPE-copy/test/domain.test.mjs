@@ -13,7 +13,8 @@ import { computeRatio, computeDesired } from "../process/sizing.mjs";
 import { recommendMinCapital } from "../process/recommend.mjs";
 import { decideLeg } from "../process/risk.mjs";
 import { diffDelta, planReconcile } from "../process/reconcile.mjs";
-import { buildActionText, toLogLine } from "../notify/index.mjs";
+import { toLogLine, decidePushLine } from "../notify/index.mjs";
+import { lineFor, classifyMirrorEvent, escapeHtml, buildHeader, buildFooter } from "../notify/templates.mjs";
 import { aggregateStats } from "../process/stats.mjs";
 
 const ADDR = "0x321f7193eadbacb67eff00f76b975a487e5b1c84";
@@ -371,35 +372,86 @@ test("planReconcile: skip 类不进 would-place（顺序铁律）", () => {
   assert.equal(actions.filter((a) => a.decision === "place").length, 1);
 });
 
-// ---------- 04 notify 文案 + 日志映射 ----------
-test("notify: buildActionText place 含 [DRY-RUN]/币·方向·量·价·ratio；noop → null（去重）", () => {
-  const place = buildActionText({ targetId: "whale1", coin: "ETH", side: "buy", size: "0.625", refPx: "3000", ratio: 0.0625, result: "place" });
-  assert.match(place, /\[DRY-RUN\]/);
-  assert.match(place, /ETH/);
-  assert.match(place, /多/);
-  assert.match(place, /0\.625/);
-  assert.match(place, /3000/);
-  assert.match(place, /0\.0625/);
-  assert.equal(buildActionText({ result: "noop", coin: "ETH" }), null); // 去重不推
+// ---------- 04 通知增强：事件分类 ----------
+test("classifyMirrorEvent: 开/加/减/平/不变", () => {
+  assert.equal(classifyMirrorEvent("0", "0.5"), "open"); // 0→有
+  assert.equal(classifyMirrorEvent("0.5", "0.625"), "add"); // 量级增
+  assert.equal(classifyMirrorEvent("0.625", "0.5"), "reduce"); // 量级减
+  assert.equal(classifyMirrorEvent("0.5", "0"), "close"); // 有→0
+  assert.equal(classifyMirrorEvent("0.5", "0.5"), "same"); // 不变
+  assert.equal(classifyMirrorEvent("-0.5", "-1"), "add"); // 空头加仓（量级增）
 });
 
-test("notify: buildActionText 各告警分支", () => {
-  assert.match(buildActionText({ result: "skip-unmappable", coin: "PLTR", targetId: "x" }), /无 hype 映射/);
-  assert.match(buildActionText({ result: "skip-capped", coin: "ETH", targetId: "x" }), /资金上限/);
-  assert.match(buildActionText({ result: "min-capital", minCapital: 1680, canFollowCoins: "ETH", targetId: "x" }), /推荐最低本金=1680/);
+// ---------- 04 通知增强：lineFor 文案 + icon ----------
+test("lineFor: 开/加/减/平 带正确 icon + 方向 + 量价", () => {
+  const open = lineFor({ result: "place", coin: "SOL", side: "buy", currentSize: "0", desiredSize: "2", deltaSize: "2", refPx: "150", ratio: 0.0625 });
+  assert.match(open, /🆕 开 SOL 多 2 @ 150（ratio 6\.25%）/);
+  const addL = lineFor({ result: "place", coin: "ETH", side: "buy", currentSize: "0.5", desiredSize: "0.74", deltaSize: "0.24", refPx: "3000" });
+  assert.match(addL, /⏫ 加 ETH 多 \+0\.24 → 持 0\.74 @ 3000/);
+  const reduceL = lineFor({ result: "place", coin: "ETH", side: "sell", currentSize: "0.74", desiredSize: "0.5", deltaSize: "-0.24", refPx: "3000" });
+  assert.match(reduceL, /⏬ 减 ETH 多 -0\.24 → 持 0\.5 @ 3000/);
+  const closeL = lineFor({ result: "place", coin: "BTC", side: "sell", currentSize: "0.1", desiredSize: "0", deltaSize: "-0.1", refPx: "60000" });
+  assert.match(closeL, /🏁 平 BTC 多（目标已清仓）/);
 });
 
-test("notify: toLogLine action/side 映射 + 缺省落值", () => {
-  const place = toLogLine({ targetId: "x", coin: "ETH", side: "buy", size: "0.625", refPx: "3000", result: "place", dryRun: true });
+test("lineFor: 空头方向 + 告警/最低本金/noop", () => {
+  const shortOpen = lineFor({ result: "place", coin: "ETH", side: "sell", currentSize: "0", desiredSize: "-1", deltaSize: "-1", refPx: "3000" });
+  assert.match(shortOpen, /🆕 开 ETH 空 1 @ 3000/);
+  assert.match(lineFor({ result: "skip-unmappable", coin: "PLTR" }), /⛔.*无 hype 映射/);
+  assert.match(lineFor({ result: "skip-capped", coin: "ETH" }), /⛔.*资金上限/);
+  assert.match(lineFor({ result: "min-capital", minCapital: 1680, canFollowCoins: "ETH" }), /💡 推荐最低本金=1680/);
+  assert.match(lineFor({ result: "error", coin: "ETH", reason: "x" }), /⚠️ ETH 执行失败/);
+  assert.equal(lineFor({ result: "noop", coin: "ETH" }), null);
+});
+
+test("escapeHtml: < > & 转义", () => {
+  assert.equal(escapeHtml("a<b>&c"), "a&lt;b&gt;&amp;c");
+  assert.match(lineFor({ result: "error", coin: "ETH", reason: "x<y>" }), /x&lt;y&gt;/);
+});
+
+test("buildHeader / buildFooter", () => {
+  assert.equal(buildHeader("demo-1", "0x321f7193eadbacb67eff00f76b975a487e5b1c84", "s1"), "[DRY-RUN] 🎯demo-1｜跟 0x32...1c84 → s1");
+  assert.equal(buildHeader("demo-1", "0x321f7193eadbacb67eff00f76b975a487e5b1c84", ""), "[DRY-RUN] 🎯demo-1｜跟 0x32...1c84"); // 无子账户
+  assert.equal(buildFooter(12, 340), "⏱ 执行 12ms｜完整 340ms");
+});
+
+// ---------- 04 通知增强：去重决策 decidePushLine ----------
+test("decidePushLine: 持续告警进入推一次，状态不变静默", () => {
+  const lastAlertFp = new Set();
+  const r1 = new Set();
+  // 第 1 轮：PLTR 不可映射 → 推
+  assert.ok(decidePushLine({ result: "skip-unmappable", coin: "PLTR" }, { lastAlertFp, newAlertFp: r1 }));
+  // 第 2 轮：lastAlertFp 含上轮键 → 静默
+  const r2 = new Set();
+  assert.equal(decidePushLine({ result: "skip-unmappable", coin: "PLTR" }, { lastAlertFp: r1, newAlertFp: r2 }), null);
+});
+
+test("decidePushLine: min-capital 仅锚定轮（wasFollowing=false）推", () => {
+  assert.ok(decidePushLine({ result: "min-capital", minCapital: 1680, canFollowCoins: "ETH" }, { wasFollowing: false }));
+  assert.equal(decidePushLine({ result: "min-capital", minCapital: 1680 }, { wasFollowing: true }), null);
+});
+
+test("decidePushLine: noop 不推、place/error 直推", () => {
+  assert.equal(decidePushLine({ result: "noop", coin: "ETH" }, {}), null);
+  assert.ok(decidePushLine({ result: "place", coin: "ETH", side: "buy", currentSize: "0", desiredSize: "1", deltaSize: "1", refPx: "3000" }, {}));
+  assert.ok(decidePushLine({ result: "error", coin: "ETH", reason: "boom" }, {}));
+});
+
+// ---------- 04 toLogLine（含计时字段）----------
+test("toLogLine: action/side 映射 + 缺省 + fullMs/execMs", () => {
+  const place = toLogLine({ targetId: "x", coin: "ETH", side: "buy", size: "0.625", refPx: "3000", result: "place", dryRun: true, fullMs: 340, execMs: 12 });
   assert.equal(place.action, "place");
   assert.equal(place.side, "long"); // buy → long
   assert.equal(place.fillPx, "3000"); // dry-run would-fill = refPx
   assert.equal(place.fee, "0"); // 缺省落 "0"
   assert.equal(place.slippageBps, 0);
+  assert.equal(place.fullMs, 340);
+  assert.equal(place.execMs, 12);
   assert.equal(toLogLine({ result: "skip-capped", coin: "ETH" }).action, "cap-warn");
   assert.equal(toLogLine({ result: "noop", coin: "ETH" }).action, "skip");
   assert.equal(toLogLine({ result: "error", coin: "ETH", side: "sell" }).action, "error");
   assert.equal(toLogLine({ result: "place", side: "sell", coin: "ETH" }).side, "short"); // sell → short
+  assert.equal(toLogLine({ result: "place", coin: "ETH" }).fullMs, 0); // 缺省 0
 });
 
 // ---------- 04 stats 聚合 ----------

@@ -1,18 +1,18 @@
-// 跟单出口：实时推送（独立跟单 TG）+ 每动作 JSONL + journald。消费 03 动作结果（ActionResult）。
-// 三出口分工（总纲 04）：推送（执行视角，noop 去重不推）/ JSONL（每动作一条可回溯）/ 统计（process/stats.mjs）。
-// 推送与日志两条管线独立：noop 不推但可记。token/chat 走跟单独立配置，绝不复用 watch token。
+// 跟单出口逻辑层：每动作 JSONL + journald（recordAction）/ 一轮一条汇总推送（pushRoundSummary）。
+// 文案在 notify/templates.mjs（文案/逻辑分离）。两条管线独立：noop 不推但可记。
+// token/chat 走跟单独立配置，绝不复用 watch token。
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { escapeHtml, lineFor } from "./templates.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = join(__dirname, "..", "log");
 const TG_TIMEOUT_MS = 8_000;
+// 持续性告警（同状态每轮重现）：进入推一次，靠指纹去重防刷屏
+const ALERT_RESULTS = new Set(["skip-unmappable", "skip-mindust", "skip-maxpos", "skip-capped", "skip-no-price"]);
 
 const ts = () => new Date().toISOString().slice(11, 19);
-
-// 短地址（与 tool/format 同口径，notify 自洽不跨 service import）
-const shortAddr = (a) => (typeof a === "string" && a.length >= 10 ? `${a.slice(0, 4)}...${a.slice(-4)}` : a ?? "?");
 
 // result → JSONL action（总纲 04 schema）：skip-capped 归 cap-warn，其余 skip/noop 归 skip。
 function actionOf(result) {
@@ -20,17 +20,17 @@ function actionOf(result) {
   if (result === "skip-capped") return "cap-warn";
   if (result === "min-capital") return "min-capital";
   if (result === "failed" || result === "error") return "error";
-  return "skip"; // skip-unmappable / skip-mindust / skip-maxpos / noop
+  return "skip"; // skip-unmappable / skip-mindust / skip-maxpos / skip-no-price / noop
 }
 
-// 订单 side(buy/sell) → 持仓方向 long/short（dry-run current 恒空 → buy=开多/sell=开空）
+// 订单 side(buy/sell) → 持仓方向 long/short
 function sideToDir(side) {
   if (side === "buy") return "long";
   if (side === "sell") return "short";
   return "";
 }
 
-// toLogLine(ActionResult) → CopyLogLine（每动作一条，字段对齐总纲 04 schema）
+// toLogLine(ActionResult) → CopyLogLine（每动作一条，字段对齐总纲 04 schema + 计时）
 export function toLogLine(a) {
   const result = a.result ?? a.decision ?? "ok";
   return {
@@ -44,51 +44,16 @@ export function toLogLine(a) {
     fillPx: String(a.fillPx ?? a.refPx ?? ""), // dry-run would-fill 估算价 = refPx
     fee: String(a.fee ?? "0"), // dry-run 估算，缺失落 "0"
     slippageBps: Number(a.slippageBps ?? 0),
+    fullMs: Number(a.fullMs ?? 0), // 完整时间 t2−t0（本轮拉取→完成）
+    execMs: Number(a.execMs ?? 0), // 执行时间 t2−t1（copy 处理段）
     dryRun: a.dryRun === true,
     result,
     reason: String(a.reason ?? ""),
   };
 }
 
-const DIR_CN = { long: "多", short: "空", "": "" };
-
-// buildActionText(ActionResult) → string | null。noop（delta=0 / |delta|<阈值）返回 null = 不推（去重铁律）。
-export function buildActionText(a) {
-  const result = a.result ?? a.decision ?? "ok";
-  const id = a.targetIdLabel ?? shortAddr(a.targetId) ?? a.targetId;
-  const ratioText = a.ratio != null ? `，ratio=${a.ratio}` : "";
-
-  switch (result) {
-    case "noop":
-      return null; // 去重：碎步 / 无变动不推
-    case "place":
-    case "ok": {
-      const dir = DIR_CN[sideToDir(a.side)] || (a.side ?? "");
-      return `[DRY-RUN] 跟单 ${id}：${a.coin} ${dir} ${a.size} @ ${a.refPx}${ratioText}`;
-    }
-    case "skip-unmappable":
-      return `[DRY-RUN] ${id}：${a.coin} 无 hype 映射，跳过（不计入分母）`;
-    case "skip-mindust":
-      return `[DRY-RUN] ${id}：${a.coin} 名义 < 最小名义($10)，跳过`;
-    case "skip-no-price":
-      return `[DRY-RUN] ${id}：${a.coin} 无价格数据，本轮跳过`;
-    case "skip-maxpos":
-      return `[DRY-RUN] ${id}：${a.coin} 单仓超上限，封顶拦截加仓部分`;
-    case "skip-capped":
-      return `[DRY-RUN] ${id}：已达资金上限(MAX_DEPLOY_PCT)，无法完全跟仓 ${a.coin}`;
-    case "min-capital":
-      return `[DRY-RUN] ${id}：推荐最低本金=${a.minCapital}，当前可跟 ${a.canFollowCoins ?? "-"}`;
-    case "failed":
-    case "error":
-      return `[DRY-RUN] ${id}：${a.coin} 执行失败 — ${a.reason ?? "未知"}`;
-    default:
-      return null;
-  }
-}
-
-// journald：systemd StandardOutput=journal 路由 stdout/stderr；level 随 result 分级
-// （place/ok=info→stdout，skip/cap-warn=warn→stderr，error/failed=error→stderr）。
-// 注：repo 既有服务均 console→journald（无 pino 依赖）；pino 可后续替换，不为 dry-run 引重依赖。
+// journald：systemd StandardOutput=journal 路由 stdout/stderr；level 随 action 分级。
+// 注：repo 既有服务均 console→journald（无 pino 依赖）；pino 可后续替换。
 function journalLog(line) {
   const payload = JSON.stringify(line);
   if (line.action === "error") console.error(ts(), "[copy:error]", payload);
@@ -103,6 +68,14 @@ export function appendJsonl(targetId, line, { dir = LOG_DIR } = {}) {
   mkdirSync(dir, { recursive: true });
   appendFileSync(file, JSON.stringify(line) + "\n");
   return file;
+}
+
+// recordAction：每动作一条 JSONL + journald（始终记录，与推送去重无关）。
+export function recordAction(a, opts) {
+  const line = toLogLine(a);
+  appendJsonl(line.targetId, line, opts);
+  journalLog(line);
+  return line;
 }
 
 // 跟单 TG 推送（复用 watch 的 Bot API 模式；token/chat 跟单独立配置，物理分离）
@@ -122,12 +95,30 @@ export async function sendTelegram(token, chatId, text) {
   } catch (e) { console.error(ts(), `跟单 TG 推送失败：${e.message}`); }
 }
 
-// notifyAction：两条独立管线——文案非空则推送；JSONL + journald 始终记录（noop 不推但可记）。
-export async function notifyAction(a, { token, chat } = {}) {
-  const line = toLogLine(a);
-  appendJsonl(line.targetId, line);
-  journalLog(line);
-  const text = buildActionText(a);
-  if (text) await sendTelegram(token, chat, text);
-  return { pushed: !!text, line };
+// pushRoundSummary：一轮一条汇总（header + 多行明细 + 页脚），lines 为空则不推（去重铁律）。
+// 返回是否推送，便于单测/上层判断。token/chat 空 → sendTelegram 内部静默不推。
+export async function pushRoundSummary(headerLine, lines, footerLine, { token, chat } = {}) {
+  const body = (lines ?? []).filter(Boolean);
+  if (body.length === 0) return { pushed: false };
+  const text = [headerLine, ...body, footerLine].filter(Boolean).join("\n");
+  await sendTelegram(token, chat, text);
+  return { pushed: true, text };
 }
+
+// 决定某事件是否进推送行 + 维护本轮告警指纹（纯函数，便于单测）。
+// noop 不推；持续告警进入推一次（上轮已推则静默）；min-capital 仅锚定轮（wasFollowing=false）；place/error 直推。
+export function decidePushLine(ev, { lastAlertFp, wasFollowing, newAlertFp } = {}) {
+  const result = ev.result;
+  if (result === "noop") return null;
+  const line = lineFor(ev);
+  if (!line) return null;
+  if (ALERT_RESULTS.has(result)) {
+    const key = `${ev.coin}:${result}`;
+    if (newAlertFp) newAlertFp.add(key);
+    return lastAlertFp?.has(key) ? null : line;
+  }
+  if (result === "min-capital") return wasFollowing ? null : line;
+  return line;
+}
+
+export { escapeHtml };
