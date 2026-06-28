@@ -14,6 +14,7 @@
       "maxPositionPct": 0.5,
       "minDeltaPct": 0.003,
       "dryRun": true,
+      "availBalanceSim": "500",
       "tgChat": ""
     }
   ]

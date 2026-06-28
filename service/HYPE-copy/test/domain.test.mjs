@@ -11,6 +11,8 @@ import { add, sub, mul, div, gt, lt, maxStr, formatSize, formatPrice, applySlipp
 import { normalizeTargetPositions, parseHypeMeta, placeDryRun } from "../api/index.mjs";
 import { computeRatio, computeDesired } from "../process/sizing.mjs";
 import { recommendMinCapital } from "../process/recommend.mjs";
+import { decideLeg } from "../process/risk.mjs";
+import { diffDelta, planReconcile } from "../process/reconcile.mjs";
 
 const ADDR = "0x321f7193eadbacb67eff00f76b975a487e5b1c84";
 
@@ -274,4 +276,95 @@ test("recommend: 缺 currentRatio → reason no-ratio；缺价 → no-price 不�
 
 test("recommend: 无可映射仓 → 安全零值", () => {
   assert.deepEqual(recommendMinCapital([], { ETH: "8000" }, 0.5), { minCapital: 0, ratioMin: 0, perLeg: [] });
+});
+
+// ---------- 03 diffDelta（净仓做差）----------
+test("diffDelta: 开仓/增仓/减仓/平仓四类", () => {
+  const desired = [{ coin: "ETH", size: "12.5" }, { coin: "BTC", size: "1" }];
+  const current = [{ coin: "ETH", size: "8" }, { coin: "SOL", size: "5" }];
+  const out = diffDelta(desired, current);
+  const eth = out.find((d) => d.coin === "ETH"); // 增仓 8→12.5
+  const btc = out.find((d) => d.coin === "BTC"); // 开仓 0→1
+  const sol = out.find((d) => d.coin === "SOL"); // 平仓 5→0
+  assert.equal(eth.deltaSize, "4.5");
+  assert.equal(btc.deltaSize, "1");
+  assert.equal(sol.deltaSize, "-5");
+  assert.equal(sol.side, -1);
+});
+
+test("diffDelta: dry-run current 恒空 → delta 即 desired", () => {
+  const out = diffDelta([{ coin: "ETH", size: "0.625" }], []);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].deltaSize, "0.625");
+});
+
+// ---------- 03 decideLeg 六分支（顺序铁律）----------
+const baseCaps = { maxDeployPct: 0.9, maxPositionPct: 0.5, minDeltaPct: 0.003, minNotional: 10, minOrderSize: "0.0001", currentDeployedNotional: "0", availBalance: "500" };
+
+test("decideLeg: place（正常开仓）", () => {
+  // ETH 0.625 @ 3000，名义 1875；单仓上限 500×0.5=250 → 注意会被 maxpos 拦
+  // 用小仓避免 maxpos：0.05 @ 3000 名义 150 < 250，delta 全量，未触顶
+  assert.equal(decideLeg({ coin: "ETH", size: "0.05" }, null, baseCaps, { ETH: "3000" }), "place");
+});
+
+test("decideLeg: skip-unmappable（无 coin）", () => {
+  assert.equal(decideLeg({ coin: null, size: "1" }, null, baseCaps, {}), "skip-unmappable");
+});
+
+test("decideLeg: skip-mindust（本笔名义 < $10）", () => {
+  // 0.002 @ 3000 = 6 < 10
+  assert.equal(decideLeg({ coin: "ETH", size: "0.002" }, null, baseCaps, { ETH: "3000" }), "skip-mindust");
+});
+
+test("decideLeg: skip-maxpos（单仓名义 > 余额×maxPositionPct，仅拦加仓）", () => {
+  // 0.1 @ 3000 = 300 > 250；从 0 加仓 → maxpos
+  assert.equal(decideLeg({ coin: "ETH", size: "0.1" }, null, baseCaps, { ETH: "3000" }), "skip-maxpos");
+});
+
+test("decideLeg: skip-capped（部署需求超顶，仅拦加仓）", () => {
+  // 场景2：ETH 需求名义 562.5 > 余额×maxDeploy=450；放宽 maxPositionPct 排除 maxpos 先命中
+  const caps = { ...baseCaps, maxPositionPct: 2 };
+  assert.equal(decideLeg({ coin: "ETH", size: "0.1875" }, null, caps, { ETH: "3000" }), "skip-capped");
+});
+
+test("decideLeg: capped 时减仓/平仓放行（不阻止降风险，场景3）", () => {
+  // 已触顶（currentDeployed 高），但目标减仓：current 10 → desired 8（量级缩小=减仓）
+  const caps = { ...baseCaps, maxPositionPct: 2, currentDeployedNotional: "100000" };
+  // delta=-2 名义 6000 > 10、未碰 minDelta；减仓方向 isIncrease=false → 不 capped → place
+  assert.equal(decideLeg({ coin: "ETH", size: "8" }, { size: "10" }, caps, { ETH: "3000" }), "place");
+});
+
+test("decideLeg: noop（|delta|/|desired| < minDeltaPct，碎步追单）", () => {
+  // 需绕开 mindust（本笔名义≥$10）：desired 2 @3000 名义 6000，delta 0.005 名义 15≥10；
+  // 相对变动 0.005/2=0.0025 < minDeltaPct 0.003 → noop。放宽 maxPos/avail 排除 maxpos/capped。
+  const caps = { ...baseCaps, maxPositionPct: 1, availBalance: "100000" };
+  assert.equal(decideLeg({ coin: "ETH", size: "2" }, { size: "1.995" }, caps, { ETH: "3000" }), "noop");
+});
+
+// ---------- 03 planReconcile（滚仓一步对齐）----------
+test("planReconcile: 滚仓 100→…→200，对账一步对齐到最新 desired（中间态不独立 would-place）", () => {
+  // 目标历经多跳，对账只看最新 desired=12.5；current=8（上轮）→ delta +4.5 一次性对齐
+  const caps = { ...baseCaps, maxPositionPct: 5, availBalance: "100000" };
+  const { actions } = planReconcile([{ coin: "ETH", size: "12.5" }], [{ coin: "ETH", size: "8" }], caps, { ETH: "3000" });
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].decision, "place");
+  assert.equal(actions[0].deltaSize, "4.5");
+  assert.equal(actions[0].isBuy, true);
+  assert.equal(actions[0].size, "4.5");
+});
+
+test("planReconcile: skip 类不进 would-place（顺序铁律）", () => {
+  // 一仓 mindust、一仓正常 → 仅正常仓 decision=place
+  const caps = { ...baseCaps, maxPositionPct: 5 };
+  const { actions } = planReconcile(
+    [{ coin: "DUST", size: "0.001" }, { coin: "ETH", size: "0.05" }],
+    [],
+    caps,
+    { DUST: "1", ETH: "3000" },
+  );
+  const dust = actions.find((a) => a.coin === "DUST");
+  const eth = actions.find((a) => a.coin === "ETH");
+  assert.equal(dust.decision, "skip-mindust");
+  assert.equal(eth.decision, "place");
+  assert.equal(actions.filter((a) => a.decision === "place").length, 1);
 });
