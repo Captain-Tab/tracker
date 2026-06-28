@@ -19,7 +19,6 @@ export const ENVS = {
 const SODEX_PERPS_PREFIX = "/api/v1/perps";
 const REQUEST_TIMEOUT_MS = 10_000;
 export const META_REFRESH_MS = 6 * 60 * 60 * 1_000; // 与 HYPE-watch 一致
-const MIN_ORDER_NOTIONAL_USD = 10; // 交易所最小名义（占位，校验门在 03 复用 02 常量）
 
 const ts = () => new Date().toISOString().slice(11, 19);
 export const log = (...a) => console.log(ts(), ...a);
@@ -230,4 +229,4 @@ export function placeDryRun(leg, { assetIndex, szDecimals, slippageBps, dryRun }
   };
 }
 
-export { MIN_ORDER_NOTIONAL_USD, formatPrice };
+export { formatPrice };

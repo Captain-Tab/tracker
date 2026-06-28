@@ -9,6 +9,8 @@ import { join } from "node:path";
 import { mapSymbol, loadTargets } from "../process/mapping.mjs";
 import { add, sub, mul, div, gt, lt, maxStr, formatSize, formatPrice, applySlippage } from "../process/precision.mjs";
 import { normalizeTargetPositions, parseHypeMeta, placeDryRun } from "../api/index.mjs";
+import { computeRatio, computeDesired } from "../process/sizing.mjs";
+import { recommendMinCapital } from "../process/recommend.mjs";
 
 const ADDR = "0x321f7193eadbacb67eff00f76b975a487e5b1c84";
 
@@ -199,4 +201,77 @@ test("api: placeDryRun 真实提交口子占位抛错", () => {
     () => placeDryRun({ coin: "ETH", isBuy: true, size: "1", refPx: "3000" }, { assetIndex: 1, szDecimals: 4, slippageBps: 50, dryRun: false }),
     /后续阶段/,
   );
+});
+
+// ---------- 02 资金模型 sizing ----------
+test("sizing: computeRatio = (avail×deployPct)/margin；分母<=0 → 0", () => {
+  assert.equal(computeRatio(500, 0.5, 4000), 0.0625); // 总纲场景1
+  assert.equal(computeRatio(500, 0.5, 0), 0); // 分母 0
+  assert.equal(computeRatio(500, 0.5, -1), 0); // 分母负
+});
+
+test("sizing: computeDesired 保证金等比→名义→size，方向沿用 szi 符号", () => {
+  const out = computeDesired(
+    [{ coin: "ETH", szi: "10", marginUsed: "4000", leverage: 5 }],
+    0.0625,
+    { ETH: "8000" },
+  );
+  // desiredMargin=250 → notional=1250 → size=1250/8000=0.15625（多）
+  assert.deepEqual(out, [{ coin: "ETH", size: "0.15625" }]);
+});
+
+test("sizing: computeDesired 空头 szi 负号 + 缺价标记跳过、不中断整批", () => {
+  const out = computeDesired(
+    [
+      { coin: "BTC", szi: "-2", marginUsed: "1000", leverage: 10 },
+      { coin: "DOGE", szi: "100", marginUsed: "50", leverage: 5 },
+    ],
+    0.0625,
+    { BTC: "60000" }, // DOGE 缺价
+  );
+  // BTC: margin 1000×0.0625=62.5 → notional 625 → size 625/60000≈0.010416… 取负
+  assert.equal(out[0].coin, "BTC");
+  assert.ok(out[0].size.startsWith("-"), `空头应为负: ${out[0].size}`);
+  assert.deepEqual(out[1], { coin: "DOGE", size: null, skipped: true, reason: "no-price" });
+});
+
+test("sizing: 空仓边界 → []", () => {
+  assert.deepEqual(computeDesired([], 0, { ETH: "8000" }), []);
+  assert.deepEqual(computeDesired(null, 0, {}), []);
+});
+
+// ---------- 02 最低本金 recommend ----------
+test("recommend: 最低本金反解 + 小仓判定跳过（子件 02 场景2）", () => {
+  const positions = [
+    { coin: "ETH", szi: "10", marginUsed: "4000", leverage: 5 }, // targetNotional=10×8000=80000
+    { coin: "DOGE", szi: "1000", marginUsed: "200", leverage: 5 }, // targetNotional=1000×0.05=50
+  ];
+  const prices = { ETH: "8000", DOGE: "0.05" };
+  // targetMappableMargin=4200；currentRatio=0.0625
+  const out = recommendMinCapital(positions, prices, 0.5, 0.0625);
+  assert.equal(out.ratioMin, 0.2); // max(10/80000, 10/50)=0.2（DOGE 卡门槛）
+  assert.equal(out.minCapital, 1680); // 0.2×4200/0.5
+  const eth = out.perLeg.find((l) => l.coin === "ETH");
+  const doge = out.perLeg.find((l) => l.coin === "DOGE");
+  assert.equal(eth.canFollow, true); // 80000×0.0625=5000≥10
+  assert.equal(eth.reason, "ok");
+  assert.equal(doge.canFollow, false); // 50×0.0625=3.125<10
+  assert.equal(doge.reason, "below-min-notional");
+});
+
+test("recommend: 缺 currentRatio → reason no-ratio；缺价 → no-price 不入 ratioMin", () => {
+  const positions = [
+    { coin: "ETH", szi: "10", marginUsed: "4000", leverage: 5 },
+    { coin: "X", szi: "1", marginUsed: "100", leverage: 5 },
+  ];
+  const out = recommendMinCapital(positions, { ETH: "8000" }, 0.5); // 无 currentRatio、X 缺价
+  assert.equal(out.perLeg.find((l) => l.coin === "ETH").reason, "no-ratio");
+  const x = out.perLeg.find((l) => l.coin === "X");
+  assert.equal(x.reason, "no-price");
+  assert.equal(x.legRatioMin, null);
+  assert.equal(out.ratioMin, 0.000125); // 仅 ETH 计入 max（10/80000）
+});
+
+test("recommend: 无可映射仓 → 安全零值", () => {
+  assert.deepEqual(recommendMinCapital([], { ETH: "8000" }, 0.5), { minCapital: 0, ratioMin: 0, perLeg: [] });
 });
