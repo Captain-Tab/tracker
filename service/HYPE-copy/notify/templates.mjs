@@ -88,8 +88,9 @@ export function lineStart(extra = "") {
 
 // positions: [{coin, size, leverage, szDecimals, refPx, marginUsed, targetEntryPx, targetSzi}]
 // 分两个卡片：🎯 目标仓位（来源数据） + 📊 跟单仓位（我方镜像）
-export function buildPositionCards(positions) {
+export function buildPositionCards(positions, skippedCoins) {
   if (!positions || positions.length === 0) return "🎯 目标 / 📊 跟单：（无可映射仓）";
+  const skipSet = skippedCoins instanceof Set ? skippedCoins : new Set();
 
   const SEP = "━━━━━━━━━━";
   const lines = [];
@@ -120,7 +121,8 @@ export function buildPositionCards(positions) {
     const notional = px ? fmtDisplayUsd(mul(absSize, String(px))) : null;
     const mirrorMargin = px && p.leverage ? fmtDisplayUsd(div(mul(absSize, String(px)), String(p.leverage))) : null;
     const mirrorLines = [];
-    mirrorLines.push(`📊 跟单仓位：${p.coin} ${levStr}${dirCN}`);
+    const skipTag = skipSet.has(p.coin) ? " ⛔ 不跟" : "";
+    mirrorLines.push(`📊 跟单仓位：${p.coin} ${levStr}${dirCN}${skipTag}`);
     mirrorLines.push(`  持仓量  ${displaySize} 张`);
     if (notional) mirrorLines.push(`  仓位价值  $${notional}`);
     if (mirrorMargin) mirrorLines.push(`  保证金  $${mirrorMargin}`);

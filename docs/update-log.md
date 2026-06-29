@@ -10,7 +10,7 @@
 
 - **`api/index.mjs`**：`normalizeTargetPositions` 补 `cr`（累计已实现盈亏）/ `cf`（累计资金费率）提取。
 - **`main.mjs`**：state 加 `lastCrByCoin`/`lastCfByCoin`/`lastTargetSziByCoin`/`lastLeverageByCoin`（平仓快照）；`mappable`/`desiredEnriched` 补 `cr`/`cf`；平仓检测（`prevRatio` 快照解 ratio=null 问题）；banner kind 改为币种级推导（`newCoins`/`hasClose` 对 `prevCoins` 做差，解 skip-maxpos 拦截后无法识别问题）；`current` 过滤平仓币（防 planReconcile 重复产 place 事件）；仓位卡片所有轮次展示（不限于启动轮）；无仓位时展示"无持仓"。
-- **`notify/templates.mjs`**：`BANNER_ACTION`/`buildBanner` 加 round_close/round_open；`lineFor` close 改为双卡片格式（目标+跟单平仓卡片，含平仓前持仓/盈亏/费用，空行分隔）。
+- **`notify/templates.mjs`**：`BANNER_ACTION`/`buildBanner` 加 round_close/round_open；`lineFor` close 改为双卡片格式（目标+跟单平仓卡片，含平仓前持仓/盈亏/费用，空行分隔）；`buildPositionCards` 加 `skippedCoins` 参数（skip-maxpos 币种跟单卡片标 ⛔ 不跟）。
 - **`test/domain.test.mjs`**：新增平仓盈亏双卡片单测。
 
 ### 效果
@@ -18,6 +18,7 @@
 - 平仓消息含目标/跟单双维度盈亏 + 费用（`cr`/`cf` 来自 sodex REST，零新增请求）。
 - 所有轮次统一双卡片（🎯 目标 + 📊 跟单），平仓亦双卡片格式。
 - Banner 自适应开仓/平仓/对账（币种级检测），不再一律 ⏫。
+- skip-maxpos 货币跟单卡片标 ⛔ 不跟，避免「显示了仓位但说不跟」的混淆。
 
 ### 验证
 

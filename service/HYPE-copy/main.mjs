@@ -217,8 +217,10 @@ async function reconcileOnce(env, target, avail, push) {
   }
   // 仅有效内容时推送（常规轮无变化静默跳过）
   const hasContent = startupRound || (lines && lines.length > 0);
+  // skip-maxpos 币种：目标仓位可展示，跟单仓位标 ⛔ 不跟
+  const skippedCoins = new Set(events.filter((e) => e.result === "skip-maxpos").map((e) => e.coin));
   // 仓位卡片：有仓展示双卡片，无仓展示"无持仓"（对齐 watch render.mjs）
-  const activeCards = hasMappable ? buildPositionCards(desiredEnriched) : "🎯 目标 / 📊 跟单：无持仓";
+  const activeCards = hasMappable ? buildPositionCards(desiredEnriched, skippedCoins) : "🎯 目标 / 📊 跟单：无持仓";
   if (hasContent) {
     const summary = buildRoundSummary({
       kind,
