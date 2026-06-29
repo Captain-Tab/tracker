@@ -414,12 +414,13 @@ test("lineFor: 空头方向 + 告警/最低本金/noop", () => {
   assert.match(shortOpen, /🆕 ETH 做空 \| 新开 1 张 @ \$3000/);
   assert.match(lineFor({ result: "skip-unmappable", coin: "PLTR" }), /⛔.*无 hype 映射/);
   assert.match(lineFor({ result: "skip-capped", coin: "ETH" }), /⛔.*加仓拦截/);
-  // 平仓 close 带盈亏
-  const closeLine = lineFor({ result: "close", coin: "TRUMP", targetPnl: "3.50", targetFee: "-0.07", mirrorPnl: "46.64", mirrorFee: "0", prevSize: "-56.5" });
-  assert.match(closeLine, /🏁 TRUMP 做空 已平仓/);
-  assert.match(closeLine, /目标盈亏  \+/);
-  assert.match(closeLine, /费用  −/);
-  assert.match(closeLine, /跟单盈亏  \+/);
+  // 平仓 close 双卡片格式
+  const closeLine = lineFor({ result: "close", coin: "TRUMP", targetPnl: "3.50", targetFee: "-0.07", mirrorPnl: "46.64", mirrorFee: "0", prevSize: "-56.5", targetPrevSzi: "-50", leverage: 5 });
+  assert.match(closeLine, /🎯 目标仓位：TRUMP 5x 做空  已平仓/);
+  assert.match(closeLine, /平仓前持仓  50 张/);
+  assert.match(closeLine, /目标盈亏  \+\$3\.5/);
+  assert.match(closeLine, /📊 跟单仓位：TRUMP 5x 做空  已平仓/);
+  assert.match(closeLine, /跟单盈亏  \+\$46\.64/);
   assert.match(lineFor({ result: "min-capital", minCapital: 1680, canFollowCoins: "ETH" }), /💡 最低本金下界：\$1680（仅保证最大仓 ≥ \$10 名义，可跟 ETH）/);
   assert.match(lineFor({ result: "error", coin: "ETH", reason: "x" }), /⚠️ ETH 执行失败/);
   assert.equal(lineFor({ result: "noop", coin: "ETH" }), null);

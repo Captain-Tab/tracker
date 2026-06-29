@@ -192,18 +192,30 @@ export function lineFor(a) {
       return `${ICON.skip} ${coin} ${would} > ${limit}，加仓拦截`;
     }
     case "close": {
+      // 双卡片格式：🎯 目标 + 📊 跟单（对齐活跃仓位卡片风格）
       const dir = DIR_CN[posDir(a.prevSize ?? a.currentSize ?? "0")];
+      const levStr = a.leverage ? ` ${a.leverage}x` : "";
+      const szDec = a.szDecimals;
+      const targetPrev = a.targetPrevSzi ? fmtDisplaySize(absStr(a.targetPrevSzi), szDec) : "—";
+      const mirrorPrev = fmtDisplaySize(absStr(a.prevSize ?? "0"), szDec);
       const tPnl = a.targetPnl != null ? Number(a.targetPnl) : null;
       const tFee = a.targetFee != null ? Number(a.targetFee) : null;
       const mPnl = Number(a.mirrorPnl ?? 0);
       const tPnlSigned = tPnl != null ? (tPnl >= 0 ? `+$${fmtDisplayUsd(tPnl)}` : `−$${fmtDisplayUsd(Math.abs(tPnl))}`) : "—";
       const tFeeSigned = tFee != null ? (tFee >= 0 ? `+$${fmtDisplayUsd(tFee)}` : `−$${fmtDisplayUsd(Math.abs(tFee))}`) : "—";
       const mPnlSigned = mPnl >= 0 ? `+$${fmtDisplayUsd(mPnl)}` : `−$${fmtDisplayUsd(Math.abs(mPnl))}`;
-      return [`${ICON.close} ${coin} ${dir} 已平仓`,
+      return [
+        `━━━━━━━━━━`,
+        `🎯 目标仓位：${coin}${levStr} ${dir}  已平仓`,
+        `  平仓前持仓  ${targetPrev} 张`,
         `  目标盈亏  ${tPnlSigned}`,
         `  费用  ${tFeeSigned}`,
+        ``,
+        `📊 跟单仓位：${coin}${levStr} ${dir}  已平仓`,
+        `  平仓前持仓  ${mirrorPrev} 张`,
         `  跟单盈亏  ${mPnlSigned}`,
         `  费用  $${fmtDisplayUsd(a.mirrorFee ?? "0")}`,
+        `━━━━━━━━━━`,
       ].join("\n");
     }
     case "min-capital": {

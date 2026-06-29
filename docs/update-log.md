@@ -9,15 +9,15 @@
 ### 变更
 
 - **`api/index.mjs`**：`normalizeTargetPositions` 补 `cr`（累计已实现盈亏）/ `cf`（累计资金费率）提取。
-- **`main.mjs`**：state 加 `lastCrByCoin`/`lastCfByCoin`（平仓盈亏快照）；`mappable`/`desiredEnriched` 补 `cr`/`cf`；平仓检测（上轮有本轮无 → close 事件）；banner kind 从事件推导（round_close → 🏁 / round_open → 🆕 / round → ⏫）；仓位卡片所有轮次展示（不限于启动轮）。
-- **`notify/templates.mjs`**：`BANNER_ACTION`/`buildBanner` 加 round_close/round_open；`lineFor` 新增 close case（多行盈亏：目标盈亏/费用/跟单盈亏/费用，盈亏换行）；`classifyMirrorEvent` 导出供 main.mjs 使用。
-- **`test/domain.test.mjs`**：新增平仓盈亏单测。
+- **`main.mjs`**：state 加 `lastCrByCoin`/`lastCfByCoin`/`lastTargetSziByCoin`/`lastLeverageByCoin`（平仓快照）；`mappable`/`desiredEnriched` 补 `cr`/`cf`；平仓检测（`prevRatio` 快照解 ratio=null 问题）；banner kind 改为币种级推导（`newCoins`/`hasClose` 对 `prevCoins` 做差，解 skip-maxpos 拦截后无法识别问题）；`current` 过滤平仓币（防 planReconcile 重复产 place 事件）；仓位卡片所有轮次展示（不限于启动轮）；无仓位时展示"无持仓"。
+- **`notify/templates.mjs`**：`BANNER_ACTION`/`buildBanner` 加 round_close/round_open；`lineFor` close 改为双卡片格式（目标+跟单平仓卡片，含平仓前持仓/盈亏/费用，空行分隔）。
+- **`test/domain.test.mjs`**：新增平仓盈亏双卡片单测。
 
 ### 效果
 
 - 平仓消息含目标/跟单双维度盈亏 + 费用（`cr`/`cf` 来自 sodex REST，零新增请求）。
-- 所有轮次统一双卡片（🎯 目标 + 📊 跟单），不再仅启动轮。
-- Banner 自适应开仓/平仓/对账，不再一律 ⏫。
+- 所有轮次统一双卡片（🎯 目标 + 📊 跟单），平仓亦双卡片格式。
+- Banner 自适应开仓/平仓/对账（币种级检测），不再一律 ⏫。
 
 ### 验证
 

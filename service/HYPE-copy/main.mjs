@@ -9,7 +9,7 @@ import { planReconcile } from "./process/reconcile.mjs";
 import { add, mul, absStr } from "./process/precision.mjs";
 import { ENVS, fetchTargetState, fetchHypePrices, buildHypeAssetIndex, placeDryRun, log } from "./api/index.mjs";
 import { recordAction, pushRoundSummary, decidePushLine } from "./notify/index.mjs";
-import { buildHeader, buildFooter, buildPositionCards, fmtClock, lineStart, lineStop, buildRoundSummary, classifyMirrorEvent } from "./notify/templates.mjs";
+import { buildHeader, buildFooter, buildPositionCards, fmtClock, lineStart, lineStop, buildRoundSummary } from "./notify/templates.mjs";
 import { watchSignal, makeSingleFlight, DEFAULT_SIGNAL_DIR } from "../lib/copy-signal/index.mjs";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -41,6 +41,8 @@ const state = {
   pendingStartup: true, // 首轮 = 启动 + 初始镜像同步
   lastCrByCoin: new Map(), // coin → cr（目标累计已实现，平仓快照用）
   lastCfByCoin: new Map(), // coin → cf（目标累计资金费率）
+  lastTargetSziByCoin: new Map(), // coin → szi（目标仓位量，平仓卡片用）
+  lastLeverageByCoin: new Map(), // coin → leverage（目标杠杆，平仓卡片用）
 };
 
 // 单轮对账（顺序铁律见总纲 §2.2）。返回收集的事件，由调用方统一记录 + 汇总推送。
@@ -71,9 +73,12 @@ async function reconcileOnce(env, target, avail, push) {
     // 平仓快照：记下本轮 cr/cf（目标平仓后 coin 从 mappable 消失，靠此快照取盈亏）
     state.lastCrByCoin.set(m.coin, String(m.cr ?? "0"));
     state.lastCfByCoin.set(m.coin, String(m.cf ?? "0"));
+    state.lastTargetSziByCoin.set(m.coin, String(m.szi ?? "0"));
+    state.lastLeverageByCoin.set(m.coin, m.leverage);
   }
   const hasMappable = mappable.length > 0 && Number(targetMappableMargin) > 0;
-  const prevCoins = new Set(state.lastWouldHold.keys()); // 上轮持仓币种（平仓检测用）
+  const prevCoins = new Set(state.lastWouldHold.keys()); // 上轮持仓币种（平仓/开仓检测用）
+  const prevRatio = state.anchoredRatio; // 平仓 P&L 快照（hasMappable=false 时 ratio 为 null，靠此取值）
 
   let desired = [];
   let desiredEnriched = [];
@@ -116,8 +121,11 @@ async function reconcileOnce(env, target, avail, push) {
     state.anchoredRatio = null; // flat → 下轮重锚
   }
 
-  // 对账：current = 上一轮 would-hold（非空）→ 产 开/加/减/平 + skip（总纲 §2.2）
-  const current = [...state.lastWouldHold].map(([coin, size]) => ({ coin, size }));
+  // 对账：current = 上一轮 would-hold 中仍在 desired 的币种（关闭币走平仓检测，不走 planReconcile，防重复 close 行）
+  const desiredCoinSet = new Set(desired.map((d) => d.coin));
+  const current = [...state.lastWouldHold]
+    .filter(([coin]) => desiredCoinSet.has(coin))
+    .map(([coin, size]) => ({ coin, size }));
   const caps = {
     maxDeployPct: target.maxDeployPct,
     maxPositionPct: target.maxPositionPct,
@@ -153,24 +161,24 @@ async function reconcileOnce(env, target, avail, push) {
     events.push({ ...base, result: "place", size: wp.order.s, fillPx: a.refPx, slippageBps: 0, fee: "0", szDecimals: meta.szDecimals });
   }
 
-  // 平仓检测：上轮有、本轮 desired 无 → 目标平仓（仅 anchored 后有效）
-  if (ratio != null) {
-    const desiredCoins = new Set(desired.map((d) => d.coin));
-    for (const coin of prevCoins) {
-      if (!desiredCoins.has(coin)) {
-        const targetPnl = state.lastCrByCoin.get(coin) ?? "0";
-        const targetFee = state.lastCfByCoin.get(coin) ?? "0";
-        const meta = assetIndex.get(coin);
-        events.push({
-          coin, side: "", result: "close",
-          szDecimals: meta?.szDecimals,
-          targetPnl, targetFee,
-          mirrorPnl: mul(targetPnl, String(ratio)),
-          mirrorFee: "0", // dry-run 无手续费
-          ratio,
-          prevSize: state.lastWouldHold.get(coin) ?? "0",
-        });
-      }
+  // 平仓检测：上轮有、本轮 desired 无 → 目标平仓
+  const newCoins = desired.filter((d) => !prevCoins.has(d.coin)).map((d) => d.coin);
+  for (const coin of prevCoins) {
+    if (!desiredCoinSet.has(coin) && prevRatio != null) {
+      const targetPnl = state.lastCrByCoin.get(coin) ?? "0";
+      const targetFee = state.lastCfByCoin.get(coin) ?? "0";
+      const meta = assetIndex.get(coin);
+      events.push({
+        coin, side: "", result: "close",
+        szDecimals: meta?.szDecimals,
+        targetPnl, targetFee,
+        mirrorPnl: mul(targetPnl, String(prevRatio)),
+        mirrorFee: "0", // dry-run 无手续费
+        ratio: prevRatio,
+        prevSize: state.lastWouldHold.get(coin) ?? "0",
+        targetPrevSzi: state.lastTargetSziByCoin.get(coin) ?? "0",
+        leverage: state.lastLeverageByCoin.get(coin),
+      });
     }
   }
 
@@ -203,14 +211,14 @@ async function reconcileOnce(env, target, avail, push) {
   if (startupRound) {
     kind = hasMappable ? "initial_sync" : "startup";
   } else {
-    const hasClose = events.some((e) => e.result === "close");
-    const hasOpen = events.some((e) => e.result === "place" && classifyMirrorEvent(e.currentSize ?? "0", e.desiredSize ?? "0") === "open");
+    const hasClose = [...prevCoins].some((c) => !desiredCoinSet.has(c));
+    const hasOpen = newCoins.length > 0;
     kind = hasClose ? "round_close" : hasOpen ? "round_open" : "round";
   }
   // 仅有效内容时推送（常规轮无变化静默跳过）
   const hasContent = startupRound || (lines && lines.length > 0);
-  // 仓位卡片：只要有活跃仓位就展示（不再仅启动轮）
-  const activeCards = hasMappable ? buildPositionCards(desiredEnriched) : null;
+  // 仓位卡片：有仓展示双卡片，无仓展示"无持仓"（对齐 watch render.mjs）
+  const activeCards = hasMappable ? buildPositionCards(desiredEnriched) : "🎯 目标 / 📊 跟单：无持仓";
   if (hasContent) {
     const summary = buildRoundSummary({
       kind,
