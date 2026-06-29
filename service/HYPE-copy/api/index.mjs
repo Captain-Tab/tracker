@@ -144,6 +144,8 @@ export function normalizeTargetPositions(rawPositions) {
       szi,
       marginUsed: marginUsed !== undefined && marginUsed !== null ? String(marginUsed) : "0",
       leverage,
+      cr: String(pickField(p, ["cr", "cumRealized"]) ?? "0"), // 累计已实现盈亏
+      cf: String(pickField(p, ["cf", "cumFee", "cumFunding"]) ?? "0"), // 累计资金费率
       ...(entryPx !== undefined ? { entryPx: String(entryPx) } : {}),
     };
   });

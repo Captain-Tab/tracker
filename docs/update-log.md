@@ -4,6 +4,27 @@
 
 ---
 
+## HYPE-copy 平仓盈亏 + 双卡片全集 + banner 自适应 — 2026-06-29
+
+### 变更
+
+- **`api/index.mjs`**：`normalizeTargetPositions` 补 `cr`（累计已实现盈亏）/ `cf`（累计资金费率）提取。
+- **`main.mjs`**：state 加 `lastCrByCoin`/`lastCfByCoin`（平仓盈亏快照）；`mappable`/`desiredEnriched` 补 `cr`/`cf`；平仓检测（上轮有本轮无 → close 事件）；banner kind 从事件推导（round_close → 🏁 / round_open → 🆕 / round → ⏫）；仓位卡片所有轮次展示（不限于启动轮）。
+- **`notify/templates.mjs`**：`BANNER_ACTION`/`buildBanner` 加 round_close/round_open；`lineFor` 新增 close case（多行盈亏：目标盈亏/费用/跟单盈亏/费用，盈亏换行）；`classifyMirrorEvent` 导出供 main.mjs 使用。
+- **`test/domain.test.mjs`**：新增平仓盈亏单测。
+
+### 效果
+
+- 平仓消息含目标/跟单双维度盈亏 + 费用（`cr`/`cf` 来自 sodex REST，零新增请求）。
+- 所有轮次统一双卡片（🎯 目标 + 📊 跟单），不再仅启动轮。
+- Banner 自适应开仓/平仓/对账，不再一律 ⏫。
+
+### 验证
+
+- 纯函数单测 59/59 全绿。
+
+---
+
 ## HYPE-copy 通知模板重构（卡片式 + 目标/跟单双卡片）— 2026-06-29
 
 通知模板从纯文本行重构为 watch 卡片式风格：banner 头（动作+时间+ID）+ 仓位双卡片（🎯 目标 / 📊 跟单，空行分隔）+ 明细行 + 计时页脚。

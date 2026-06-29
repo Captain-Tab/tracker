@@ -52,13 +52,17 @@ export function fmtClock(tsMs) {
 // 轮次动作 → banner 动词
 const BANNER_ACTION = {
   initial_sync: "跟单启动",
+  round_close: "平仓",
+  round_open: "开仓",
   round: "跟单对账",
   startup: "跟单启动",
   shutdown: "跟单关闭",
 };
 
 function buildBanner(kind, clock, headerId) {
-  const icon = kind === "shutdown" ? ICON.stop
+  const icon = kind === "round_close" ? ICON.close
+    : kind === "round_open" ? ICON.open
+    : kind === "shutdown" ? ICON.stop
     : kind === "startup" ? ICON.start
     : kind === "initial_sync" ? ICON.start
     : ICON.add;
@@ -186,6 +190,21 @@ export function lineFor(a) {
       const would = a.wouldDeploy ? `需 $${fmtDisplayUsd(a.wouldDeploy)}` : "部署需求";
       const limit = a.maxDeployNotional ? `资金上限 $${fmtDisplayUsd(a.maxDeployNotional)}` : "超资金上限";
       return `${ICON.skip} ${coin} ${would} > ${limit}，加仓拦截`;
+    }
+    case "close": {
+      const dir = DIR_CN[posDir(a.prevSize ?? a.currentSize ?? "0")];
+      const tPnl = a.targetPnl != null ? Number(a.targetPnl) : null;
+      const tFee = a.targetFee != null ? Number(a.targetFee) : null;
+      const mPnl = Number(a.mirrorPnl ?? 0);
+      const tPnlSigned = tPnl != null ? (tPnl >= 0 ? `+$${fmtDisplayUsd(tPnl)}` : `−$${fmtDisplayUsd(Math.abs(tPnl))}`) : "—";
+      const tFeeSigned = tFee != null ? (tFee >= 0 ? `+$${fmtDisplayUsd(tFee)}` : `−$${fmtDisplayUsd(Math.abs(tFee))}`) : "—";
+      const mPnlSigned = mPnl >= 0 ? `+$${fmtDisplayUsd(mPnl)}` : `−$${fmtDisplayUsd(Math.abs(mPnl))}`;
+      return [`${ICON.close} ${coin} ${dir} 已平仓`,
+        `  目标盈亏  ${tPnlSigned}`,
+        `  费用  ${tFeeSigned}`,
+        `  跟单盈亏  ${mPnlSigned}`,
+        `  费用  $${fmtDisplayUsd(a.mirrorFee ?? "0")}`,
+      ].join("\n");
     }
     case "min-capital": {
       const mc = fmtDisplayUsd(a.minCapital ?? "0");
