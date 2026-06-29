@@ -5,90 +5,13 @@
 
 ---
 
-## 〇、🔝 最优先：watch 检测 → 信号 → copy 执行（事件驱动）
+## 〇、🔝 最优先：事件驱动（watch 检测 → 信号 → copy 执行）
 
-> **优先级高于本文其余所有项**，是本档的**核心流程**。当前 `main.mjs` 是纯轮询（空转查接口 + 延迟），与"目标不动我们不动"不符。本节为收敛后的最终落地蓝图。
-
-### 核心流程（端到端节点：目标动作 → 我方镜像完成）
-
-```
-[交易所] N0 目标在 sodex/hype 真实开/平/加/减仓
-   │ (WS 物理传播)
-   ▼
-┌─ watch 进程（tracker 用户，只读，已在跑）──────────────────┐
-│ N1  WS(accountState) 推送 → 更新 this.positions（内存，免 REST）│
-│ N2  指纹去重确认"真变化"(stateFp/outFp) + 分档防抖             │
-│      （结构变化=开/平/反手 走短档即时；滚仓 走长档合并）        │
-│ N3 ★信号注入点★ 变化确认那刻（outFp 通过、**TG 推送之前**）    │
-│      → 原子写 脏标信号文件 {seq, ts, address}（不带快照）       │
-│      → watch 随后继续自己的 render + TG 推送（与 copy 并行）    │
-└────────────────────────────┬───────────────────────────────┘
-              信号文件 = 跨进程边界（tracker 写 / trader-exec 读）
-                             │
-┌─ copy 进程（trader-exec 用户，持 agent key，dry-run 不签）─────┐
-│ N4  fs.watchFile 轮询(~1s,可调) 发现 mtime 变 → 读 → seq>lastSeq 才触发 │
-│      （正在跑则置 pending，结束补跑一次 = coalesce 合并）        │
-│ N5  reconcileOnce（对账，幂等）：                              │
-│      t0─ 并行拉 [fetchTargetState(sodex) ∥ fetchHypePrices(hype) ∥ assetIndex(缓存)] ─t1 │
-│        → mapSymbol(sodex→hype + hype universe 校验) 过滤可映射  │
-│        → computeRatio(锚定) → computeDesired(保证金等比换算)    │
-│        → planReconcile(desired, current=lastWouldHold)         │
-│        → diffDelta → decideLeg 六分支校验门                    │
-│        → placeDryRun(IOC would-place，不签名) ─t2             │
-│ N6  notify：                                                  │
-│      → 每动作 recordAction（JSONL+journald，含 fullMs/execMs） │
-│      → 事件分类 开/加/减/平 + 去重 → pushRoundSummary 一条汇总  │
-│      → 更新 lastWouldHold / lastAlertFp / wasFollowing         │
-└──────────────────────────────────────────────────────────────┘
-
-兜底地板（copy 常驻并行）：每 180s 无条件 reconcileOnce 一次
-   → 信号全丢也能在 180s 内对账补齐（对账=全量收敛，不漏仓位）
-```
-
-### 两条路径分工（fail-safe 结构）
-
-| 路径 | 角色 | 频率 | 职责 |
-|---|---|---|---|
-| 信号快路（N3→N4） | 加速器 | 目标一动即触发 | 延迟从 60s 压到 ~1s |
-| REST 兜底（180s） | 地板 | 固定 180s | 信号链坏掉时不漏不停 |
-
-> copy 对信号**零硬依赖**——最坏退回轮询，不会比现在更差。
-
-### 关键设计决策（收敛后铁律）
-
-| 点 | 决定 | 理由 |
-|---|---|---|
-| 不新建 watch | 复用已跑的 `sodex-watch`/`HYPE-watch` | 已订阅 WS，copy 不开第二条、不跑第二份 watcher |
-| watch 先 copy 后 | watch 检测完 → 发信号 → copy 才执行 | copy 是下游消费者，不自己监听 |
-| 信号时点 | 变化确认后、**TG 推送之前** | 省掉 watch TG 网络往返(≤8s)对 copy 的阻塞 |
-| 信号内容 | **脏标** {seq,ts,address}，**不带快照** | 单一数据路径 + 不耦合 watch 的 WS 格式（WS 与 REST 字段不同源、WS 无 marginUsed） |
-| copy 自拉数据 | 走自己 `fetchTargetState`（REST） | 与**必拉的 hype 价格并行**(Promise.all)，几乎不加串行延迟；且信号触发与兜底触发**同一条数据路径** |
-| 传输 | 原子写文件(tmp+rename) + **`fs.watchFile` 轮询** | 零依赖、对 rename 免疫（`fs.watch` 盯 inode 会被 rename 换掉而失效）、跨重启存活 |
-| 触发延迟 | ~1s（interval 可调到 0.5s） | 持仓型跟单足够（永远跑在目标后，非 HFT）；dry-run 无所谓 |
-| 资源 | `fs.watchFile` 每秒一次 `fs.stat`（微秒级） | 比 60s REST 轮询便宜几个数量级，CPU/IO 不可见 |
-| 对账 | 收到信号后**对齐完整净仓** | 自愈断线/重启/部分成交/漏单（事件定"何时动"，对账定"怎么动"） |
-| 映射 | hype 实时 universe 校验 | `buildHypeAssetIndex` 已每 6h 拉 meta；coin 不在 universe=不可映射，随上下架自动跟，零手维护 |
-| 隔离 | watch=tracker 写 / copy=trader-exec 读 | 信号文件目录组权限，两进程不混 |
-
-### 时间度量（落 JSONL + 推送页脚）
-
-- `fullMs = t2−t0`：copy 一轮完整（拉取 + 处理）；`execMs = t2−t1`：copy 处理段（不含拉取）。
-- 真·端到端（N0→N6）另含 WS 传播 + watch 防抖 + ~1s 信号检测（均在 watch 侧）；事件驱动后可把 `fullMs` 起点前移到信号到达时刻量化端到端。
-
-### 落地子计划（4 阶段，每阶段 实现→测试→/k:check→commit）
-
-| 阶段 | 改动 | 代码触点 | 风险 |
-|---|---|---|---|
-| P0 信号契约 | seq/ts/address 编解码（纯函数）+ 原子写 + `fs.watchFile` reader | 新建 `service/lib/copy-signal/` | 低 |
-| P1 watch 发信号 | 在"变化确认"点(outFp 通过、TG 前) emit；**加法 + 配置开关**，不动检测主体 | `sodex-watch/process/watcher.mjs`、`HYPE-watch` 对称点 | **中**（动 live 服务，需回归：watch TG 输出 diff=0） |
-| P2 copy 订阅触发 | 轮询主触发 → 订阅信号触发；REST 降 180s 兜底；coalesce 合并 | `service/HYPE-copy/main.mjs` | 低 |
-| P3 映射自动化 | mapSymbol 接 hype universe 校验 | `process/mapping.mjs` + `buildHypeAssetIndex` | 低 |
-
-> 工作量估：聚焦投入约半天~1 天人力当量（~4 次提交）；P1 回归验证是主要耗时项。
-> 建议顺序 **P0→P3→P1→P2**：P3 与 watch 无关可先做降风险；P1 单独 checkpoint 跑回归；P2 最后接通。
+> **优先级高于本文其余所有项**。当前纯轮询（空转 + 延迟），目标是改成 watch 检测到变化即发信号触发 copy、REST 180s 兜底。
+> **完整设计 / 流程图 / 延迟估算 / 落地子计划已抽成独立 spec 专门执行**：
+> 👉 `.claude/kit/spec/2026-06-29-hype-copy-event-driven.md`
 
 ---
-
 ## 一、一期已完成（dry-run 可跑）
 
 - 配置加载 + 单目标硬限制（`process/mapping.mjs`）、标的映射（sodex 映射表 / hype 直通）。
