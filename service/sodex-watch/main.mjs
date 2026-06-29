@@ -69,8 +69,10 @@ async function main() {
       label: w.label ?? null,
       at: pickAt(w.at, flags.at), // 每地址独立镜像时刻：地址项 at > 全局 --at > 默认 20:00
       isNew: newAddrs.has(String(w.address).toLowerCase()),
+      // 跟单脏标信号路径（加法）：地址项 copySignalPath > 全局 copySignalDir/<address>.json > 不发
+      "copy-signal-path": w.copySignalPath ?? (cfg.copySignalDir ? join(cfg.copySignalDir, `${w.address}.json`) : null),
     }));
-    log(`模式：多地址实时 WS（${runners.length} 个地址，共享限流）`);
+    log(`模式：多地址实时 WS（${runners.length} 个地址，共享限流${cfg.copySignalDir ? "，跟单信号已开" : ""}）`);
     for (const r of runners) r.start();
     process.on("SIGINT", () => { log("收到 SIGINT，关闭全部"); for (const r of runners) r.close(); process.exit(0); });
     return;

@@ -23,5 +23,6 @@ export function loadConfig(path) {
     valid.push(w);
   }
   if (!valid.length) { console.error("配置文件无有效 address"); process.exit(1); }
-  return { tgToken: cfg.tgToken ?? null, watches: valid };
+  // copySignalDir（可选）：配了则 watch 在仓位变化时向 <dir>/<address>.json 写跟单脏标信号（加法）。
+  return { tgToken: cfg.tgToken ?? null, copySignalDir: cfg.copySignalDir ?? null, watches: valid };
 }

@@ -129,6 +129,24 @@
 
 ---
 
+## 开启事件驱动（部署配置）
+
+代码已端到端接线，启用只需配置 + 权限（两侧指向同一信号文件）：
+
+1. **watch 侧**（`sodex-watch`/`HYPE-watch` 的 `config.json`）加全局：
+   ```json
+   { "copySignalDir": "/var/lib/tracker/copy-signal", "tgToken": "...", "watches": [...] }
+   ```
+   → watch 在每个被监听地址仓位变化时写 `<copySignalDir>/<address>.json`（未配则不发，行为 diff=0）。
+2. **copy 侧**（`HYPE-copy/targets.json`）：
+   ```json
+   { "copySignalPath": "/var/lib/tracker/copy-signal/<目标 source.address>.json" }
+   ```
+   → 指向 watch 为该目标地址写的同一文件；未配则 copy 仅 180s 轮询兜底。
+3. **权限**（跨用户）：`copySignalDir` 设共享组，`chgrp <组> <dir> && chmod 0750 <dir>`；watch=`tracker` 写、copy=`trader-exec` 读。
+
+> 三者对齐后，目标一动 → watch 写信号 → copy `fs.watchFile` ~1s 内触发对账。任一未配 → 自动退化为 180s 轮询，不报错。
+
 ## 两条路径分工
 
 | 路径 | 角色 | 频率 | 职责 |
