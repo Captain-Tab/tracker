@@ -56,8 +56,8 @@
 |------|------|-----------|------|------|
 | sodex-discovery / HYPE-discovery | Node | 周期（timer） | 从榜单选出可跟单目标，产出名单 | 无（只读） |
 | sodex-watch / HYPE-watch | Node | 常驻 | 监控目标账户变化，给**人**看的告警 | 无（只读） |
-| notifier | Node | 常驻/触发 | 汇总各服务状态 → Telegram | 无 |
-| **copy-trader** | **Rust** | 常驻 | 跟单：自订目标 fill → 下单 | 跟单子账户 |
+| ~~notifier~~ | — | — | **一期未独立**：通知嵌入各服务（watch 自推 / HYPE-copy `notify/`），无独立 notifier | — |
+| **HYPE-copy**（copy-trader） | **Node**（一期 dry-run，@nktkas SDK；非 Rust） | 常驻 | 跟单执行器：监听目标仓变化 → 对账 → 镜像 would-place | 跟单子账户（实盘阶段，dry-run 不持） |
 | **mm-engine** | **Rust** | 常驻 | 现货做市：自订盘口 → 高频报价 | 做市子账户（独立） |
 
 硬规则：
@@ -330,7 +330,7 @@ journalctl -u 'sodex-*' -o cat | jq 'select(.event=="order_failed")'  # 按事�
 
 | 路径 | 数据 | 频率 | 机制 |
 |------|------|------|------|
-| **冷** | discovery → 执行器：跟单目标名单 | 每周/手动 | **JSON 文件**（`targets.json`），执行器 inotify 监听变更热重载 |
+| **冷** | 跟单目标名单 | 手动 | **JSON 文件**（`HYPE-copy/targets.json`，一期**人工填、单目标**；discovery 不自动写、执行器启动时读、无 inotify 热重载） |
 | **暖** | 执行器 → Node：成交/异常/持仓状态 | 每笔/分钟级 | 全员 **JSON 日志 → journald**；规模大再上 Redis pub/sub |
 | **控制** | 运维/Node → 执行器：健康检查、**强制平仓急停** | 偶发 | 执行器暴露 **127.0.0.1 小 HTTP 接口**（`/health` `/positions` `/flatten`） |
 | **热** | live 行情（目标 fill、盘口） | 实时 | **不走服务间**——每个执行器**直连 HL WS** 自取 |

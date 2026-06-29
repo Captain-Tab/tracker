@@ -43,7 +43,7 @@ sodex/hype 监听目标仓变化
 - `capped`：部署需求触 `maxDeployPct`，仅拦加仓；
 - `flat`：目标可映射净仓归零，释放并待下轮重锚。
 
-对账触发二选一叠加：**watch 事件**（目标仓变化信号）+ **`RECONCILE_INTERVAL`（默认 15s）周期兜底**，两者进同一幂等 `reconcileOnce()`。
+对账触发二选一叠加：**watch 事件**（目标仓变化信号，事件驱动主触发）+ **`RECONCILE_INTERVAL`（默认 180s）周期兜底**，两者经 single-flight 汇入同一幂等 `reconcileOnce()`。
 
 ---
 

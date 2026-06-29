@@ -95,13 +95,17 @@ function envLines(cfg) {
   return p ? [`Environment=HTTP_PROXY=${p}`, `Environment=HTTPS_PROXY=${p}`] : [];
 }
 
+// 常驻 watch 的资源隔离（cgroup，对齐 docs/server-architecture.md §6.1）。watch 很轻（WS+小拉取），
+// 200M 上限远高于实际占用、不会误 OOM；超限被 kill 后 Restart 拉起。
+const WATCH_RESOURCE_LIMITS = ["MemoryMax=200M", "MemoryHigh=160M", "CPUQuota=50%", "TasksMax=64"];
+
 function watchUnit(cfg) {
   return [
     "[Unit]", "Description=Sodex Account Watcher", "After=network-online.target",
     ...warpDeps(cfg), "Wants=network-online.target", "",
     "[Service]", "Type=simple",
     `ExecStart=${NODE_BIN} ${ROOT_DIR}/sodex-watch/main.mjs --config=${ROOT_DIR}/sodex-watch/config.json`,
-    ...envLines(cfg), "Restart=always", "RestartSec=10", "",
+    ...envLines(cfg), "Restart=always", "RestartSec=10", ...WATCH_RESOURCE_LIMITS, "",
     "[Install]", "WantedBy=multi-user.target", "",
   ].join("\n");
 }
@@ -129,7 +133,7 @@ function hypeWatchUnit(cfg) {
     ...warpDeps(cfg), "Wants=network-online.target", "",
     "[Service]", "Type=simple",
     `ExecStart=${NODE_BIN} ${ROOT_DIR}/HYPE-watch/main.mjs --config=${ROOT_DIR}/HYPE-watch/config.json`,
-    ...envLines(cfg), "Restart=always", "RestartSec=10", "",
+    ...envLines(cfg), "Restart=always", "RestartSec=10", ...WATCH_RESOURCE_LIMITS, "",
     "[Install]", "WantedBy=multi-user.target", "",
   ].join("\n");
 }

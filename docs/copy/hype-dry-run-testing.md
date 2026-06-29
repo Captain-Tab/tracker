@@ -43,17 +43,17 @@ node service/sodex-watch/query.mjs <目标地址> --raw > /tmp/sodex-raw-<addr>.
 cat /tmp/sodex-raw-<addr>.json
 ```
 
-### 当前实现的候选键（待核对/修正点）
+### 字段核对结果（✅ 已用真实数据核对，2026-06，sodex 真实仓 CL-USD）
 
-| TargetPosition 字段 | 当前候选键（`normalizeTargetPositions`） | 已证实? | 真实键名（填） |
-|---------------------|------------------------------------------|---------|----------------|
-| `symbol` | `s` / `symbol` / `sym` | ❌ 待核对 | |
-| `szi`（带符号张数） | `sz` / `szi` / `size` | ✅ `sz`（api-confidence/sodex.md L89） | `sz` |
-| `entryPx` | `ep` / `entryPx` / `avgEntryPrice` | ✅ `ep`（同上） | `ep` |
-| `leverage` | `l` / `leverage` / `lev` | ❌ 待核对 | |
-| `marginUsed` | `mu` / `marginUsed` / `im` → 缺失则派生 `\|sz\|×ep/leverage` | ❌ 待核对 | |
+| TargetPosition 字段 | 当前候选键（`normalizeTargetPositions`） | 已证实? | 真实键名 |
+|---------------------|------------------------------------------|---------|----------|
+| `symbol` | `s` / `symbol` / `sym` | ✅ | `s`（CL-USD） |
+| `szi`（带符号张数） | `sz` / `szi` / `size` | ✅ | `sz` |
+| `entryPx` | `ep` / `entryPx` / `avgEntryPrice` | ✅ | `ep` |
+| `leverage` | `l` / `leverage` / `lev` | ✅ | `l`（=10） |
+| `marginUsed` | `mu` / `marginUsed` / `im` → 缺失则派生 **`co/leverage`**（退而 `\|sz\|×ep/leverage`） | ✅ | 无直给字段；派生 `co/l` 实测精确（50847.84/10=5084.78） |
 
-> 核对后若真实键名不在候选里：改 `service/HYPE-copy/api/index.mjs` `normalizeTargetPositions` 的 `pickField([...])` 候选数组，并删掉本表的"待核对"标记。
+> 已核对完成：`s/sz/ep/l` 命中、`co`（名义敞口）直给、marginUsed=`co/l`。如未来 wire 变更键名，改 `api/index.mjs normalizeTargetPositions` 的 `pickField([...])`。
 > 保证金若 sodex 无直给字段，确认 `leverage` 键正确后走派生即可（派生公式已用 precision，无精度问题）。
 
 ---
