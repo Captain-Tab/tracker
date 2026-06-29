@@ -15,15 +15,15 @@
 │ N1  WS(accountState) 推送 → 更新 this.positions（内存，免 REST）│
 │ N2  指纹去重确认"真变化"(stateFp/outFp) + 分档防抖             │
 │      （结构变化=开/平/反手 走短档即时；滚仓 走长档合并）        │
-│ N3 ★信号注入点★ 变化确认那刻（outFp 通过、**TG 推送之前**）    │
+│ N3 ★信号注入点★ 优先 WS-change 点（stateFp 一变即发，**TG 推送之前**）│
 │      → 原子写 脏标信号文件 {seq, ts, address}（不带快照）       │
 │      → watch 随后继续自己的 render + TG 推送（与 copy 并行）    │
 └────────────────────────────┬───────────────────────────────┘
               信号文件 = 跨进程边界（tracker 写 / trader-exec 读）
                              │
 ┌─ copy 进程（trader-exec 用户，持 agent key，dry-run 不签）─────┐
-│ N4  fs.watchFile 轮询(~1s,可调) 发现 mtime 变 → 读 → seq>lastSeq 才触发 │
-│      （正在跑则置 pending，结束补跑一次 = coalesce 合并）        │
+│ N4  fs.watchFile(~1s) mtime 变即触发 → ts 去重 → single-flight │
+│      （跑中则置 pending，结束补跑一次取最新态 = coalesce）       │
 │ N5  reconcileOnce（对账，幂等）：                              │
 │      t0─ 并行拉 [fetchTargetState(sodex) ∥ fetchHypePrices(hype) ∥ assetIndex(缓存)] ─t1 │
 │        → mapSymbol(sodex→hype + hype universe 校验) 过滤可映射  │
@@ -91,9 +91,10 @@
 ### N4 · 信号订阅触发
 
 - **属主**：copy（`main.mjs`）
-- **做什么**：`fs.watchFile` 轮询(~1s,可调) 发现 mtime 变 → 读 → `seq>lastSeq` 才触发；正在跑则置 pending，结束补跑一次（**coalesce 合并**）
-- **数据源**：信号文件
+- **做什么**：`fs.watchFile`(~1s) **mtime 变即触发**（非 `seq>lastSeq`，否则 watch 重启 seq 归零会漏信号）→ `ts` 去重 → **single-flight**（同时只一个 reconcile，跑中置 pending、结束补跑一次取最新态 = coalesce）
+- **数据源**：信号文件（`{seq, ts, address}`，seq/ts 仅去重+缺口检测，非触发 gate）
 - **延迟**：~1s（轮询；可调 0.5s / `fs.watch` 事件近 0）
+- **要点**：single-flight 防信号与 180s 兜底**并发**改 `lastWouldHold` / 双记录 /（实盘）双下单
 
 ### N5 · reconcileOnce（对账，幂等）
 

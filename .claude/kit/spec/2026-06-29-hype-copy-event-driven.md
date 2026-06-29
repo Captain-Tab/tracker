@@ -39,8 +39,8 @@
               信号文件 = 跨进程边界（tracker 写 / trader-exec 读）
                              │
 ┌─ copy 进程（trader-exec 用户，持 agent key，dry-run 不签）─────┐
-│ N4  fs.watchFile 轮询(~1s,可调) 发现 mtime 变 → 读 → seq>lastSeq 才触发 │
-│      （正在跑则置 pending，结束补跑一次 = coalesce 合并）        │
+│ N4  fs.watchFile(~1s,可调) mtime 变即触发 → ts 去重 → single-flight │
+│      （跑中则置 pending，结束补跑一次取最新态 = coalesce 合并）  │
 │ N5  reconcileOnce（对账，幂等）：                              │
 │      t0─ 并行拉 [fetchTargetState(sodex) ∥ fetchHypePrices(hype) ∥ assetIndex(缓存)] ─t1 │
 │        → mapSymbol(sodex→hype + hype universe 校验) 过滤可映射  │
@@ -94,9 +94,35 @@
 
 ### 跨进程信号机制
 
-- 传输：watch **原子写**（tmp+rename）`signal/<target>.json`，copy `fs.watchFile`（轮询 stat，对 rename 免疫；非 `fs.watch` 盯 inode 会被换掉失效）。零依赖、跨重启存活。
-- `fs.watchFile` 每秒一次 `fs.stat`（微秒级），资源可忽略（远低于 REST 轮询）。
-- 隔离：watch=tracker 写 / copy=trader-exec 读，目录组权限，两进程不混。
+- 传输：watch **原子写**（tmp+rename）`signal/<target>.json`，copy `fs.watchFile` 监听。
+- **`fs.watchFile` 对原子 rename 的处理（澄清，非"微秒级延迟"）**：它按 interval **轮询 stat 路径**（非 `fs.watch` 盯 inode），rename 覆盖后路径解析到新 inode、mtime/ino 变 → 下个 interval 必触发。`fs.stat` 本身微秒级、资源可忽略；**触发延迟 = interval（~1s，可调）**。区间内多次写只读到最新——对账只需最新态，正合需求，不算"丢"。
+- 隔离 + 权限（具体）：`signal/` 目录 `chgrp <共享组> && chmod 0750`，信号文件 `chmod 0640`；watch=`tracker`（写）、copy=`trader-exec`（读）同属共享组，其他 UID 无权。
+
+### 信号契约 + seq/ts 生命周期（修 watch 重启漏信号）
+
+```
+signal/<target>.json = { seq: <int 自增>, ts: <epoch ms>, address: <string> }
+```
+- **触发 gate = mtime 变（fs.watchFile 原生），不是 `seq>lastSeq`**。理由：watch 进程重启后 seq 会从头计数，若用 `seq>lastSeq` 当 gate，copy 的 lastSeq 偏大 → **永久忽略新信号（漏信号 Critical）**。改用 mtime：重启后 watch 重写文件 mtime 必前进 → copy 必触发。
+- `seq`/`ts` 仅用于**去重 + 缺口检测**（非 gate）：copy 记 `lastTs`，`ts<=lastTs` 视为重复读（fs.watchFile 偶发重复回调）跳过；`seq` 跳号只记日志（缺口可观测），**不依赖它纠错**（漏接由 180s 兜底 + 幂等对账自愈）。
+- watch 重启用 `ts`（epoch 单调）天然跨重启递增，配合 mtime gate，**不漏**。
+
+### 并发与去重：single-flight（修并发竞态 + 防双下单）
+
+> **硬要求**：信号回调与 180s 兜底定时器**可能并发进入** `reconcileOnce`，而它会改 `lastWouldHold/lastAlertFp/wasFollowing` 并 record+push——并发 = 状态被覆盖 + 双记录 + （实盘）**双下单**。必须 single-flight。
+
+```
+let running = false, pending = false;
+async function trigger() {            // 信号回调 / 180s 定时器 都调它
+  if (running) { pending = true; return; }   // 跑中 → 标记补跑（coalesce 合并到最新）
+  running = true;
+  try { do { pending = false; await reconcileOnce(); } while (pending); }  // 补跑取最新态
+  finally { running = false; }
+}
+```
+- **同时只允许一个 `reconcileOnce`**；所有触发源（信号 + 兜底）汇入同一串行入口。
+- `pending` 是**布尔（run-latest）非队列**：对账只需最新目标态，滚仓 burst 多个信号合并为"结束后补跑一次"，补跑读最新态即对齐（中间态不单独处理，对账幂等吸收）。
+- 这同时保证**不重复**：单飞下不会两个 reconcile 各 would-place 一次。
 
 ### 映射自动化（正交）
 
@@ -106,7 +132,10 @@
 
 **包含**：watch 加变化信号输出（加法+开关，不动检测主体）；信号契约（seq/ts/address 编解码 + 原子写 + fs.watchFile reader）；copy 订阅触发 + 180s 兜底 + coalesce；mapSymbol hype universe 校验。
 **不包含**：真实下单/签名/agent key；每日镜像；多目标；把 fullMs 起点前移到信号到达（事件驱动后可选增强）。
-**已知限制**：延迟下限受 copy 必拉的 hype 价格接口约束（~2–3s 典型），非纯计算；信号注入点取 WS-change 时滚仓 burst 会多唤醒（coalesce 吸收）。
+**已知限制**：
+- 延迟下限受 copy 必拉的 hype 价格接口约束（~2–3s 典型），非纯计算；信号注入点取 WS-change 时滚仓 burst 会多唤醒（coalesce 吸收）。
+- **依赖 go-live #1（sodex 字段核对）**：copy 走自己的 `fetchTargetState`，而 `api/index.mjs` 的 `symbol/leverage/marginUsed` 仍是 TO-VERIFY（未权威确认）。本档实跑前必须先 `--raw` 核对 sodex 字段并修正 `normalizeTargetPositions`，否则对账分母错、事件驱动无意义。
+- **脏标=绑定默认**：信号不带快照是本档强制设计（保单一数据路径）。O6"信号带快照"是**明确不推荐的逃生口**，仅在 O1/O3/O4 都做完且 sodex 拉取仍是瓶颈时才评估，需另行决策、不默认启用。
 
 ## 集成点（落地子计划 4 阶段，每阶段 实现→测试→/k:check→commit）
 
