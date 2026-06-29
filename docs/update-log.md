@@ -4,6 +4,38 @@
 
 ---
 
+## HYPE-copy 自动跟单执行系统（dry-run + 事件驱动）— 2026-06-29
+
+新增 `service/HYPE-copy/`：监听高手仓位变化 → 按资金比例换算 → 在 Hyperliquid 镜像 would-place。**执行端恒 hype**；信号源支持 sodex（跨所映射）/ hype（同所直通）。一期止于 **dry-run**（不签名、不发真实单），跑通 信号→换算→收敛→风控→推送 全链路 + 隔离架构 + 事件驱动触发。spec-set：`.claude/kit/spec/auto-copy-trade/`。
+
+### 新增
+
+- **`HYPE-copy/process/`**：`mapping`（loadTargets 单目标硬限制 + mapSymbol，sodex 映射表 / hype 直通 + hype universe 实时校验）、`precision`（decimal.js ROUND_DOWN，formatPrice/Size + 算术）、`sizing`（computeRatio 锚定 + computeDesired 保证金等比）、`recommend`（最低本金反解）、`risk`（decideLeg 六分支校验门）、`reconcile`（diffDelta 净仓收敛 + planReconcile 顺序铁律）、`stats`（聚合纯函数）。
+- **`HYPE-copy/api/index.mjs`**：sodex 目标态读 + hype 价格/meta + placeDryRun（IOC would-place，不签名；真实提交 throw 占位）。两端共享限流退避。
+- **`HYPE-copy/notify/`**：事件分类推送（🆕开/⏫加/⏬减/🏁平/▶启/⏹关）一轮一条汇总 + 指纹去重 + 计时页脚（fullMs/execMs）；每动作 JSONL + journald；`templates.mjs` 文案与逻辑分离。
+- **`lib/copy-signal/`**：跨进程脏标信号（原子写 + `fs.watchFile` mtime gate + ts 去重，对 rename 免疫）+ `makeSingleFlight`（信号∥兜底并发合并，防双下单）+ `DEFAULT_SIGNAL_DIR`。
+- **`HYPE-copy/main.mjs`**：对账循环执行器——事件驱动主触发（订阅信号）+ REST 180s 兜底 + single-flight + 生命周期状态机（idle/anchored/following/capped/flat）+ SIGTERM 关闭推送。
+- **部署**：`setup/setup-copy.sh`（trader-exec + 信号目录 + targets 权限一键）；`docs/copy/{hype,core-flow,hype-go-live,hype-dry-run-testing}.md` + `docs/deploy/hype-copy.md` + `docs/notify/copy.md`。
+
+### 变更
+
+- **`sodex-watch`/`HYPE-watch` watcher.mjs**：WS-change 点加 `emitCopySignal`（加法 + `copySignal`/`copySignalDir` 开关，未配 no-op、TG 行为 diff=0、检测主体零改）。config.mjs/main.mjs 解析并按 `<dir>/<address 小写>.json` 派生信号路径（与 copy 派生口径一致，大小写自动归一）。
+- **`app/index.mjs`**：纳入 `HYPE-copy@.service` systemd 模板单元（trader-exec + 资源上限 + 加固，dry-run 不注入 LoadCredential），`hypeCopy` config 段（默认 enabled=false）。
+- **`setup/setup-systemd.sh`** + **`package.json`**：补 `decimal.js`/`@nktkas/hyperliquid`（copy 执行器）+ `undici`/`https-proxy-agent`（WARP 运行时）。
+
+### 范围 / 效果
+
+- 一期 **dry-run**：用 `availBalanceSim` 模拟余额，不碰 agent key、不签名、不发真实单。事件驱动：目标动 → watch 写信号 → copy ~1s 触发对账（估算端到端 ~2-3s，含接口拉取）；任一未配 → 自动退化 180s 轮询兜底。`reconcile.mjs`/`diffDelta` 全程零改。
+- 后续 gated（不在本版）：真实余额、Agent Wallet 签名、dryRun 翻转、杠杆同步、真实 fee/熔断、sodex 执行腿——见 `docs/copy/hype-go-live.md`。
+
+### 验证
+
+- 纯函数单测：HYPE-copy domain 53 + copy-signal 6 + watch 回归（sodex 21 / HYPE 14）全绿。
+- **真实数据实测**：hype allMids 928 币 / meta 230 perps 实通；sodex 真实仓 CL-USD 字段核对（`s/sz/ep/l` 命中、marginUsed=`co/l` 精确）。
+- 事件驱动端到端接线验证（config→派生→emit→可解码、大小写对齐、single-flight burst 合并）；多轮 `/k:check` 三闸门通过。
+
+---
+
 ## HYPE-watch 分档 debounce（对齐 sodex 治理滚仓刷屏）— 2026-06-28
 
 把 sodex-watch 的分档 debounce 对称移植到 HYPE-watch（两端 watcher 同构）。真实数据（地址 `0xaf0fdd39e5d92499b0ed9f68693da99c0ec1e92e`，5 仓 / 2000 fills / 502h）：HYPE 成交亚秒级密集（间隔 p50=0s / p90=64s），现状 3s 已合并簇内大半，长档主要合并簇间滚仓。实抓 WS openOrders 帧确认 `wsOrders` 带 `reduceOnly`/`isPositionTpsl`，故能完全对齐 sodex 的结构判别。
