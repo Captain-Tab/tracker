@@ -129,17 +129,18 @@
 
 ---
 
-## 开启事件驱动（部署配置，已极简）
+## 开启事件驱动（默认开，零配置）
 
-代码端到端接线 + 默认目录常量自动对齐，启用只需 **2 个动作**：
+**"信号目录是否存在" = 事件驱动开关**——`setup-copy.sh` 建了目录 → watch/copy **自动启用**，无需任何 flag：
 
-1. **跑一次** `sudo bash setup/setup-copy.sh` —— 建 trader-exec + 默认信号目录 `/var/lib/tracker/copy-signal`（0755）+ targets.json 权限。
-2. **watch config.json 加一行** `"copySignal": true` —— watch 即向 `<默认目录>/<address>.json` 写信号。
+1. 填 `HYPE-copy/targets.json`（唯一手填）→ `sudo bash setup/setup-copy.sh`（建信号目录等一条龙）。
+2. 重启 watch（`systemctl restart {sodex,HYPE}-watch`）→ 它检测到信号目录存在，自动向 `<dir>/<address 小写>.json` 写信号。
 
-**copy 侧零配置**：自动按 `<默认目录>/<target.source.address>.json` 派生订阅（与 watch 同一常量 `DEFAULT_SIGNAL_DIR`，**无需手动对齐路径**）；信号目录不存在 → 自动退化 180s 轮询兜底，不报错。
+**copy 零配置**：按 `<DEFAULT_SIGNAL_DIR>/<source.address 小写>.json` 派生订阅（与 watch 同一常量、同一小写口径，**自动对齐**）。
 
-> 自定义目录（少见）：watch `copySignalDir:"/custom"` + copy `targets.json.copySignalPath` 覆盖。
-> 信号 `{seq,ts,address}` 非敏感 → 0755 人人可读即可，省去共享组。
+- 默认逻辑（config.mjs）：自定义 `copySignalDir` > 显式 `copySignal`(true/false) > **默认：目录存在则开，否则不发**（纯监听部署零影响、diff=0）。
+- 关掉：watch config `"copySignal": false` → 退 180s 轮询兜底。
+- 信号 `{seq,ts,address}` 非敏感 → 0755 即可，省共享组。
 
 ## 两条路径分工
 

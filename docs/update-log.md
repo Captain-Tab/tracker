@@ -34,6 +34,12 @@
 - **真实数据实测**：hype allMids 928 币 / meta 230 perps 实通；sodex 真实仓 CL-USD 字段核对（`s/sz/ep/l` 命中、marginUsed=`co/l` 精确）。
 - 事件驱动端到端接线验证（config→派生→emit→可解码、大小写对齐、single-flight burst 合并）；多轮 `/k:check` 三闸门通过。
 
+### 部署易用性收尾（同版增量）
+
+- **默认事件驱动**：watch config.mjs 改为「自定义 copySignalDir > 显式 copySignal(true/false) > **信号目录存在即默认开**」——`setup-copy.sh` 建了目录即自动启用，无需 flag；纯监听部署（无目录）零影响、diff=0。opt-out：`copySignal:false`。
+- **一键部署**：`setup/setup-copy.sh` 扩为唯一手填 = `targets.json`，其余全自动（建 trader-exec + 信号目录 + chmod + 读 target.id 合并启用 app `hypeCopy` + `app apply`），含空 targets 守卫。
+- `package.json`/`setup-systemd.sh` 补 `decimal.js`/`@nktkas/hyperliquid`/`undici`/`https-proxy-agent`。部署指南 `docs/deploy/hype-copy.md`。
+
 ---
 
 ## HYPE-watch 分档 debounce（对齐 sodex 治理滚仓刷屏）— 2026-06-28

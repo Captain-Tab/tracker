@@ -1,5 +1,5 @@
 // 多地址配置加载与校验（与 sodex-watch 同构）。
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { isAddress, isValidHHMM } from "../../tool/format.mjs";
 import { DEFAULT_SIGNAL_DIR } from "../../lib/copy-signal/index.mjs";
 
@@ -24,7 +24,10 @@ export function loadConfig(path) {
     valid.push(w);
   }
   if (!valid.length) { console.error("配置文件无有效 address"); process.exit(1); }
-  // 跟单信号目录（加法，可选）：copySignal:true → 默认目录；copySignalDir:"..." → 自定义；都没 → 不发。
-  const copySignalDir = cfg.copySignalDir ?? (cfg.copySignal === true ? DEFAULT_SIGNAL_DIR : null);
+  // 跟单信号目录（默认事件驱动）：自定义 copySignalDir > 显式 copySignal(true/false) >
+  // 默认——信号目录已存在(= setup-copy.sh 建过) 则自动开，否则不发（纯监听部署零影响、diff=0）。
+  const copySignalDir = cfg.copySignalDir
+    ?? (cfg.copySignal === false ? null
+      : cfg.copySignal === true || existsSync(DEFAULT_SIGNAL_DIR) ? DEFAULT_SIGNAL_DIR : null);
   return { tgToken: cfg.tgToken ?? null, copySignalDir, watches: valid };
 }

@@ -25,47 +25,29 @@ bash setup/setup-systemd.sh   # 装依赖(含 decimal.js/@nktkas/hyperliquid) + 
 
 > `setup-systemd.sh` 已含跟单执行器依赖（`decimal.js` 必需，缺则 HYPE-copy 启动崩）。
 
-## 2. 一次性环境准备（脚本，免手敲权限）
-
-```bash
-cd /root/service
-sudo bash setup/setup-copy.sh   # 建 trader-exec + 信号目录(0755) + targets.json 权限收敛
-```
-> 唯一需人手填的是下一步 targets.json 的业务内容；权限/用户/目录全由脚本处理。
-
-## 3. 配 copy 目标（targets.json，唯一需人手填）
+## 2. 填 targets.json（**唯一需人手填的文件**）
 
 ```bash
 cp /root/service/HYPE-copy/targets.example.jsonc /root/service/HYPE-copy/targets.json
 # 编辑：去注释改纯 JSON；填 source.address(被跟目标) / availBalanceSim(dry-run 模拟余额) / tgToken
-sudo bash setup/setup-copy.sh   # 重跑：对刚建的 targets.json 收敛权限（chmod 600 + chown trader-exec）
 ```
-> 一期硬限制：`targets` 只能 1 个元素（≥2 拒绝启动）。`copySignalPath` **不用填**（copy 自动派生）。
+> 一期硬限制：`targets` 只能 1 个元素。`copySignalPath` 不用填（copy 自动派生）。
 
-## 4. （可选）开启事件驱动 —— **watch 加一行即可**
+## 3. 一键部署（其余全脚本）
 
-不做这步 → copy 走 180s 轮询兜底（仍可用）。要"目标动→秒级跟"：
-
-在 `/root/service/{sodex,HYPE}-watch/config.json`（按信号源那侧）加一行：
-```jsonc
-{ "copySignal": true, "tgToken": "...", "watches": [ ... ] }
-```
-重启对应 watch 即可。watch 向 `/var/lib/tracker/copy-signal/<address>.json` 写信号，**copy 自动按目标地址派生订阅**（同一默认目录常量，无需对齐路径）。
-
-> 信号目录已由 §2 脚本建好（0755，非敏感）。自定义目录用 `copySignalDir:"/custom"` + targets.json `copySignalPath` 覆盖。
-> 地址大小写无所谓：watch / copy 拼信号文件名都统一转小写，checksum 或小写写法都能对齐。
-
-## 5. 开启编排 + apply
-
-`/root/service/app/config.json` 加（或改）：
-```jsonc
-"hypeCopy": { "enabled": true, "targets": ["<targets.json 里的 target.id>"] }
-```
 ```bash
 cd /root/service
-node app/index.mjs render   # 干跑审查生成的 HYPE-copy@<id>.service
-node app/index.mjs apply     # 写盘 + enable + start
+sudo bash setup/setup-copy.sh
 ```
+脚本自动：建 `trader-exec` → 建信号目录 0755（**= 默认开事件驱动**）→ targets.json chmod 600 → 读 target.id 在 `app/config.json` 启用 `hypeCopy`（合并，不动其它服务）→ `app apply` 启 `HYPE-copy@<id>.service`。
+
+## 4. 重启 watch（让它按"信号目录已存在"开始发信号）
+
+```bash
+sudo systemctl restart sodex-watch    # 或 HYPE-watch，按你目标的信号源那侧
+```
+> 事件驱动**默认开**：信号目录存在 → watch 自动写 `<dir>/<address 小写>.json`、copy 自动派生订阅，**无需任何 flag / 路径对齐**。
+> 不想要事件驱动：watch config.json 设 `"copySignal": false` → 退回 180s 轮询兜底。
 
 ---
 
