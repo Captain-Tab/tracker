@@ -88,7 +88,6 @@ test("loadTargets: 单目标返回 {tgToken, target} + 默认值填充", () => {
   assert.equal(target.id, "t1");
   assert.equal(target.initialDeployPct, 0.5);
   assert.equal(target.maxDeployPct, 0.9);
-  assert.equal(target.sizeMultiplier, 1);
   assert.equal(target.dryRun, true);
 });
 

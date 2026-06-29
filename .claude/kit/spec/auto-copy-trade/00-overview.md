@@ -67,7 +67,6 @@ type Target = {
   subAccount?: string;
   initialDeployPct: number;                           // 默认 0.5
   maxDeployPct: number;                               // 默认 0.9
-  sizeMultiplier: number;                             // 默认 1
   capitalWeight?: number;                             // 多目标分配权重（增量阶段用；一期单目标=1，用全部可分配余额）
   maxPositionPct: number;                             // 单仓占比硬封顶
   minDeltaPct: number;                                // 最小变动阈值

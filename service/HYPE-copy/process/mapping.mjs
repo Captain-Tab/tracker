@@ -9,7 +9,6 @@ import { isAddress } from "../../tool/format.mjs";
 const TARGET_DEFAULTS = {
   initialDeployPct: 0.5,
   maxDeployPct: 0.9,
-  sizeMultiplier: 1,
   dryRun: true,
 };
 

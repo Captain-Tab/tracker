@@ -32,7 +32,7 @@
 ### 数据来源
 
 - `targets.json` 结构遵循总纲 §3.1 `Target` schema 与文件根 `{ tgToken, targets: Target[] }`，本件不重定义字段。
-- 默认值（总纲 §3.1 注释）：`initialDeployPct=0.5`、`maxDeployPct=0.9`、`sizeMultiplier=1`、`dryRun=true`（一期恒真）。`loadTargets` 对缺省字段填默认，保证下游 02/03 拿到完整 `Target`。
+- 默认值（总纲 §3.1 注释）：`initialDeployPct=0.5`、`maxDeployPct=0.9`、`dryRun=true`（一期恒真）。`loadTargets` 对缺省字段填默认，保证下游 02/03 拿到完整 `Target`。
 
 ### `loadTargets(path) → { tgToken, target }`
 
@@ -130,4 +130,4 @@
 ### 场景 3：单目标 + 默认值填充
 - **Given** `targets.json` 单目标，仅显式写 `id` / `source.address` / `exchange:"hype"`，省略 `initialDeployPct` 等可选项
 - **When** 调用 `loadTargets(path)`
-- **Then** 返回 `{ tgToken, target }`，`target.initialDeployPct===0.5`、`target.maxDeployPct===0.9`、`target.sizeMultiplier===1`、`target.dryRun===true`，下游 02/03 拿到完整 `Target`
+- **Then** 返回 `{ tgToken, target }`，`target.initialDeployPct===0.5`、`target.maxDeployPct===0.9`、`target.dryRun===true`，下游 02/03 拿到完整 `Target`
