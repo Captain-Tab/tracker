@@ -35,8 +35,8 @@
       // 跟单推送独立 chat id（dry-run 可空）
       "tgChat": "",
 
-      // 事件驱动信号文件路径（可选）：配了则 copy 用 fs.watchFile 监听它、目标一动即对账；
-      // 未配 → 仅 180s 轮询兜底。须与 watch 侧 --copy-signal-path 指向同一文件（跨进程，组权限可读）。
+      // 事件驱动信号路径（一般不用填）：copy 默认按 <默认信号目录>/<source.address>.json 自动派生，
+      // 与 watch 侧 copySignal:true 对齐，无需手填。仅自定义目录时才填此项覆盖。
       "copySignalPath": ""
     }
   ]

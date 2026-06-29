@@ -10,7 +10,9 @@ import { add } from "./process/precision.mjs";
 import { ENVS, fetchTargetState, fetchHypePrices, buildHypeAssetIndex, placeDryRun, log } from "./api/index.mjs";
 import { recordAction, pushRoundSummary, decidePushLine } from "./notify/index.mjs";
 import { buildHeader, buildFooter, lineInitialSync, lineStart, lineStop } from "./notify/templates.mjs";
-import { watchSignal, makeSingleFlight } from "../lib/copy-signal/index.mjs";
+import { watchSignal, makeSingleFlight, DEFAULT_SIGNAL_DIR } from "../lib/copy-signal/index.mjs";
+import { existsSync } from "node:fs";
+import { join, dirname } from "node:path";
 
 // 执行腿参数（blueprint §10.6 建议默认）
 const RECONCILE_INTERVAL_SEC = 180; // 周期对账兜底间隔（事件驱动主触发用信号；轮询仅防漏接）
@@ -172,14 +174,16 @@ async function main() {
     catch (e) { log(`[${target.id}] 对账失败：${e.message}`); }
   });
 
-  // 信号订阅（事件驱动主触发）：watch 在 WS-change 点写脏标，copy fs.watchFile 监听。
-  // 未配 copySignalPath → 仅轮询兜底（降级，不报错）。
+  // 信号订阅（事件驱动主触发）：copy 零配置——按 <信号目录>/<source.address>.json 自动派生，
+  // 无需在 targets.json 填路径（可选 copySignalPath 覆盖）。信号目录存在=已 setup → 订阅；否则仅轮询兜底。
+  // 文件名地址统一小写——与 watch 侧派生口径一致（防 checksum/小写不一致导致路径对不上）
+  const signalPath = target.copySignalPath || join(DEFAULT_SIGNAL_DIR, `${String(target.source.address).toLowerCase()}.json`);
   let stopWatch = null;
-  if (target.copySignalPath) {
-    stopWatch = watchSignal(target.copySignalPath, () => trigger(), { interval: SIGNAL_POLL_MS });
-    log(`[${target.id}] 订阅跟单信号：${target.copySignalPath}（${SIGNAL_POLL_MS}ms 轮询）`);
+  if (existsSync(dirname(signalPath))) {
+    stopWatch = watchSignal(signalPath, () => trigger(), { interval: SIGNAL_POLL_MS });
+    log(`[${target.id}] 订阅跟单信号：${signalPath}（${SIGNAL_POLL_MS}ms 轮询）`);
   } else {
-    log(`[${target.id}] 未配 copySignalPath → 仅 ${RECONCILE_INTERVAL_SEC}s 轮询兜底`);
+    log(`[${target.id}] 信号目录不存在（${dirname(signalPath)}）→ 仅 ${RECONCILE_INTERVAL_SEC}s 轮询兜底`);
   }
 
   // 关闭跟单（进程停止）：SIGTERM/SIGINT → 推 ⏹ 后退出（区别于"目标平仓 🏁"）

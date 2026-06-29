@@ -25,50 +25,35 @@ bash setup/setup-systemd.sh   # 装依赖(含 decimal.js/@nktkas/hyperliquid) + 
 
 > `setup-systemd.sh` 已含跟单执行器依赖（`decimal.js` 必需，缺则 HYPE-copy 启动崩）。
 
-## 2. 建写侧用户 trader-exec（一次性）
+## 2. 一次性环境准备（脚本，免手敲权限）
 
 ```bash
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin trader-exec
+cd /root/service
+sudo bash setup/setup-copy.sh   # 建 trader-exec + 信号目录(0755) + targets.json 权限收敛
 ```
+> 唯一需人手填的是下一步 targets.json 的业务内容；权限/用户/目录全由脚本处理。
 
-## 3. 配 copy 目标（targets.json）
+## 3. 配 copy 目标（targets.json，唯一需人手填）
 
 ```bash
-# 按样例填（含 tgToken/目标地址/availBalanceSim）：
 cp /root/service/HYPE-copy/targets.example.jsonc /root/service/HYPE-copy/targets.json
-# 编辑：去掉注释改成纯 JSON；填 source.address（被跟目标）、availBalanceSim（dry-run 模拟余额）
-# 权限收敛（含 agentKeyRef 占位，仅 trader-exec 可读）：
-sudo chown trader-exec:trader-exec /root/service/HYPE-copy/targets.json
-sudo chmod 600 /root/service/HYPE-copy/targets.json
+# 编辑：去注释改纯 JSON；填 source.address(被跟目标) / availBalanceSim(dry-run 模拟余额) / tgToken
+sudo bash setup/setup-copy.sh   # 重跑：对刚建的 targets.json 收敛权限（chmod 600 + chown trader-exec）
 ```
+> 一期硬限制：`targets` 只能 1 个元素（≥2 拒绝启动）。`copySignalPath` **不用填**（copy 自动派生）。
 
-> 一期硬限制：`targets` 只能 1 个元素（≥2 拒绝启动）。
+## 4. （可选）开启事件驱动 —— **watch 加一行即可**
 
-## 4. （可选）开启事件驱动 + 跨进程信号权限
+不做这步 → copy 走 180s 轮询兜底（仍可用）。要"目标动→秒级跟"：
 
-不做这步 → copy 走 180s 轮询兜底（仍可用）。要"目标动→秒级跟"才做：
-
-**4a. 建信号目录**（信号不含密钥，简单法用人人可读）：
-```bash
-sudo install -d -o tracker -m 0755 /var/lib/tracker/copy-signal
-#  install -d        建目录（同时设属主/权限）
-#  -o tracker        属主=tracker（watch 用户，能写）
-#  -m 0755           人人可读、仅 tracker 可写（信号非敏感，省去建共享组）
-```
-> 严格隔离版（不想人人可读）：`sudo groupadd copysig && sudo install -d -o tracker -g copysig -m 0750 /var/lib/tracker/copy-signal && sudo usermod -aG copysig trader-exec`（trader-exec 入组才能读）。
-
-**4b. watch 侧 config 加 `copySignalDir`**（`/root/service/{sodex,HYPE}-watch/config.json`，按信号源所在那侧加）：
+在 `/root/service/{sodex,HYPE}-watch/config.json`（按信号源那侧）加一行：
 ```jsonc
-{ "copySignalDir": "/var/lib/tracker/copy-signal", "tgToken": "...", "watches": [ ... ] }
+{ "copySignal": true, "tgToken": "...", "watches": [ ... ] }
 ```
-→ watch 在每个被监听地址变动时写 `/var/lib/tracker/copy-signal/<address>.json`。不加=不写（diff=0）。
+重启对应 watch 即可。watch 向 `/var/lib/tracker/copy-signal/<address>.json` 写信号，**copy 自动按目标地址派生订阅**（同一默认目录常量，无需对齐路径）。
 
-**4c. copy 侧 targets.json 加 `copySignalPath`**：指向 watch 为**你的目标地址**写的同一文件：
-```jsonc
-"copySignalPath": "/var/lib/tracker/copy-signal/<目标 source.address>.json"
-```
-
-> 三者对齐（目录权限 + watch 写 + copy 读同一文件），目标一动 ~1s 内触发。任一未配 → 退化轮询，不报错。
+> 信号目录已由 §2 脚本建好（0755，非敏感）。自定义目录用 `copySignalDir:"/custom"` + targets.json `copySignalPath` 覆盖。
+> 地址大小写无所谓：watch / copy 拼信号文件名都统一转小写，checksum 或小写写法都能对齐。
 
 ## 5. 开启编排 + apply
 

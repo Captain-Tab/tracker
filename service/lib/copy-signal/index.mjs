@@ -5,6 +5,11 @@
 import { writeFileSync, renameSync, readFileSync, watchFile, unwatchFile, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
+// 跨进程信号默认目录（watch 写 / copy 读共用）。watch config `copySignal:true` 用它；
+// copy 按 <此目录>/<source.address>.json 自动派生，无需在 targets.json 填路径。
+// 自定义可在 watch config 用 copySignalDir 覆盖。setup-copy.sh 负责建该目录 + 权限。
+export const DEFAULT_SIGNAL_DIR = "/var/lib/tracker/copy-signal";
+
 export function encodeSignal(sig) {
   return JSON.stringify({ seq: Number(sig.seq ?? 0), ts: Number(sig.ts ?? 0), address: String(sig.address ?? "") });
 }

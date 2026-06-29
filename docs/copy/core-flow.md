@@ -129,23 +129,17 @@
 
 ---
 
-## 开启事件驱动（部署配置）
+## 开启事件驱动（部署配置，已极简）
 
-代码已端到端接线，启用只需配置 + 权限（两侧指向同一信号文件）：
+代码端到端接线 + 默认目录常量自动对齐，启用只需 **2 个动作**：
 
-1. **watch 侧**（`sodex-watch`/`HYPE-watch` 的 `config.json`）加全局：
-   ```json
-   { "copySignalDir": "/var/lib/tracker/copy-signal", "tgToken": "...", "watches": [...] }
-   ```
-   → watch 在每个被监听地址仓位变化时写 `<copySignalDir>/<address>.json`（未配则不发，行为 diff=0）。
-2. **copy 侧**（`HYPE-copy/targets.json`）：
-   ```json
-   { "copySignalPath": "/var/lib/tracker/copy-signal/<目标 source.address>.json" }
-   ```
-   → 指向 watch 为该目标地址写的同一文件；未配则 copy 仅 180s 轮询兜底。
-3. **权限**（跨用户）：`copySignalDir` 设共享组，`chgrp <组> <dir> && chmod 0750 <dir>`；watch=`tracker` 写、copy=`trader-exec` 读。
+1. **跑一次** `sudo bash setup/setup-copy.sh` —— 建 trader-exec + 默认信号目录 `/var/lib/tracker/copy-signal`（0755）+ targets.json 权限。
+2. **watch config.json 加一行** `"copySignal": true` —— watch 即向 `<默认目录>/<address>.json` 写信号。
 
-> 三者对齐后，目标一动 → watch 写信号 → copy `fs.watchFile` ~1s 内触发对账。任一未配 → 自动退化为 180s 轮询，不报错。
+**copy 侧零配置**：自动按 `<默认目录>/<target.source.address>.json` 派生订阅（与 watch 同一常量 `DEFAULT_SIGNAL_DIR`，**无需手动对齐路径**）；信号目录不存在 → 自动退化 180s 轮询兜底，不报错。
+
+> 自定义目录（少见）：watch `copySignalDir:"/custom"` + copy `targets.json.copySignalPath` 覆盖。
+> 信号 `{seq,ts,address}` 非敏感 → 0755 人人可读即可，省去共享组。
 
 ## 两条路径分工
 
