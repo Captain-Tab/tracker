@@ -4,6 +4,30 @@
 
 ---
 
+## HYPE-copy 通知模板重构（卡片式 + 目标/跟单双卡片）— 2026-06-29
+
+通知模板从纯文本行重构为 watch 卡片式风格：banner 头（动作+时间+ID）+ 仓位双卡片（🎯 目标 / 📊 跟单，空行分隔）+ 明细行 + 计时页脚。
+
+### 变更
+
+- **`notify/templates.mjs`**：重写，新增 `buildBanner` / `buildPositionCards`（目标+跟单双卡片，含目标持仓量/开仓价/标记价/保证金 + 跟单持仓量/仓位价值/保证金）/ `buildDeltaLine` / `buildRoundSummary` / `fmtDisplaySize` / `fmtDisplayUsd`；方向改为"做多/做空"；文案 `initial_sync` 统一为"跟单启动"；`skip-maxpos` 消息带上下文（需 X > 上限 Y + 公式）。
+- **`main.mjs`**：`mappable` 补 `entryPx`；新增 `desiredEnriched`（补 leverage / szDecimals / targetEntryPx / targetSzi）；事件对象补上下文（`positionNotional` / `maxPosNotional` / `availBalance` / `maxPositionPct`）；汇总改走 `buildRoundSummary`。
+- **`notify/index.mjs`**：无逻辑变更。
+
+### 部署相关
+
+- **`setup/setup-copy.sh`**：加 `tracker` 用户创建（`[1/6]`）；步骤重新编号。
+- **`setup/Makefile`**：`make deploy` 补 `decimal.js @nktkas/hyperliquid` 依赖。
+- **`docs/deploy/hype-copy.md`**：修正步骤编号，补充 `/root` 路径与 systemd 加固冲突说明。
+- **`targets.json` / `targets.example.jsonc`**：`maxPositionPct` 0.5→0.6。
+
+### 验证
+
+- 纯函数单测 53/53 全绿；watch 回归（sodex 21 / HYPE 14）+ copy-signal 6 全绿。
+- VPS `HYPE-copy@demo-1` 已部署运行，JSONL 持续记录。
+
+---
+
 ## HYPE-copy 自动跟单执行系统（dry-run + 事件驱动）— 2026-06-29
 
 新增 `service/HYPE-copy/`：监听高手仓位变化 → 按资金比例换算 → 在 Hyperliquid 镜像 would-place。**执行端恒 hype**；信号源支持 sodex（跨所映射）/ hype（同所直通）。一期止于 **dry-run**（不签名、不发真实单），跑通 信号→换算→收敛→风控→推送 全链路 + 隔离架构 + 事件驱动触发。spec-set：`.claude/kit/spec/auto-copy-trade/`。

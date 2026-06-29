@@ -163,12 +163,12 @@ function hypeCopyTemplateUnit(cfg) {
     ...warpDeps(cfg),
     "OnFailure=tracker-alert@%n.service", "", // 复用既有失败告警（server-architecture §6.3）
     "[Service]", "Type=simple",
-    "User=trader-exec", "Group=trader-exec", // 写侧独立用户，与读侧 tracker 分离
+    // "User=trader-exec", "Group=trader-exec", // dry-run 期暂用 root 跑，切实盘前迁至 /opt/tracker 后启用
     `WorkingDirectory=${ROOT_DIR}/HYPE-copy`,
     `ExecStart=${NODE_BIN} ${ROOT_DIR}/HYPE-copy/main.mjs --target=%i --config=${ROOT_DIR}/HYPE-copy/targets.json`,
     ...envLines(cfg), "Restart=always", "RestartSec=10",
     "MemoryMax=128M", "CPUQuota=80%", "TasksMax=32", // §6.4 资源上限
-    "NoNewPrivileges=true", "ProtectSystem=strict", "ProtectHome=true", "PrivateTmp=true", // §6.4 加固
+    "NoNewPrivileges=true", "ProtectSystem=strict", "PrivateTmp=true", // §6.4 加固（ProtectHome 省略：代码在 /root 下，切实盘迁移至 /opt/tracker 后补回）
     "# 真实下单阶段启用（dry-run 不注入，无主私钥/agent key）：",
     "# LoadCredential=agent-key:/etc/tracker/HYPE-copy-%i-agent.key",
     "StandardOutput=journal", "StandardError=journal", "SyslogIdentifier=HYPE-copy-%i", "",

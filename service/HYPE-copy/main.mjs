@@ -6,10 +6,10 @@ import { mapSymbol } from "./process/mapping.mjs";
 import { computeRatio, computeDesired, MIN_ORDER_NOTIONAL_USD } from "./process/sizing.mjs";
 import { recommendMinCapital } from "./process/recommend.mjs";
 import { planReconcile } from "./process/reconcile.mjs";
-import { add } from "./process/precision.mjs";
+import { add, mul, absStr } from "./process/precision.mjs";
 import { ENVS, fetchTargetState, fetchHypePrices, buildHypeAssetIndex, placeDryRun, log } from "./api/index.mjs";
 import { recordAction, pushRoundSummary, decidePushLine } from "./notify/index.mjs";
-import { buildHeader, buildFooter, lineInitialSync, lineStart, lineStop } from "./notify/templates.mjs";
+import { buildHeader, buildFooter, buildPositionCards, fmtClock, lineStart, lineStop, buildRoundSummary } from "./notify/templates.mjs";
 import { watchSignal, makeSingleFlight, DEFAULT_SIGNAL_DIR } from "../lib/copy-signal/index.mjs";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -60,7 +60,7 @@ async function reconcileOnce(env, target, avail, push) {
   for (const p of rawPositions) {
     const coin = mapSymbol(p.symbol, target.source.platform, universe);
     if (coin === null) events.push({ coin: p.symbol, side: "", result: "skip-unmappable", reason: "无 hype 映射" });
-    else if (Number(p.szi) !== 0) mappable.push({ coin, szi: p.szi, marginUsed: p.marginUsed, leverage: p.leverage });
+    else if (Number(p.szi) !== 0) mappable.push({ coin, szi: p.szi, marginUsed: p.marginUsed, leverage: p.leverage, entryPx: p.entryPx });
   }
 
   let targetMappableMargin = "0";
@@ -68,6 +68,7 @@ async function reconcileOnce(env, target, avail, push) {
   const hasMappable = mappable.length > 0 && Number(targetMappableMargin) > 0;
 
   let desired = [];
+  let desiredEnriched = [];
   let ratio = null;
   if (hasMappable) {
     if (state.anchoredRatio == null) {
@@ -84,6 +85,22 @@ async function reconcileOnce(env, target, avail, push) {
     const desiredRaw = computeDesired(mappable, ratio, prices);
     desired = desiredRaw.filter((d) => !d.skipped);
     for (const d of desiredRaw) if (d.skipped) events.push({ coin: d.coin, side: "", result: "skip-no-price", reason: d.reason });
+
+    // 增强 desired 仓位元数据（leverage / szDecimals / refPx），供模板卡片展示
+    desiredEnriched = desired.map((d) => {
+      const m = mappable.find((x) => x.coin === d.coin);
+      const meta = assetIndex.get(d.coin);
+      return {
+        coin: d.coin,
+        size: d.size,
+        leverage: m?.leverage,
+        szDecimals: meta?.szDecimals,
+        refPx: prices[d.coin] ?? null,
+        marginUsed: m?.marginUsed,
+        targetEntryPx: m?.entryPx,
+        targetSzi: m?.szi,
+      };
+    });
   } else {
     state.phase = state.lastWouldHold.size > 0 ? "flat" : "idle";
     state.anchoredRatio = null; // flat → 下轮重锚
@@ -106,7 +123,14 @@ async function reconcileOnce(env, target, avail, push) {
     const side = a.isBuy ? "buy" : "sell";
     const base = { coin: a.coin, side, currentSize: a.currentSize, desiredSize: a.desiredSize, deltaSize: a.deltaSize, refPx: a.refPx, ratio };
     if (a.decision !== "place") {
-      events.push({ ...base, result: a.decision, size: a.size, reason: a.decision });
+      // skip 类事件：附加上下文供模板展示（仓位名义 / 上限数值）
+      const posNotional = a.refPx ? mul(absStr(a.desiredSize ?? "0"), String(a.refPx)) : null;
+      events.push({
+        ...base, result: a.decision, size: a.size, reason: a.decision,
+        szDecimals: assetIndex.get(a.coin)?.szDecimals,
+        ...(a.decision === "skip-maxpos" && posNotional ? { positionNotional: posNotional, maxPosNotional: mul(String(avail), String(target.maxPositionPct)), availBalance: avail, maxPositionPct: target.maxPositionPct } : {}),
+        ...(a.decision === "skip-capped" ? { wouldDeploy: add(String(caps.currentDeployedNotional), mul(absStr(a.desiredSize ?? "0"), String(a.refPx))), maxDeployNotional: mul(String(avail), String(target.maxDeployPct)) } : {}),
+      });
       continue;
     }
     const meta = assetIndex.get(a.coin);
@@ -116,7 +140,7 @@ async function reconcileOnce(env, target, avail, push) {
       { assetIndex: meta.index, szDecimals: meta.szDecimals, slippageBps: MAX_SLIPPAGE_BPS, dryRun: target.dryRun },
     );
     // dry-run fillPx 假定=refPx（总纲 §3.2 ActionResult）→ slippageBps 0、fee 估算 "0"
-    events.push({ ...base, result: "place", size: wp.order.s, fillPx: a.refPx, slippageBps: 0, fee: "0" });
+    events.push({ ...base, result: "place", size: wp.order.s, fillPx: a.refPx, slippageBps: 0, fee: "0", szDecimals: meta.szDecimals });
   }
 
   const t2 = Date.now();
@@ -130,24 +154,33 @@ async function reconcileOnce(env, target, avail, push) {
   const newAlertFp = new Set();
   for (const ev of events) {
     recordAction({ targetId: target.id, dryRun: target.dryRun, fullMs, execMs, ...ev });
-    if (startupRound && ev.result === "place") continue; // 首轮 place 由初始镜像同步行覆盖，不逐仓推
+    if (startupRound && ev.result === "place") continue; // 首轮 place 由初始镜像同步卡片覆盖，不逐仓推
     const line = decidePushLine(ev, { lastAlertFp: state.lastAlertFp, wasFollowing: state.wasFollowing, newAlertFp });
     if (line) lines.push(line);
   }
   state.lastAlertFp = newAlertFp;
   state.wasFollowing = hasMappable;
 
-  // 首轮：启动 + 初始镜像同步（不逐仓当开仓洪水）
-  if (startupRound) {
-    if (hasMappable) lines.unshift(lineInitialSync(desired.map((d) => ({ coin: d.coin, size: d.size }))));
-    else lines.unshift(lineStart("待锚定，目标无可映射仓"));
-  }
-
   // 更新 would-hold = 本轮 desired 镜像（关闭仓自然从集合移除）
   state.lastWouldHold = new Map(desired.map((d) => [d.coin, String(d.size)]));
 
-  const header = buildHeader(target.id, target.source.address, target.subAccount);
-  await pushRoundSummary(header, lines, buildFooter(execMs, fullMs), push);
+  // 构建轮次汇总（卡片式，对齐 watch 风格）
+  const clock = fmtClock();
+  const headerId = buildHeader(target.id, target.source.address, target.subAccount);
+  const kind = startupRound ? (hasMappable ? "initial_sync" : "startup") : "round";
+  // 仅有效内容时推送（常规轮无变化静默跳过，对齐旧 pushRoundSummary emptiness guard）
+  const hasContent = startupRound || (lines && lines.length > 0);
+  if (hasContent) {
+    const summary = buildRoundSummary({
+      kind,
+      clock,
+      headerId,
+      positionCards: startupRound && hasMappable ? buildPositionCards(desiredEnriched) : null,
+      lines,
+      footer: buildFooter(execMs, fullMs),
+    });
+    await pushRoundSummary(null, [summary], null, push);
+  }
 }
 
 async function main() {

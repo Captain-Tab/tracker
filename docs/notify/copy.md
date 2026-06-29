@@ -7,25 +7,54 @@
 
 ## 一、推送模板
 
-每轮对账后把本轮变化合成**一条** TG 汇总：`消息头 + 多行明细 + 计时页脚`。
+每轮对账后把本轮变化合成**一条** TG 汇总：`banner 头 + （启动时）仓位卡片 + 明细行 + 计时页脚`。风格对齐 watch 卡片式。
 
-**消息头**（每条首行）：
+**Banner 头**（每条首行）：
 ```
-[DRY-RUN] 🎯<target.id>｜跟 <目标短地址> → <子账户>
+▶ 跟单启动                      ← kind=initial_sync / startup
+🆕 跟单对账                      ← kind=round
+🕐 2026/06/29 12:05:03
+📡 跟 0x267b...2566 🎯demo-1  [DRY-RUN]
 ```
+
+**仓位卡片**（仅启动轮；目标仓位 / 跟单仓位分两卡片，空行分隔）：
+
+```
+━━━━━━━━━━
+🎯 目标仓位：LIT 10x 做空
+  持仓量  35,559 张
+  开仓价  $1.72
+  标记价  $1.75
+  保证金  $12,653
+
+📊 跟单仓位：LIT 10x 做空
+  持仓量  715 张
+  仓位价值  $1,248
+  保证金  $125
+━━━━━━━━━━
+```
+
+| 行 | 数据来源 |
+|----|----------|
+| 目标持仓量 / 开仓价 / 保证金 | sodex REST `state.P[]`（`sz` / `ep` / `co/l` 派生） |
+| 标记价 | hype `allMids` |
+| 跟单持仓量 / 仓位价值 / 保证金 | `computeDesired` 按 ratio 缩放后 |
 
 **明细行**（按事件类型）：
 
 | 事件 | icon | 模板 | 触发 |
 |------|------|------|------|
-| 开仓 | 🆕 | `🆕 开 ETH 多 0.625 @ 3000（ratio 6.25%）` | 该币上轮无、本轮有 |
-| 加仓 | ⏫ | `⏫ 加 ETH 多 +0.12 → 持 0.74 @ 3000` | 量级增大 |
-| 减仓 | ⏬ | `⏬ 减 ETH 多 -0.12 → 持 0.50 @ 3000` | 量级减小 |
-| 平仓 | 🏁 | `🏁 平 ETH 多（目标已清仓）` | 该币本轮归零 |
-| 启动 | ▶ | `▶ 跟单启动 + 初始镜像同步：持 ETH 多 0.6 / BTC 空 0.1` | 进程首轮 |
+| 开仓 | 🆕 | `🆕 ETH 做多 \| 新开 0.5 张 @ $3,000.50  ratio 1.98%` | 该币上轮无、本轮有 |
+| 加仓 | ⏫ | `⏫ ETH 做多 \| +0.24 → 持 0.74 张 @ $3,001` | 量级增大 |
+| 减仓 | ⏬ | `⏬ ETH 做多 \| -0.24 → 持 0.5 张 @ $3,000.50` | 量级减小 |
+| 平仓 | 🏁 | `🏁 BTC 做多 \| 目标已清仓，平仓` | 该币本轮归零 |
+| 启动 | ▶ | `▶ 跟单启动`（banner 行）+ 仓位卡片（启动轮） | 进程首轮 |
 | 关闭 | ⏹ | `⏹ 跟单关闭` | 进程 SIGTERM/SIGINT |
-| 跳过/触顶 | ⛔ | `⛔ PLTR 无 hype 映射，跳过…` / `⛔ 已达资金上限…` | unmappable / mindust / maxpos / capped / no-price |
-| 最低本金 | 💡 | `💡 推荐最低本金=1680，可跟 ETH` | 锚定轮 |
+| 单仓超限 | ⛔ | `⛔ LIT 仓位过重不跟——目标仓按比例缩小后仍需 $1,249，超单仓上限 $300（余额 $500 × 60%）` | maxpos |
+| 资金上限 | ⛔ | `⛔ ETH 需 $520 > 资金上限 $450，加仓拦截` | capped |
+| 无映射 | ⛔ | `⛔ PLTR 无 hype 映射，跳过（不计入分母）` | unmappable |
+| 最小名义 | ⛔ | `⛔ ETH 名义 < 最小 $10，跳过` | mindust |
+| 最低本金 | 💡 | `💡 最低本金参考：$4.07（可跟 LIT）` | 锚定轮 |
 | 失败 | ⚠️ | `⚠️ ETH 执行失败 — <reason>` | error |
 
 **计时页脚**（每条末行）：
@@ -33,13 +62,43 @@
 ⏱ 执行 12ms｜完整 340ms
 ```
 
-**完整示例**：
+**完整示例（启动轮）**：
 ```
-[DRY-RUN] 🎯demo-1｜跟 0x321f…1c84 → s1
-⏫ 加 ETH 多 +0.24 → 持 0.74 @ 3000
-🆕 开 SOL 多 2 @ 150
-🏁 平 BTC 多（目标已清仓）
-⏱ 执行 12ms｜完整 340ms
+▶ 跟单启动
+🕐 2026/06/29 12:05:03
+📡 跟 0x267b...2566 🎯demo-1  [DRY-RUN]
+
+━━━━━━━━━━
+🎯 目标仓位：LIT 10x 做空
+  持仓量  35,559 张
+  开仓价  $1.72
+  标记价  $1.75
+  保证金  $12,653
+
+📊 跟单仓位：LIT 10x 做空
+  持仓量  715 张
+  仓位价值  $1,248
+  保证金  $125
+━━━━━━━━━━
+
+💡 最低本金参考：$4.07（可跟 LIT）
+
+⛔ LIT 仓位过重不跟——目标仓按比例缩小后仍需 $1,249，超单仓上限 $300（余额 $500 × 60%）
+
+⏱ 执行 25ms｜完整 775ms
+```
+
+**完整示例（常规轮）**：
+```
+⏫ 跟单对账
+🕐 2026/06/29 12:15:00
+📡 跟 0x267b...2566 🎯demo-1  [DRY-RUN]
+
+🆕 ETH 做多 | 新开 0.5 张 @ $3,000.50  ratio 1.98%
+⏫ BTC 做空 | +0.12 → 持 0.36 张 @ $60,000
+🏁 SOL 做多 | 目标已清仓，平仓
+
+⏱ 执行 30ms｜完整 650ms
 ```
 
 ---
@@ -66,7 +125,7 @@
 
 | 层 | 文件 | 职责 |
 |----|------|------|
-| 文案 | `notify/templates.mjs` | 纯字符串：`buildHeader` / `lineFor`（按事件出行）/ `classifyMirrorEvent`（开加减平分类）/ `lineInitialSync` / `lineStart` / `lineStop` / `buildFooter` / `escapeHtml`。无 IO、无状态。 |
+| 文案 | `notify/templates.mjs` | 纯字符串：`buildHeader` / `buildBanner` / `buildPositionCards`（目标+跟单双卡片）/ `buildDeltaLine`（单币变化行）/ `lineFor`（按事件出行）/ `classifyMirrorEvent`（开加减平分类）/ `buildRoundSummary`（轮次聚合）/ `lineStart` / `lineStop` / `buildFooter` / `escapeHtml` / `fmtDisplaySize` / `fmtDisplayUsd`。无 IO、无状态。 |
 | 逻辑 | `notify/index.mjs` | `recordAction`（JSONL + journald）/ `pushRoundSummary`（一条推送）/ `decidePushLine`（去重决策，纯函数）/ `toLogLine`（含 fullMs/execMs）/ `sendTelegram`。 |
 | 状态 | `main.mjs` | 持 `lastWouldHold` / `lastAlertFp` / `wasFollowing` / `pendingStartup`；`reconcileOnce` 编排：拉取→映射→换算→校验门→收集事件→`recordAction` 每条 + `decidePushLine` 去重→`pushRoundSummary` 一次。 |
 
@@ -74,12 +133,13 @@
 ```
 t0 → 拉取(目标态/价格/assetIndex) → t1
 映射 → 资金换算 → planReconcile(desired, current=lastWouldHold, caps, prices)
-逐 action 收集 events（place 带 currentSize/desiredSize 供分类）
+逐 action 收集 events（place 带 currentSize/desiredSize/szDecimals 供分类；skip 带上下文）
+desiredEnriched（补 leverage / szDecimals / targetEntryPx / targetSzi 供卡片展示）
 t2 → fullMs=t2-t0, execMs=t2-t1
 for ev: recordAction(+计时)  // JSONL 始终
         decidePushLine(ev)   // 去重后入 lines
-首轮：lines 头部换成「初始镜像同步」一行（不逐仓 place 洪水）
-pushRoundSummary(header, lines, footer)  // lines 空则不推
+buildRoundSummary(kind, clock, headerId, positionCards, lines, footer)  // 启动轮含仓位卡片
+pushRoundSummary(null, [summary], null, push)  // lines 空则不推
 更新 lastWouldHold=desired / lastAlertFp / wasFollowing
 ```
 

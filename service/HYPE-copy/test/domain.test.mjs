@@ -14,7 +14,7 @@ import { recommendMinCapital } from "../process/recommend.mjs";
 import { decideLeg } from "../process/risk.mjs";
 import { diffDelta, planReconcile } from "../process/reconcile.mjs";
 import { toLogLine, decidePushLine } from "../notify/index.mjs";
-import { lineFor, classifyMirrorEvent, escapeHtml, buildHeader, buildFooter } from "../notify/templates.mjs";
+import { lineFor, classifyMirrorEvent, escapeHtml, buildHeader, buildFooter, buildPositionCards, buildRoundSummary, fmtDisplaySize, fmtDisplayUsd } from "../notify/templates.mjs";
 import { aggregateStats } from "../process/stats.mjs";
 
 const ADDR = "0x321f7193eadbacb67eff00f76b975a487e5b1c84";
@@ -236,7 +236,7 @@ test("sizing: computeDesired 保证金等比→名义→size，方向沿用 szi 
     0.0625,
     { ETH: "8000" },
   );
-  // desiredMargin=250 → notional=1250 → size=1250/8000=0.15625（多）
+  // desiredMargin=250 → notional=1250 → size=1250/8000=0.15625（做多）
   assert.deepEqual(out, [{ coin: "ETH", size: "0.15625" }]);
 });
 
@@ -361,7 +361,7 @@ test("decideLeg: noop（|delta|/|desired| < minDeltaPct，碎步追单）", () =
 
 // ---------- 03 planReconcile（滚仓一步对齐）----------
 test("planReconcile: 滚仓 100→…→200，对账一步对齐到最新 desired（中间态不独立 would-place）", () => {
-  // 目标历经多跳，对账只看最新 desired=12.5；current=8（上轮）→ delta +4.5 一次性对齐
+  // 目标历经做多跳，对账只看最新 desired=12.5；current=8（上轮）→ delta +4.5 一次性对齐
   const caps = { ...baseCaps, maxPositionPct: 5, availBalance: "100000" };
   const { actions } = planReconcile([{ coin: "ETH", size: "12.5" }], [{ coin: "ETH", size: "8" }], caps, { ETH: "3000" });
   assert.equal(actions.length, 1);
@@ -400,21 +400,21 @@ test("classifyMirrorEvent: 开/加/减/平/不变", () => {
 // ---------- 04 通知增强：lineFor 文案 + icon ----------
 test("lineFor: 开/加/减/平 带正确 icon + 方向 + 量价", () => {
   const open = lineFor({ result: "place", coin: "SOL", side: "buy", currentSize: "0", desiredSize: "2", deltaSize: "2", refPx: "150", ratio: 0.0625 });
-  assert.match(open, /🆕 开 SOL 多 2 @ 150（ratio 6\.25%）/);
+  assert.match(open, /🆕 SOL 做多 \| 新开 2 张 @ \$150  ratio 6\.25%/);
   const addL = lineFor({ result: "place", coin: "ETH", side: "buy", currentSize: "0.5", desiredSize: "0.74", deltaSize: "0.24", refPx: "3000" });
-  assert.match(addL, /⏫ 加 ETH 多 \+0\.24 → 持 0\.74 @ 3000/);
+  assert.match(addL, /⏫ ETH 做多 \| \+0\.24 → 持 0\.74 张 @ \$3000/);
   const reduceL = lineFor({ result: "place", coin: "ETH", side: "sell", currentSize: "0.74", desiredSize: "0.5", deltaSize: "-0.24", refPx: "3000" });
-  assert.match(reduceL, /⏬ 减 ETH 多 -0\.24 → 持 0\.5 @ 3000/);
+  assert.match(reduceL, /⏬ ETH 做多 \| -0\.24 → 持 0\.5 张 @ \$3000/);
   const closeL = lineFor({ result: "place", coin: "BTC", side: "sell", currentSize: "0.1", desiredSize: "0", deltaSize: "-0.1", refPx: "60000" });
-  assert.match(closeL, /🏁 平 BTC 多（目标已清仓）/);
+  assert.match(closeL, /🏁 BTC 做多 \| 目标已清仓，平仓/);
 });
 
 test("lineFor: 空头方向 + 告警/最低本金/noop", () => {
   const shortOpen = lineFor({ result: "place", coin: "ETH", side: "sell", currentSize: "0", desiredSize: "-1", deltaSize: "-1", refPx: "3000" });
-  assert.match(shortOpen, /🆕 开 ETH 空 1 @ 3000/);
+  assert.match(shortOpen, /🆕 ETH 做空 \| 新开 1 张 @ \$3000/);
   assert.match(lineFor({ result: "skip-unmappable", coin: "PLTR" }), /⛔.*无 hype 映射/);
-  assert.match(lineFor({ result: "skip-capped", coin: "ETH" }), /⛔.*资金上限/);
-  assert.match(lineFor({ result: "min-capital", minCapital: 1680, canFollowCoins: "ETH" }), /💡 推荐最低本金=1680/);
+  assert.match(lineFor({ result: "skip-capped", coin: "ETH" }), /⛔.*加仓拦截/);
+  assert.match(lineFor({ result: "min-capital", minCapital: 1680, canFollowCoins: "ETH" }), /💡 最低本金参考：\$1680（可跟 ETH）/);
   assert.match(lineFor({ result: "error", coin: "ETH", reason: "x" }), /⚠️ ETH 执行失败/);
   assert.equal(lineFor({ result: "noop", coin: "ETH" }), null);
 });
@@ -425,9 +425,73 @@ test("escapeHtml: < > & 转义", () => {
 });
 
 test("buildHeader / buildFooter", () => {
-  assert.equal(buildHeader("demo-1", "0x321f7193eadbacb67eff00f76b975a487e5b1c84", "s1"), "[DRY-RUN] 🎯demo-1｜跟 0x32...1c84 → s1");
-  assert.equal(buildHeader("demo-1", "0x321f7193eadbacb67eff00f76b975a487e5b1c84", ""), "[DRY-RUN] 🎯demo-1｜跟 0x32...1c84"); // 无子账户
+  assert.equal(buildHeader("demo-1", "0x321f7193eadbacb67eff00f76b975a487e5b1c84", "s1"), "跟 0x32...1c84 🎯demo-1 → s1  [DRY-RUN]");
+  assert.equal(buildHeader("demo-1", "0x321f7193eadbacb67eff00f76b975a487e5b1c84", ""), "跟 0x32...1c84 🎯demo-1  [DRY-RUN]"); // 无子账户
   assert.equal(buildFooter(12, 340), "⏱ 执行 12ms｜完整 340ms");
+});
+
+// ---------- 04 通知增强：display 格式化 ----------
+test("fmtDisplaySize: 按 szDecimals 截断 + 默认 4 位", () => {
+  assert.equal(fmtDisplaySize("0.123456789", 2), "0.12");
+  assert.equal(fmtDisplaySize("715.34851779787", 0), "715");
+  assert.equal(fmtDisplaySize("715.34851779787"), "715.3485"); // 默认 4 位
+  assert.equal(fmtDisplaySize(null, 2), "0"); // null → "0"
+  assert.equal(fmtDisplaySize("", 2), "0"); // 空串 → "0"
+});
+
+test("fmtDisplayUsd: 2 位小数 + 空值安全", () => {
+  assert.equal(fmtDisplayUsd("1234.56789"), "1234.56"); // ROUND_DOWN
+  assert.equal(fmtDisplayUsd(4.0679), "4.06");
+  assert.equal(fmtDisplayUsd(null), "0");
+  assert.equal(fmtDisplayUsd(undefined), "0");
+});
+
+test("buildPositionCards: 空输入 + 单仓位双卡片", () => {
+  const empty = buildPositionCards([]);
+  assert.match(empty, /无可映射仓/);
+
+  const cards = buildPositionCards([
+    { coin: "ETH", size: "0.5", leverage: 10, szDecimals: 2, refPx: "3000", targetEntryPx: "2950", targetSzi: "50", marginUsed: "15000" },
+  ]);
+  // 目标卡片
+  assert.match(cards, /🎯 目标仓位：ETH 10x 做多/);
+  assert.match(cards, /持仓量  50 张/);
+  assert.match(cards, /开仓价  \$2950/);
+  assert.match(cards, /保证金  \$15000/);
+  // 跟单卡片（空行后）
+  assert.match(cards, /📊 跟单仓位：ETH 10x 做多/);
+  assert.match(cards, /持仓量  0\.5 张/);
+  assert.match(cards, /仓位价值  \$1500/);
+});
+
+test("buildRoundSummary: initial_sync 含卡片 + footer", () => {
+  const summary = buildRoundSummary({
+    kind: "initial_sync",
+    clock: "2026/06/29 12:05:03",
+    headerId: "跟 0x26...66 🎯demo-1  [DRY-RUN]",
+    positionCards: "📊 （测试卡片）",
+    lines: ["💡 最低本金参考：$4.07（可跟 ETH）"],
+    footer: "⏱ 执行 25ms｜完整 775ms",
+  });
+  assert.match(summary, /▶ 跟单启动/);
+  assert.match(summary, /🕐 2026\/06\/29 12:05:03/);
+  assert.match(summary, /📡 跟 0x26...66/);
+  assert.match(summary, /📊 （测试卡片）/);
+  assert.match(summary, /最低本金参考/);
+  assert.match(summary, /⏱ 执行 25ms/);
+});
+
+test("buildRoundSummary: round 无卡片只有变化行", () => {
+  const summary = buildRoundSummary({
+    kind: "round",
+    clock: "2026/06/29 12:15:00",
+    headerId: "跟 0x26...66 🎯demo-1  [DRY-RUN]",
+    lines: ["🆕 ETH 做多 | 新开 0.5 张 @ $3,000.50  ratio 1.98%"],
+    footer: "⏱ 执行 30ms｜完整 650ms",
+  });
+  assert.match(summary, /⏫ 跟单对账/);
+  assert.match(summary, /新开 0\.5 张/);
+  assert.match(summary, /ratio 1\.98%/);
 });
 
 // ---------- 04 通知增强：去重决策 decidePushLine ----------

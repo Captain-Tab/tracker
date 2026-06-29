@@ -49,6 +49,9 @@ export function toLogLine(a) {
     dryRun: a.dryRun === true,
     result,
     reason: String(a.reason ?? ""),
+    ...(a.szDecimals != null ? { szDecimals: Number(a.szDecimals) } : {}),
+    ...(a.positionNotional != null ? { positionNotional: String(a.positionNotional) } : {}),
+    ...(a.maxPosNotional != null ? { maxPosNotional: String(a.maxPosNotional) } : {}),
   };
 }
 

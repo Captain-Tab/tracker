@@ -27,7 +27,7 @@ pull-logs:
 
 # 一键部署：推代码 + 服务器装依赖并 app apply（自动迁移旧单元）
 deploy: sync
-	ssh $(HOST) "cd $(REMOTE_DIR) && npm install ws undici https-proxy-agent && node app/index.mjs apply && node app/index.mjs status"
+	ssh $(HOST) "cd $(REMOTE_DIR) && npm install ws undici https-proxy-agent decimal.js @nktkas/hyperliquid && node app/index.mjs apply && node app/index.mjs status"
 
 # app 编排：按 app/config.json 同步两个服务
 app-apply:

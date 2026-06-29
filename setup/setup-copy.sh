@@ -10,10 +10,13 @@ SIGNAL_DIR="/var/lib/tracker/copy-signal"      # 与 lib/copy-signal DEFAULT_SIG
 TARGETS="$ROOT_DIR/HYPE-copy/targets.json"
 APP_CONFIG="$ROOT_DIR/app/config.json"
 
-echo "[1/5] 写侧用户 trader-exec（已存在则跳过）"
+echo "[1/6] 读侧用户 tracker（已存在则跳过）"
+id tracker &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin tracker
+
+echo "[2/6] 写侧用户 trader-exec（已存在则跳过）"
 id trader-exec &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/nologin trader-exec
 
-echo "[2/5] 信号目录 $SIGNAL_DIR（0755；目录存在即默认开事件驱动，watch/copy 自动用）"
+echo "[3/6] 信号目录 $SIGNAL_DIR（0755；目录存在即默认开事件驱动，watch/copy 自动用）"
 install -d -o tracker -m 0755 "$SIGNAL_DIR"
 
 if [ ! -f "$TARGETS" ]; then
@@ -23,11 +26,11 @@ if [ ! -f "$TARGETS" ]; then
   exit 1
 fi
 
-echo "[3/5] targets.json 权限收敛（仅 trader-exec 可读）"
+echo "[4/6] targets.json 权限收敛（仅 trader-exec 可读）"
 chown trader-exec:trader-exec "$TARGETS"
 chmod 600 "$TARGETS"
 
-echo "[4/5] 读 target.id 并在 app/config.json 启用 hypeCopy（合并，不动其它服务开关）"
+echo "[5/6] 读 target.id 并在 app/config.json 启用 hypeCopy（合并，不动其它服务开关）"
 TARGET_ID="$(node -e "const t=require('$TARGETS').targets; const id=t&&t[0]&&t[0].id; if(!id){console.error('targets[0].id 缺失');process.exit(1)} process.stdout.write(String(id))")"
 if [ -z "$TARGET_ID" ]; then echo "❌ targets.json 的 targets[0].id 为空，请检查后重跑"; exit 1; fi
 node -e "
@@ -38,7 +41,7 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2) + '\n');
 console.log('  hypeCopy.enabled=true targets=[$TARGET_ID]');
 "
 
-echo "[5/5] app apply：生成/启动 HYPE-copy@$TARGET_ID.service"
+echo "[6/6] app apply：生成/启动 HYPE-copy@$TARGET_ID.service"
 if command -v systemctl >/dev/null 2>&1; then
   node "$ROOT_DIR/app/index.mjs" apply
 else

@@ -23,7 +23,7 @@
       "initialDeployPct": 0.5,   // 锚定首仓部署比例（默认 0.5）
       "maxDeployPct": 0.9,       // 部署上限（默认 0.9，触顶 → capped）
       "capitalWeight": 1,        // 多目标资金分配权重（一期单目标=1，增量阶段用）
-      "maxPositionPct": 0.5,     // 单仓名义占余额上限（防目标高杠杆单仓打爆）
+      "maxPositionPct": 0.6,     // 单仓名义占余额上限（防目标高杠杆单仓打爆）
       "minDeltaPct": 0.003,      // 最小变动阈值（< 此比例不修正，防碎步追单）
 
       "dryRun": true,            // 一期恒 true（false 会被 placeDryRun 拒绝，真实下单未实现）

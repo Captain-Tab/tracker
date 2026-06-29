@@ -11,6 +11,7 @@
 - 跟单执行器 `HYPE-copy` 跑在**独立用户 `trader-exec`**（与读侧 `tracker` 隔离，将来持 agent key）。
 - **事件驱动**靠一个"信号文件"跨进程通信：watch（`tracker`）检测到目标变化 → 写信号文件 → copy（`trader-exec`）读到 → 立即对账。难点是"让 trader-exec 能读 tracker 写的文件"（第 4 步权限）。
 - 不配信号 → copy 自动退化为 180s 轮询兜底（能跑，只是慢）。
+- **当前代码路径为 `/root/service/`**，systemd 加固项 `ProtectHome=true` / `User=trader-exec` 与此路径冲突（`/root` 被 ProtectHome 遮蔽、trader-exec 无遍历权限），dry-run 阶段暂以 root 运行，切实盘前迁至 `/opt/tracker` 后恢复。
 
 ---
 
@@ -39,7 +40,7 @@ cp /root/service/HYPE-copy/targets.example.jsonc /root/service/HYPE-copy/targets
 cd /root/service
 sudo bash setup/setup-copy.sh
 ```
-脚本自动：建 `trader-exec` → 建信号目录 0755（**= 默认开事件驱动**）→ targets.json chmod 600 → 读 target.id 在 `app/config.json` 启用 `hypeCopy`（合并，不动其它服务）→ `app apply` 启 `HYPE-copy@<id>.service`。
+脚本自动：建 `tracker` + `trader-exec` 用户 → 建信号目录 0755（**= 默认开事件驱动**）→ targets.json chmod 600 → 读 target.id 在 `app/config.json` 启用 `hypeCopy`（合并，不动其它服务）→ `app apply` 启 `HYPE-copy@<id>.service`。
 
 ## 4. 重启 watch（让它按"信号目录已存在"开始发信号）
 
@@ -51,7 +52,7 @@ sudo systemctl restart sodex-watch    # 或 HYPE-watch，按你目标的信号�
 
 ---
 
-## 6. 验证（首跑必看，确认无集成问题）
+## 5. 验证（首跑必看，确认无集成问题）
 
 ```bash
 # 实例状态
@@ -68,7 +69,7 @@ tail -f /root/service/HYPE-copy/log/HYPE-copy-<id>-$(date +%F).jsonl
 - JSONL 的 `fullMs/execMs` = 实测延迟（copy 段）；`would-place` 的 coin/方向/量/价是否合理。
 - **dry-run 不应有任何真实下单**（`placeDryRun` 不签名）。
 
-## 7. 关闭 / 回滚
+## 6. 关闭 / 回滚
 
 ```bash
 # 停跟单（推 ⏹ 关闭跟单后退出）
@@ -81,6 +82,6 @@ systemctl stop HYPE-copy@<id>.service
 
 ---
 
-## 8. dry-run 阶段不需要的（切实盘才做）
+## 7. dry-run 阶段不需要的（切实盘才做）
 
 agent key / approveAgent / 真实签名 / 真实余额 / dryRun=false——全部见 [`../copy/hype-go-live.md`](../copy/hype-go-live.md)。一期 dry-run 用 `availBalanceSim` 模拟余额、不碰 key。

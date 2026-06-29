@@ -1,13 +1,14 @@
 // 跟单推送纯文案模板（与逻辑分离）。仅字符串构造 + 事件分类，无 IO、无状态。
 // 精度比较走 precision.mjs（禁裸 parseFloat）；HTML 文案经 escapeHtml（sendTelegram 用 parse_mode HTML）。
-import { absStr, gt, lt, eq, signOf } from "../process/precision.mjs";
+// 消息风格对齐 watch render.mjs：banner 头 + 卡片式仓位展示 + 分隔线。
+import { absStr, gt, lt, eq, signOf, mul, div } from "../process/precision.mjs";
 
 // 事件 icon（用户确认集）
 const ICON = {
   open: "🆕", add: "⏫", reduce: "⏬", close: "🏁",
   start: "▶", stop: "⏹", skip: "⛔", minCap: "💡", error: "⚠️",
 };
-const DIR_CN = { long: "多", short: "空", "": "" };
+const DIR_CN = { long: "做多", short: "做空", "": "" };
 
 // HTML 转义：reason 等自由文案含 < > & 时防破坏 parse_mode HTML 解析
 export function escapeHtml(s) {
@@ -21,16 +22,220 @@ const shortAddr = (a) => (typeof a === "string" && a.length >= 10 ? `${a.slice(0
 const posDir = (size) => (signOf(String(size ?? "0")) < 0 ? "short" : "long");
 
 // ratio(number) → 百分比字符串（display；用 precision.mul 避免裸浮点）
-import { mul } from "../process/precision.mjs";
 const fmtRatioPct = (r) => `${mul(String(r), "100")}%`;
 
-// 消息头：每条汇总首行
-export function buildHeader(targetId, targetAddr, subAccount) {
-  const sub = subAccount ? ` → ${subAccount}` : "";
-  return `[DRY-RUN] 🎯${targetId}｜跟 ${shortAddr(targetAddr)}${sub}`;
+// Display size：szDecimals 位向零截断；未提供则退至 4 位（通知展示用，非下单精度）
+import Decimal from "decimal.js";
+function fmtDisplaySize(val, szDecimals) {
+  if (val == null || val === "") return "0";
+  const dec = szDecimals != null ? szDecimals : 4;
+  try { return new Decimal(val).toDecimalPlaces(dec, Decimal.ROUND_DOWN).toString(); }
+  catch { return String(val); }
 }
 
-// 镜像变化分类：由上一轮 prevSize 与本轮 newSize 的量级派生（总纲事件分类表）
+// Display 金额/本金：2 位小数
+function fmtDisplayUsd(val) {
+  if (val == null || val === "") return "0";
+  try { return new Decimal(val).toDecimalPlaces(2, Decimal.ROUND_DOWN).toString(); }
+  catch { return String(val); }
+}
+
+// 格式化北京时间（与 watch fmtTime 同口径）
+export function fmtClock(tsMs) {
+  const d = tsMs != null ? new Date(Number(tsMs)) : new Date();
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).replace(/-/g, "/");
+}
+
+// ---------- Banner 头部 ----------
+
+// 轮次动作 → banner 动词
+const BANNER_ACTION = {
+  initial_sync: "跟单启动",
+  round: "跟单对账",
+  startup: "跟单启动",
+  shutdown: "跟单关闭",
+};
+
+function buildBanner(kind, clock, headerId) {
+  const icon = kind === "shutdown" ? ICON.stop
+    : kind === "startup" ? ICON.start
+    : kind === "initial_sync" ? ICON.start
+    : ICON.add;
+  const action = BANNER_ACTION[kind] ?? "跟单对账";
+  return `${icon} ${action}\n🕐 ${clock}\n📡 ${headerId}`;
+}
+
+// ---------- 消息头 ----------
+
+// 头部标识（不含 banner 动作/时间，仅 ID 行）
+export function buildHeader(targetId, targetAddr, subAccount) {
+  const sub = subAccount ? ` → ${subAccount}` : "";
+  return `跟 ${shortAddr(targetAddr)} 🎯${targetId}${sub}  [DRY-RUN]`;
+}
+
+// ---------- 启动行 ----------
+
+export function lineStart(extra = "") {
+  return extra ? `目标状态：${extra}` : null; // 仅在有额外信息时出单行，否则由 buildBanner 覆盖
+}
+
+// ---------- 初始镜像同步：仓位卡片 ----------
+
+// positions: [{coin, size, leverage, szDecimals, refPx, marginUsed, targetEntryPx, targetSzi}]
+// 分两个卡片：🎯 目标仓位（来源数据） + 📊 跟单仓位（我方镜像）
+export function buildPositionCards(positions) {
+  if (!positions || positions.length === 0) return "🎯 目标 / 📊 跟单：（无可映射仓）";
+
+  const SEP = "━━━━━━━━━━";
+  const lines = [];
+  for (const p of positions) {
+    const absSize = absStr(p.size ?? "0");
+    if (absSize === "0") continue;
+    const dir = posDir(p.size);
+    const dirCN = DIR_CN[dir];
+    const levStr = p.leverage ? `${p.leverage}x ` : "";
+    const szDec = p.szDecimals;
+    const px = p.refPx;
+    const entry = p.targetEntryPx ? fmtDisplayUsd(p.targetEntryPx) : null;
+    const targetAbs = p.targetSzi ? absStr(p.targetSzi) : null;
+    const targetDisplay = targetAbs ? fmtDisplaySize(targetAbs, szDec) : null;
+    const targetMargin = p.marginUsed ? fmtDisplayUsd(p.marginUsed) : null;
+
+    // 目标仓位卡片（信号源原始数据）
+    const targetLines = [];
+    targetLines.push(`🎯 目标仓位：${p.coin} ${levStr}${dirCN}`);
+    if (targetDisplay) targetLines.push(`  持仓量  ${targetDisplay} 张`);
+    if (entry) targetLines.push(`  开仓价  $${entry}`);
+    if (px) targetLines.push(`  标记价  $${fmtDisplayUsd(px)}`);
+    if (targetMargin) targetLines.push(`  保证金  $${targetMargin}`);
+    if (targetLines.length > 1) { lines.push(`${SEP}`); lines.push(...targetLines); lines.push(""); }
+
+    // 跟单仓位卡片（我方按 ratio 缩放后）
+    const displaySize = fmtDisplaySize(absSize, szDec);
+    const notional = px ? fmtDisplayUsd(mul(absSize, String(px))) : null;
+    const mirrorMargin = px && p.leverage ? fmtDisplayUsd(div(mul(absSize, String(px)), String(p.leverage))) : null;
+    const mirrorLines = [];
+    mirrorLines.push(`📊 跟单仓位：${p.coin} ${levStr}${dirCN}`);
+    mirrorLines.push(`  持仓量  ${displaySize} 张`);
+    if (notional) mirrorLines.push(`  仓位价值  $${notional}`);
+    if (mirrorMargin) mirrorLines.push(`  保证金  $${mirrorMargin}`);
+    lines.push(...mirrorLines);
+    lines.push(`${SEP}`);
+  }
+  return lines.join("\n");
+}
+
+// 单币种变化行（open/add/reduce/close）
+// ev: {coin, side, currentSize, desiredSize, deltaSize, refPx, ratio, szDecimals, posLeverage}
+function buildDeltaLine(ev) {
+  const ev2 = classifyMirrorEvent(ev.currentSize, ev.desiredSize);
+  const dir = DIR_CN[posDir(ev2 === "close" ? ev.currentSize : ev.desiredSize)];
+  const szDec = ev.szDecimals;
+  const px = ev.refPx ? `$${fmtDisplayUsd(ev.refPx)}` : "-";
+  const ratioText = ev.ratio != null ? `ratio ${fmtRatioPct(ev.ratio)}` : "";
+
+  switch (ev2) {
+    case "open": {
+      const held = fmtDisplaySize(absStr(ev.desiredSize ?? "0"), szDec);
+      return `${ICON.open} ${ev.coin} ${dir} | 新开 ${held} 张 @ ${px}  ${ratioText}`;
+    }
+    case "add": {
+      const delta = fmtDisplaySize(absStr(ev.deltaSize ?? "0"), szDec);
+      const held = fmtDisplaySize(absStr(ev.desiredSize ?? "0"), szDec);
+      return `${ICON.add} ${ev.coin} ${dir} | +${delta} → 持 ${held} 张 @ ${px}`;
+    }
+    case "reduce": {
+      const delta = fmtDisplaySize(absStr(ev.deltaSize ?? "0"), szDec);
+      const held = fmtDisplaySize(absStr(ev.desiredSize ?? "0"), szDec);
+      return `${ICON.reduce} ${ev.coin} ${dir} | -${delta} → 持 ${held} 张 @ ${px}`;
+    }
+    case "close":
+      return `${ICON.close} ${ev.coin} ${dir} | 目标已清仓，平仓`;
+    default:
+      return null;
+  }
+}
+
+// ---------- lineFor(action) → 明细行字符串 ----------
+
+export function lineFor(a) {
+  const result = a.result ?? a.decision ?? "ok";
+  const coin = a.coin;
+  switch (result) {
+    case "noop":
+    case "same":
+      return null;
+    case "place":
+    case "ok":
+      return buildDeltaLine(a);
+    case "skip-unmappable":
+      return `${ICON.skip} ${coin} 无 hype 映射，跳过（不计入分母）`;
+    case "skip-mindust":
+      return `${ICON.skip} ${coin} 名义 < 最小 $10，跳过`;
+    case "skip-no-price":
+      return `${ICON.skip} ${coin} 无价格数据，本轮跳过`;
+    case "skip-maxpos": {
+      // 仓位过重不跟：目标仓按比例缩小后仍需 X，超单仓风控上限
+      const notional = a.positionNotional ? `$${fmtDisplayUsd(a.positionNotional)}` : "";
+      const limit = a.maxPosNotional ? `$${fmtDisplayUsd(a.maxPosNotional)}` : "单仓上限";
+      const limitFormula = a.maxPosNotional ? `（余额 $${fmtDisplayUsd(a.availBalance)} × ${a.maxPositionPct ? fmtRatioPct(a.maxPositionPct) : ""}）` : "";
+      return `${ICON.skip} ${coin} 仓位过重不跟${notional ? `——目标仓按比例缩小后仍需 ${notional}` : ""}，超单仓上限 ${limit}${limitFormula}`;
+    }
+    case "skip-capped": {
+      const would = a.wouldDeploy ? `需 $${fmtDisplayUsd(a.wouldDeploy)}` : "部署需求";
+      const limit = a.maxDeployNotional ? `资金上限 $${fmtDisplayUsd(a.maxDeployNotional)}` : "超资金上限";
+      return `${ICON.skip} ${coin} ${would} > ${limit}，加仓拦截`;
+    }
+    case "min-capital": {
+      const mc = fmtDisplayUsd(a.minCapital ?? "0");
+      const coins = a.canFollowCoins ?? "-";
+      return `${ICON.minCap} 最低本金参考：$${mc}（可跟 ${coins}）`;
+    }
+    case "failed":
+    case "error":
+      return `${ICON.error} ${coin} 执行失败 — ${escapeHtml(a.reason ?? "未知")}`;
+    default:
+      return null;
+  }
+}
+
+// ---------- 兼容旧调用（lineInitialSync → buildPositionCards）----------
+
+export function lineInitialSync(positions) {
+  return buildPositionCards(positions);
+}
+
+// ---------- 关闭行 ----------
+
+export function lineStop() {
+  return `${ICON.stop} 跟单关闭`;
+}
+
+// ---------- 计时页脚 ----------
+
+export function buildFooter(execMs, fullMs) {
+  return `⏱ 执行 ${execMs}ms｜完整 ${fullMs}ms`;
+}
+
+// ---------- 轮次汇总构建（替代 pushRoundSummary 的拼接逻辑）----------
+
+// buildRoundSummary 产出一轮完整 TG 消息文本：banner + 仓位卡片 + 明细行 + 页脚
+// kind: 'initial_sync' | 'round' | 'startup' | 'shutdown'
+export function buildRoundSummary({ kind, clock, headerId, positionCards, lines, footer, startupExtra }) {
+  const banner = buildBanner(kind, clock, headerId);
+  const parts = [banner];
+
+  if (startupExtra) parts.push(startupExtra);
+  if (positionCards) parts.push(`\n${positionCards}`);
+  if (lines && lines.length > 0) parts.push(`\n${lines.join("\n")}`);
+  if (footer) parts.push(`\n${footer}`);
+
+  return parts.join("\n");
+}
+
+// ---------- 镜像变化分类（总纲事件分类表）----------
+
 export function classifyMirrorEvent(prevSize, newSize) {
   const p = absStr(prevSize ?? "0");
   const n = absStr(newSize ?? "0");
@@ -41,66 +246,5 @@ export function classifyMirrorEvent(prevSize, newSize) {
   return "same";
 }
 
-// lineFor(action) → 明细行字符串 | null（noop / same → null = 不出行）
-export function lineFor(a) {
-  const result = a.result ?? a.decision ?? "ok";
-  const coin = a.coin;
-  switch (result) {
-    case "noop":
-      return null;
-    case "place":
-    case "ok": {
-      const ev = classifyMirrorEvent(a.currentSize, a.desiredSize);
-      const dir = DIR_CN[posDir(ev === "close" ? a.currentSize : a.desiredSize)];
-      const px = a.refPx;
-      const held = absStr(a.desiredSize ?? "0");
-      const delta = absStr(a.deltaSize ?? a.size ?? "0");
-      const ratioText = a.ratio != null ? `（ratio ${fmtRatioPct(a.ratio)}）` : "";
-      if (ev === "open") return `${ICON.open} 开 ${coin} ${dir} ${held} @ ${px}${ratioText}`;
-      if (ev === "add") return `${ICON.add} 加 ${coin} ${dir} +${delta} → 持 ${held} @ ${px}`;
-      if (ev === "reduce") return `${ICON.reduce} 减 ${coin} ${dir} -${delta} → 持 ${held} @ ${px}`;
-      if (ev === "close") return `${ICON.close} 平 ${coin} ${dir}（目标已清仓）`;
-      return null; // same
-    }
-    case "skip-unmappable":
-      return `${ICON.skip} ${coin} 无 hype 映射，跳过（不计入分母）`;
-    case "skip-mindust":
-      return `${ICON.skip} ${coin} 名义 < 最小名义($10)，跳过`;
-    case "skip-no-price":
-      return `${ICON.skip} ${coin} 无价格数据，本轮跳过`;
-    case "skip-maxpos":
-      return `${ICON.skip} ${coin} 单仓超上限，封顶拦截加仓部分`;
-    case "skip-capped":
-      return `${ICON.skip} 已达资金上限(MAX_DEPLOY_PCT)，无法完全跟仓 ${coin}`;
-    case "min-capital":
-      return `${ICON.minCap} 推荐最低本金=${a.minCapital}，可跟 ${a.canFollowCoins ?? "-"}`;
-    case "failed":
-    case "error":
-      return `${ICON.error} ${coin} 执行失败 — ${escapeHtml(a.reason ?? "未知")}`;
-    default:
-      return null;
-  }
-}
-
-// 启动（待锚定，目标无可映射仓时）
-export function lineStart(extra = "") {
-  return `${ICON.start} 跟单启动${extra ? `（${extra}）` : ""}`;
-}
-
-// 启动 + 初始镜像同步（重启首轮，不逐仓当开仓洪水）：positions=[{coin,size}]
-export function lineInitialSync(positions) {
-  const list = (positions ?? [])
-    .map((p) => `持 ${p.coin} ${DIR_CN[posDir(p.size)]} ${absStr(p.size ?? "0")}`)
-    .join(" / ");
-  return `${ICON.start} 跟单启动 + 初始镜像同步：${list || "无可映射仓"}`;
-}
-
-// 关闭跟单（进程 SIGTERM/SIGINT）
-export function lineStop() {
-  return `${ICON.stop} 跟单关闭`;
-}
-
-// 计时页脚
-export function buildFooter(execMs, fullMs) {
-  return `⏱ 执行 ${execMs}ms｜完整 ${fullMs}ms`;
-}
+// re-export 供外部使用
+export { fmtDisplaySize, fmtDisplayUsd };
