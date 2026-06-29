@@ -76,6 +76,22 @@
 > **现实估算 ~2–3s 典型**，慢网/WARP 抖动可达 3s+。只有计算段(~10ms)可忽略，其余 WS+轮询+接口三段网络耗时累加是大头。
 > 对比当前 60s 轮询，仍是 **20–30 倍**提升；持仓型跟单（非 HFT，永远跑在目标后）2–3s 完全可接受。接口请求是 reconcile 固有成本（兜底路径同样要拉），不因事件驱动而消除。
 
+### 延迟优化（可选增强档，P0-P3 核心之后按需启用）
+
+核心 P0-P3 先保正确性；下列优化按需叠加，把端到端从 ~2–3s 压到 ~0.5–1.2s。
+
+| # | 优化 | 接口/环节 | 收益 | 代价 |
+|---|---|---|---|---|
+| O1 | **hype 价格预热** | `fetchHypePrices` | **最大**：把价格拉取移出关键路径——copy 后台刷新/订阅 allMids，reconcile 读热缓存 | 价格 1-2s 旧（IOC 滑点保护兜底，可接受）；copy 多一个只读后台刷新（**非第二个目标 watcher**，合规） |
+| O2 | assetIndex 预热 | `buildHypeAssetIndex` | 已实现（6h 缓存 + 启动刷一次） | — |
+| O3 | 降信号检测延迟 | N4 | ~1s → 亚秒 | `fs.watch(目录)` 事件 或 0.5s 轮询（事件型回到 rename quirk，需盯目录） |
+| O4 | 连接保活/池化 | sodex+hype 端点 | 免每请求 TLS 握手（经 WARP 尤其值） | HTTP keep-alive / agent 复用 |
+| O5 | WS-change 注入点 | N3（已在本 spec） | watch 段 ~0 | 滚仓多唤醒（coalesce 吸收） |
+| O6 | 信号带快照（**仅兜底候选**） | `fetchTargetState` | 连 sodex 拉取也省 | WS↔REST 格式耦合 + 双数据路径——**仅在 O1/O3/O4 都做完 sodex 仍是瓶颈时考虑** |
+
+**提前请求能力小结**：hype 价格（O1）✅ 可预热、assetIndex（O2）✅ 已预热；**sodex 目标仓不能提前**（变化后才有意义），只能靠 O6 信号带快照消除（不推荐，耦合）。
+**不可优化**：N0→N1 WS 物理传播（交易所推送速度，物理下限 ~0.2s）。
+
 ### 跨进程信号机制
 
 - 传输：watch **原子写**（tmp+rename）`signal/<target>.json`，copy `fs.watchFile`（轮询 stat，对 rename 免疫；非 `fs.watch` 盯 inode 会被换掉失效）。零依赖、跨重启存活。
