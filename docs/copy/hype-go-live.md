@@ -5,32 +5,35 @@
 
 ---
 
-## 〇、🔝 最优先：抽 PositionStream 共享 → 事件驱动对账
+## 〇、🔝 最优先：watch 检测 → 信号 → copy 执行（事件驱动）
 
-> **优先级高于本文其余所有项**。当前 `main.mjs` 是纯 15s REST 轮询（空转查接口 + 最多 15s 延迟），与"目标不动我们不动"的预期不符。本档把触发模型改成事件驱动。
+> **优先级高于本文其余所有项**。当前 `main.mjs` 是纯轮询（空转查接口 + 延迟），与"目标不动我们不动"不符。本档改成事件驱动。
 
-**核心原则：复用 = 直接拿现有 watcher 处理一下用，不重写一套 WS。**
+**核心原则（铁律，避免造第二个 watcher）**：
+1. **不新建 watch**：`sodex-watch`/`HYPE-watch` 已在跑、已订阅目标 WS。**不为 copy 再建 watch，也不在 copy 里开第二条 WS。**
+2. **watch 先、copy 后（串行）**：watch 检测到目标仓位变化（干完它的检测）→ **发信号触发** copy 执行对账。copy 是**下游消费者**，不自己监听。
+3. **不重复执行 watcher**：copy 不跑第二份 watcher 逻辑、不重复订阅/重复拉取。复用 = **挂在 watch 已有的检测输出上**。
 
-- `sodex-watch/process/watcher.mjs` 的 `AccountWatcher` 已实现 WS 订阅 + 仓位变化指纹 + 断线重连；`HYPE-watch` 对称有一套。**这两套是现成轮子，直接复用，不重造。**
-- 障碍：`AccountWatcher` 当前把"变化检测"和"渲染 + 推 watch TG + 每日快照"焊死，没暴露干净的 `onChange` 回调；且 sodex / hype 是两套不同 WS 协议。
-
-**做法（抽检测内核，薄封装复用）**：
+**做法（给 watch 加一个轻量"变化信号"输出，copy 订阅）**：
 
 ```
-抽出共享「变化检测内核」（WS 订阅 + 指纹 + 变化回调），保留各平台协议差异：
-  统一接口： onChange(归一化目标仓位[])     ← copy 只认这个，不关心底层哪套 WS
-     ├─ sodex 源 → 复用 sodex-watch watcher 的检测内核（sodex WS 协议）
-     └─ hype 源  → 复用 HYPE-watch watcher 的检测内核（hype WS 协议）
-  copy main：onChange 触发 reconcileOnce()；REST 周期对账降为 ~180s 兜底（防漏接 WS 事件）
+watch（已运行，单 WS 订阅目标）检测到变化 [watch 完成它的检测]
+   → 发出变化信号（含最新仓位快照；watch 本就已 fetch，copy 免重复拉）
+   → copy 监听到信号 → reconcileOnce()（对账：对齐目标完整净仓 → would-place）
+REST 周期对账降为 ~180s，仅作兜底（防漏接信号）
 ```
+
+**跨进程信号机制（保持进程隔离）**：
+- watch 跑 `tracker`（只读）、copy 跑 `trader-exec`（持 agent key），**两进程不混**。
+- watch 检测到变化时，除了推 watch TG，再向一个跨进程通道**发一条变化事件**（轻量选项：写 per-target 事件文件 / FIFO / Unix socket，零依赖即可）；copy 监听该通道触发 reconcile。
+- 事件**带最新仓位快照**最优（watch 已拉取，copy 直接用，免二次请求）；退一步 copy 收信号后自拉完整态做对账，也可（多一次请求）。
 
 **关键边界**：
-- **按平台各复用各 watcher**，不是合成一个共享类（sodex/hype 协议不同）。DRY 体现在 copy 不重写 WS、直接用对应平台已有那套。
-- **映射表正交、且自动化**：`mapSymbol`（sodex→hype）在 copy 侧、拿到原始仓位**之后**才做翻译，不进 stream。"不定期更新映射"用 **hype 实时 universe 校验**解决——`buildHypeAssetIndex` 已每 6h 拉 hype `meta`，让 `mapSymbol` 校验 coin 是否在当前 universe（不在=不可映射），随 hype 上下架自动跟，零手维护（阶段1 留的口子，当时直通未接）。
-- **进程隔离不变**：copy 仍跑 `trader-exec`、各自持 WS 订阅，不和 watch（`tracker` 只读）混进程。
-- **对账仍必要**：事件只决定"何时动手"，对账决定"怎么动手"——收到事件后**对齐目标完整净仓**（非复制单个动作），才能自愈断线/重启/部分成交/漏单。
+- **改动落在 watch 侧加"信号输出" + copy 侧加"信号订阅"**，不是在 copy 里复制 watch 的 WS/指纹逻辑。sodex/hype 各自的 watcher 不动其检测主体，只在"检测到变化"处多发一个信号。
+- **映射表正交、且自动化**：`mapSymbol`（sodex→hype）在 copy 侧、拿到原始仓位**之后**才翻译，不进 watch。"不定期更新映射"用 **hype 实时 universe 校验**解决——`buildHypeAssetIndex` 已每 6h 拉 hype `meta`，让 `mapSymbol` 校验 coin 是否在当前 universe（不在=不可映射），随 hype 上下架自动跟，零手维护（阶段1 留的口子，当时直通未接）。
+- **对账仍必要**：事件只决定"何时动手"，对账决定"怎么动手"——收到信号后**对齐目标完整净仓**（非复制单个动作），才能自愈断线/重启/部分成交/漏单。
 
-**代码触点**：抽 `service/lib/`（或 watch/process）共享检测内核 → 小重构 `sodex-watch` + `HYPE-watch`（动 live 服务，需单独 checkpoint + 回归）；`main.mjs` 接 onChange + REST 降 180s 兜底；`mapping.mjs` 接 hype universe 校验。
+**代码触点**：① `sodex-watch`/`HYPE-watch` 在仓位变化检测点加一条"变化信号"输出（小改 live 服务，需单独 checkpoint + 回归，不动检测主体）；② `service/HYPE-copy/main.mjs` 由轮询触发改为**订阅信号触发** `reconcileOnce`，REST 降 180s 兜底；③ `mapping.mjs` 接 hype universe 校验。
 
 ---
 
