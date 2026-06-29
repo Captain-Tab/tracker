@@ -64,6 +64,22 @@ test("mapSymbol: 非法入参安全返回 null（不抛错）", () => {
   assert.equal(mapSymbol(undefined, "hype"), null);
 });
 
+test("mapSymbol: hype universe 校验（第3参，coin 不在 universe → null）", () => {
+  const uni = new Set(["ETH", "BTC"]); // hype 当前 universe
+  assert.equal(mapSymbol("ETH-USD", "sodex", uni), "ETH"); // 在 universe
+  assert.equal(mapSymbol("SOL-USD", "sodex", uni), null); // 不在 universe → 不可映射
+  assert.equal(mapSymbol("ETH", "hype", uni), "ETH"); // hype 源同样校验
+  assert.equal(mapSymbol("DOGE", "hype", uni), null); // hype 源不在 universe → null
+  // Map（buildHypeAssetIndex 返回形态）也支持
+  assert.equal(mapSymbol("BTC-USD", "sodex", new Map([["BTC", { index: 0 }]])), "BTC");
+  // 数组也支持
+  assert.equal(mapSymbol("ETH-USD", "sodex", ["ETH"]), "ETH");
+  // 不提供 universe → 向后兼容直通（不拦）
+  assert.equal(mapSymbol("SOL-USD", "sodex"), "SOL");
+  // 黑名单优先于 universe：PLTR 即使在 universe 也因黑名单 null（sodex 源）
+  assert.equal(mapSymbol("PLTR-USD", "sodex", new Set(["PLTR"])), null);
+});
+
 // ---------- loadTargets ----------
 test("loadTargets: 单目标返回 {tgToken, target} + 默认值填充", () => {
   const path = writeTargets(singleTarget());

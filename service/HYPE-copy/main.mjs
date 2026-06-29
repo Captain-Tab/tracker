@@ -10,9 +10,11 @@ import { add } from "./process/precision.mjs";
 import { ENVS, fetchTargetState, fetchHypePrices, buildHypeAssetIndex, placeDryRun, log } from "./api/index.mjs";
 import { recordAction, pushRoundSummary, decidePushLine } from "./notify/index.mjs";
 import { buildHeader, buildFooter, lineInitialSync, lineStart, lineStop } from "./notify/templates.mjs";
+import { watchSignal, makeSingleFlight } from "../lib/copy-signal/index.mjs";
 
 // 执行腿参数（blueprint §10.6 建议默认）
-const RECONCILE_INTERVAL_SEC = 60; // 周期对账间隔（dry-run 轮询；事件驱动下一档降为 180s 兜底）
+const RECONCILE_INTERVAL_SEC = 180; // 周期对账兜底间隔（事件驱动主触发用信号；轮询仅防漏接）
+const SIGNAL_POLL_MS = 1000; // fs.watchFile 轮询间隔（信号检测延迟，可调）
 const MAX_SLIPPAGE_BPS = 30; // IOC 限价保护偏移
 const DEFAULT_MIN_ORDER_SIZE = "0.0001"; // 最小下单量兜底（精确 lot 由 formatSize 按 szDecimals 收口）
 
@@ -50,9 +52,11 @@ async function reconcileOnce(env, target, avail, push) {
   const events = []; // 待记录 + 待推送的动作；顺序即推送顺序
 
   // 标的映射：不可映射 → skip-unmappable 告警，不计 ratio 分母
+  // universe 非空才传入校验（冷启动/失败时 assetIndex 空 → 跳过校验直通，避免误判全不可映射）
+  const universe = assetIndex && assetIndex.size > 0 ? assetIndex : undefined;
   const mappable = [];
   for (const p of rawPositions) {
-    const coin = mapSymbol(p.symbol, target.source.platform);
+    const coin = mapSymbol(p.symbol, target.source.platform, universe);
     if (coin === null) events.push({ coin: p.symbol, side: "", result: "skip-unmappable", reason: "无 hype 映射" });
     else if (Number(p.szi) !== 0) mappable.push({ coin, szi: p.szi, marginUsed: p.marginUsed, leverage: p.leverage });
   }
@@ -161,12 +165,30 @@ async function main() {
     throw new Error("dry-run 需 availBalanceSim（targets.json）或 --avail=<余额> 提供模拟可用余额");
   }
 
+  // single-flight：信号触发 / 180s 兜底 / 启动首轮 全部汇入同一串行入口，
+  // 防并发改 state / 双记录 /（实盘）双下单；跑中再触发合并为结束后补跑一次。
+  const trigger = makeSingleFlight(async () => {
+    try { await reconcileOnce(env, target, avail, push); }
+    catch (e) { log(`[${target.id}] 对账失败：${e.message}`); }
+  });
+
+  // 信号订阅（事件驱动主触发）：watch 在 WS-change 点写脏标，copy fs.watchFile 监听。
+  // 未配 copySignalPath → 仅轮询兜底（降级，不报错）。
+  let stopWatch = null;
+  if (target.copySignalPath) {
+    stopWatch = watchSignal(target.copySignalPath, () => trigger(), { interval: SIGNAL_POLL_MS });
+    log(`[${target.id}] 订阅跟单信号：${target.copySignalPath}（${SIGNAL_POLL_MS}ms 轮询）`);
+  } else {
+    log(`[${target.id}] 未配 copySignalPath → 仅 ${RECONCILE_INTERVAL_SEC}s 轮询兜底`);
+  }
+
   // 关闭跟单（进程停止）：SIGTERM/SIGINT → 推 ⏹ 后退出（区别于"目标平仓 🏁"）
   let shuttingDown = false;
   const header = buildHeader(target.id, target.source.address, target.subAccount);
   const shutdown = async (sig) => {
     if (shuttingDown) return;
     shuttingDown = true;
+    if (stopWatch) stopWatch();
     log(`[${target.id}] 收到 ${sig}，关闭跟单`);
     try { await pushRoundSummary(header, [lineStop()], null, push); } catch {}
     process.exit(0);
@@ -174,14 +196,10 @@ async function main() {
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));
 
-  log(`HYPE-copy 启动：target=${target.id} dryRun=${target.dryRun} avail(sim)=${avail} 间隔=${RECONCILE_INTERVAL_SEC}s`);
+  log(`HYPE-copy 启动：target=${target.id} dryRun=${target.dryRun} avail(sim)=${avail} 兜底=${RECONCILE_INTERVAL_SEC}s`);
 
-  const tick = async () => {
-    try { await reconcileOnce(env, target, avail, push); }
-    catch (e) { log(`[${target.id}] 对账失败：${e.message}`); }
-  };
-  await tick();
-  setInterval(tick, RECONCILE_INTERVAL_SEC * 1000);
+  await trigger(); // 启动首轮
+  setInterval(trigger, RECONCILE_INTERVAL_SEC * 1000); // 周期兜底（防漏接信号）
 }
 
 main().catch((e) => { console.error("HYPE-copy 启动失败:", e.message); process.exit(1); });

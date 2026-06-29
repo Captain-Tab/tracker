@@ -113,9 +113,9 @@ function handleThrottle(err, limiter, throttleStatuses) {
 // ---------- fetchTargetState：读 sodex perps state，归一化（只归一，不映射/不算可映射性）----------
 // 字段口径：authoritative api-confidence/sodex.md L89 已证实 P[] 缩写——
 //   sz=当前size(带符号张数) / ep=均价 / ms=max_size / cr=已实现 / ur=未实现。
-// ⚠️ TO-VERIFY（api spec 明确「字段名以实际 wire 为准，落地前 --raw 核对，不臆造」）：
-//   symbol / leverage / marginUsed 的 REST state 缩写键未在权威文档列出，下方用候选键回退 +
-//   派生 marginUsed=|sz|×ep/leverage（sodex 口径 docs/watch/sodex.md L119）。首次实跑务必 --raw 核对修正。
+// ✅ 已实测核对（2026-06，真实 sodex P[0] CL-USD）：s=symbol / sz=szi / ep=entryPx / l=leverage(10)
+//   全部命中；co=名义敞口（直给）；marginUsed 无直给字段 → 派生 co/leverage（= |sz|×ep/leverage），
+//   实测与 co/l 一致（50847.84/10=5084.78）。保留候选键回退以防 wire 变更。
 function pickField(obj, keys) {
   for (const k of keys) {
     const v = obj?.[k];
@@ -131,11 +131,13 @@ export function normalizeTargetPositions(rawPositions) {
     const szi = String(pickField(p, ["sz", "szi", "size"]) ?? "0");
     const entryPx = pickField(p, ["ep", "entryPx", "avgEntryPrice"]);
     const leverage = Number(pickField(p, ["l", "leverage", "lev"]) ?? 0);
-    // marginUsed 优先显式字段；缺失则按 sodex 口径派生 |sz|×ep/leverage（leverage>0 时）。
+    // marginUsed 优先显式字段；缺失则派生（leverage>0）：优先 co/leverage（co=名义敞口，
+    // 交易所直给、最精确），退而 |sz|×ep/leverage。均走 precision 避免裸浮点（§3.3）。
     let marginUsed = pickField(p, ["mu", "marginUsed", "im", "initialMargin"]);
-    if ((marginUsed === undefined || marginUsed === null) && entryPx && leverage > 0) {
-      // 派生口径 |sz|×ep/leverage（docs/watch/sodex.md L119）；走 precision 避免裸浮点（§3.3）
-      marginUsed = div(mul(absStr(szi), String(entryPx)), String(leverage));
+    if ((marginUsed === undefined || marginUsed === null) && leverage > 0) {
+      const co = pickField(p, ["co"]); // sodex 名义敞口（实测字段）
+      if (co !== undefined) marginUsed = div(String(co), String(leverage));
+      else if (entryPx) marginUsed = div(mul(absStr(szi), String(entryPx)), String(leverage));
     }
     return {
       symbol,

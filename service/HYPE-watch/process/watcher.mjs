@@ -16,6 +16,7 @@ import {
   sharedRateLimitUntil, THROTTLE_STATUSES, SEEN_IDS_CAP, szDecimalsOf,
 } from "../api/index.mjs";
 import { installWsProxy } from "../../lib/WARP/index.mjs";
+import { writeSignal } from "../../lib/copy-signal/index.mjs";
 
 const CHANNELS = ["clearinghouseState", "openOrders", "userFills", "orderUpdates"];
 const PING_INTERVAL_MS = 15_000;
@@ -79,6 +80,9 @@ export class AccountWatcher {
     this.baselineLogged = false;
     this.stateFp = null;
     this.lastOutFp = null;
+    // 跟单事件信号（可选，加法）：copy-signal-path 未配则全程 no-op，watch 行为 diff=0
+    this.copySignalPath = flags["copy-signal-path"] ?? null;
+    this.copySignalSeq = 0;
     // 分档 debounce：与上次推送的"持仓键集合 / 离场单子集"比对判结构变化；
     // pendingStructural = 当前 debounce 窗口内是否出现结构变化（只升不降，取最紧急）。
     // 初值 null 表示"从未推送过"，使首帧 baseline（含空仓）必判结构变化 → 短档即时推 START WATCH。
@@ -168,12 +172,20 @@ export class AccountWatcher {
     // 仅 abs(size)/开仓单 sz 变（滚仓加减仓）→ 长档合并。
     const structural = positionKeysFp(this.positions) !== this.lastKeysFp
       || canonicalExitOrdersFp(this.wsOrders) !== this.lastExitFp;
-    if (fp !== this.stateFp) { this.stateFp = fp; this.scheduleFetch(structural); }
+    if (fp !== this.stateFp) { this.stateFp = fp; this.emitCopySignal(); this.scheduleFetch(structural); }
+  }
+
+  // 跟单脏标信号（加法）：未配 copySignalPath → no-op；写失败不影响 watch 主流程
+  emitCopySignal() {
+    if (!this.copySignalPath) return;
+    try {
+      writeSignal(this.copySignalPath, { seq: ++this.copySignalSeq, ts: Date.now(), address: this.address });
+    } catch (e) { log(`[copy-signal] 写失败（不影响监听）：${e.message}`); }
   }
 
   scheduleFetch(structural = false) {
     if (Date.now() < sharedRateLimitUntil) return;
-    if (structural) this.pendingStructural = true; // 只升级，取窗口内最紧急档
+    if (structural) this.pendingStructural = true; // 只升级，取窗口最紧急档
     const now = Date.now();
     if (this.firstPendingAt === 0) this.firstPendingAt = now;
     if (this.debounceTimer) clearTimeout(this.debounceTimer);

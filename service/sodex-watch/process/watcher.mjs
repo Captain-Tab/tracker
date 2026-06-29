@@ -16,6 +16,7 @@ import {
   sharedRateLimitUntil, THROTTLE_STATUSES, SEEN_IDS_CAP, symbolMetaBySymbol,
 } from "../api/index.mjs";
 import { installWsProxy } from "../../lib/WARP/index.mjs";
+import { writeSignal } from "../../lib/copy-signal/index.mjs";
 import { msUntilNextShanghai } from "./snapshot.mjs";
 
 const CHANNELS = ["accountState", "accountUpdate", "accountOrderUpdate", "accountTrade"];
@@ -73,6 +74,9 @@ export class AccountWatcher {
     this.baselineLogged = false;
     this.stateFp = null;
     this.lastOutFp = null;
+    // 跟单事件信号（可选，加法）：copy-signal-path 未配则全程 no-op，watch 行为 diff=0
+    this.copySignalPath = flags["copy-signal-path"] ?? null;
+    this.copySignalSeq = 0;
     // 分档 debounce：与上次推送的"持仓键集合 / 离场单集合"比对判结构变化；
     // pendingStructural = 当前 debounce 窗口内是否出现结构变化（只升不降，取最紧急）。
     // 初值 null 表示"从未推送过"，使首帧 baseline（含空仓账户）必判结构变化 → 短档即时推 START WATCH。
@@ -151,12 +155,24 @@ export class AccountWatcher {
       // 结构变化（开仓/平仓/反手 → 键集合变；离场单挂改撤 → reduceOnly 变）相对上次推送 → 短档即时；
       // 仅 abs(size) 变（同仓滚仓加减仓）→ 长档合并。
       const structural = positionKeysFp(this.positions) !== this.lastKeysFp || reduceFp !== this.lastReduceFp;
-      if (fp !== this.stateFp) { this.stateFp = fp; this.scheduleFetch(structural); }
+      if (fp !== this.stateFp) {
+        this.stateFp = fp;
+        this.emitCopySignal(); // 跟单脏标：变化确认即发（TG 推送之前），加法、未配则 no-op
+        this.scheduleFetch(structural);
+      }
       return;
     }
     // 成交 / 订单推送只作"重新评估"提示，状态以 accountState 全量快照为准；
     // 无持仓上下文，不改变档位（structural=false，pendingStructural 只升不降）。
     if (msg.channel === "accountTrade" || msg.channel === "accountOrderUpdate") this.scheduleFetch(false);
+  }
+
+  // 跟单脏标信号（加法）：未配 copySignalPath → no-op；写失败不影响 watch 主流程
+  emitCopySignal() {
+    if (!this.copySignalPath) return;
+    try {
+      writeSignal(this.copySignalPath, { seq: ++this.copySignalSeq, ts: Date.now(), address: this.address });
+    } catch (e) { log(`[copy-signal] 写失败（不影响监听）：${e.message}`); }
   }
 
   scheduleFetch(structural = false) {

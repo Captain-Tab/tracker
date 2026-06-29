@@ -23,18 +23,29 @@ function baseCoinUpper(symbol) {
   return String(symbol).split(/[-/]/)[0].trim().toUpperCase();
 }
 
-// (srcSymbol, srcPlatform) → hypeCoin | null。任意非法入参安全返回 null，不抛错（下游靠返回值分流）。
-export function mapSymbol(srcSymbol, srcPlatform) {
+// hype universe 存在性判定：支持 Set / Map（buildHypeAssetIndex 返回 Map<coin,…>）/ 数组；
+// 未提供或类型未知 → 不拦（安全回退，向后兼容 2 参调用）。
+function universeHas(hypeUniverse, coin) {
+  if (hypeUniverse == null) return true;
+  if (hypeUniverse instanceof Set || hypeUniverse instanceof Map) return hypeUniverse.has(coin);
+  if (Array.isArray(hypeUniverse)) return hypeUniverse.includes(coin);
+  return true;
+}
+
+// (srcSymbol, srcPlatform, hypeUniverse?) → hypeCoin | null。任意非法入参安全返回 null，不抛错。
+// hypeUniverse（可选）：提供时校验 coin 是否在 hype 当前 universe，不在 → null（不可映射，随上下架自动跟）。
+export function mapSymbol(srcSymbol, srcPlatform, hypeUniverse) {
   if (typeof srcSymbol !== "string" || !srcSymbol.trim()) return null;
   const coin = baseCoinUpper(srcSymbol);
   if (!coin) return null;
 
-  // hype 源同所直通：标的天然一致，无需映射表 / 黑名单。
-  // universe 存在性校验为后续阶段（接 hype meta）增强，未接入前直通。
-  if (srcPlatform === "hype") return coin;
+  // sodex 源跨所：黑名单排除不可映射（股票/商品 perp）；hype 源同所直通，跳过黑名单。
+  if (srcPlatform !== "hype" && UNMAPPABLE.has(coin)) return null;
 
-  // sodex 源跨所：黑名单排除不可映射，其余以基础币名 1:1 映射为 hype coin。
-  if (UNMAPPABLE.has(coin)) return null;
+  // hype universe 存在性校验（提供时）：不在当前 universe → 不可映射；
+  // 未接入（2 参调用）→ 直通（向后兼容）。
+  if (!universeHas(hypeUniverse, coin)) return null;
+
   return coin;
 }
 
