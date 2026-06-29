@@ -7,33 +7,85 @@
 
 ## 〇、🔝 最优先：watch 检测 → 信号 → copy 执行（事件驱动）
 
-> **优先级高于本文其余所有项**。当前 `main.mjs` 是纯轮询（空转查接口 + 延迟），与"目标不动我们不动"不符。本档改成事件驱动。
+> **优先级高于本文其余所有项**，是本档的**核心流程**。当前 `main.mjs` 是纯轮询（空转查接口 + 延迟），与"目标不动我们不动"不符。本节为收敛后的最终落地蓝图。
 
-**核心原则（铁律，避免造第二个 watcher）**：
-1. **不新建 watch**：`sodex-watch`/`HYPE-watch` 已在跑、已订阅目标 WS。**不为 copy 再建 watch，也不在 copy 里开第二条 WS。**
-2. **watch 先、copy 后（串行）**：watch 检测到目标仓位变化（干完它的检测）→ **发信号触发** copy 执行对账。copy 是**下游消费者**，不自己监听。
-3. **不重复执行 watcher**：copy 不跑第二份 watcher 逻辑、不重复订阅/重复拉取。复用 = **挂在 watch 已有的检测输出上**。
-
-**做法（给 watch 加一个轻量"变化信号"输出，copy 订阅）**：
+### 核心流程（端到端节点：目标动作 → 我方镜像完成）
 
 ```
-watch（已运行，单 WS 订阅目标）检测到变化 [watch 完成它的检测]
-   → 发出变化信号（含最新仓位快照；watch 本就已 fetch，copy 免重复拉）
-   → copy 监听到信号 → reconcileOnce()（对账：对齐目标完整净仓 → would-place）
-REST 周期对账降为 ~180s，仅作兜底（防漏接信号）
+[交易所] N0 目标在 sodex/hype 真实开/平/加/减仓
+   │ (WS 物理传播)
+   ▼
+┌─ watch 进程（tracker 用户，只读，已在跑）──────────────────┐
+│ N1  WS(accountState) 推送 → 更新 this.positions（内存，免 REST）│
+│ N2  指纹去重确认"真变化"(stateFp/outFp) + 分档防抖             │
+│      （结构变化=开/平/反手 走短档即时；滚仓 走长档合并）        │
+│ N3 ★信号注入点★ 变化确认那刻（outFp 通过、**TG 推送之前**）    │
+│      → 原子写 脏标信号文件 {seq, ts, address}（不带快照）       │
+│      → watch 随后继续自己的 render + TG 推送（与 copy 并行）    │
+└────────────────────────────┬───────────────────────────────┘
+              信号文件 = 跨进程边界（tracker 写 / trader-exec 读）
+                             │
+┌─ copy 进程（trader-exec 用户，持 agent key，dry-run 不签）─────┐
+│ N4  fs.watchFile 轮询(~1s,可调) 发现 mtime 变 → 读 → seq>lastSeq 才触发 │
+│      （正在跑则置 pending，结束补跑一次 = coalesce 合并）        │
+│ N5  reconcileOnce（对账，幂等）：                              │
+│      t0─ 并行拉 [fetchTargetState(sodex) ∥ fetchHypePrices(hype) ∥ assetIndex(缓存)] ─t1 │
+│        → mapSymbol(sodex→hype + hype universe 校验) 过滤可映射  │
+│        → computeRatio(锚定) → computeDesired(保证金等比换算)    │
+│        → planReconcile(desired, current=lastWouldHold)         │
+│        → diffDelta → decideLeg 六分支校验门                    │
+│        → placeDryRun(IOC would-place，不签名) ─t2             │
+│ N6  notify：                                                  │
+│      → 每动作 recordAction（JSONL+journald，含 fullMs/execMs） │
+│      → 事件分类 开/加/减/平 + 去重 → pushRoundSummary 一条汇总  │
+│      → 更新 lastWouldHold / lastAlertFp / wasFollowing         │
+└──────────────────────────────────────────────────────────────┘
+
+兜底地板（copy 常驻并行）：每 180s 无条件 reconcileOnce 一次
+   → 信号全丢也能在 180s 内对账补齐（对账=全量收敛，不漏仓位）
 ```
 
-**跨进程信号机制（保持进程隔离）**：
-- watch 跑 `tracker`（只读）、copy 跑 `trader-exec`（持 agent key），**两进程不混**。
-- watch 检测到变化时，除了推 watch TG，再向一个跨进程通道**发一条变化事件**（轻量选项：写 per-target 事件文件 / FIFO / Unix socket，零依赖即可）；copy 监听该通道触发 reconcile。
-- 事件**带最新仓位快照**最优（watch 已拉取，copy 直接用，免二次请求）；退一步 copy 收信号后自拉完整态做对账，也可（多一次请求）。
+### 两条路径分工（fail-safe 结构）
 
-**关键边界**：
-- **改动落在 watch 侧加"信号输出" + copy 侧加"信号订阅"**，不是在 copy 里复制 watch 的 WS/指纹逻辑。sodex/hype 各自的 watcher 不动其检测主体，只在"检测到变化"处多发一个信号。
-- **映射表正交、且自动化**：`mapSymbol`（sodex→hype）在 copy 侧、拿到原始仓位**之后**才翻译，不进 watch。"不定期更新映射"用 **hype 实时 universe 校验**解决——`buildHypeAssetIndex` 已每 6h 拉 hype `meta`，让 `mapSymbol` 校验 coin 是否在当前 universe（不在=不可映射），随 hype 上下架自动跟，零手维护（阶段1 留的口子，当时直通未接）。
-- **对账仍必要**：事件只决定"何时动手"，对账决定"怎么动手"——收到信号后**对齐目标完整净仓**（非复制单个动作），才能自愈断线/重启/部分成交/漏单。
+| 路径 | 角色 | 频率 | 职责 |
+|---|---|---|---|
+| 信号快路（N3→N4） | 加速器 | 目标一动即触发 | 延迟从 60s 压到 ~1s |
+| REST 兜底（180s） | 地板 | 固定 180s | 信号链坏掉时不漏不停 |
 
-**代码触点**：① `sodex-watch`/`HYPE-watch` 在仓位变化检测点加一条"变化信号"输出（小改 live 服务，需单独 checkpoint + 回归，不动检测主体）；② `service/HYPE-copy/main.mjs` 由轮询触发改为**订阅信号触发** `reconcileOnce`，REST 降 180s 兜底；③ `mapping.mjs` 接 hype universe 校验。
+> copy 对信号**零硬依赖**——最坏退回轮询，不会比现在更差。
+
+### 关键设计决策（收敛后铁律）
+
+| 点 | 决定 | 理由 |
+|---|---|---|
+| 不新建 watch | 复用已跑的 `sodex-watch`/`HYPE-watch` | 已订阅 WS，copy 不开第二条、不跑第二份 watcher |
+| watch 先 copy 后 | watch 检测完 → 发信号 → copy 才执行 | copy 是下游消费者，不自己监听 |
+| 信号时点 | 变化确认后、**TG 推送之前** | 省掉 watch TG 网络往返(≤8s)对 copy 的阻塞 |
+| 信号内容 | **脏标** {seq,ts,address}，**不带快照** | 单一数据路径 + 不耦合 watch 的 WS 格式（WS 与 REST 字段不同源、WS 无 marginUsed） |
+| copy 自拉数据 | 走自己 `fetchTargetState`（REST） | 与**必拉的 hype 价格并行**(Promise.all)，几乎不加串行延迟；且信号触发与兜底触发**同一条数据路径** |
+| 传输 | 原子写文件(tmp+rename) + **`fs.watchFile` 轮询** | 零依赖、对 rename 免疫（`fs.watch` 盯 inode 会被 rename 换掉而失效）、跨重启存活 |
+| 触发延迟 | ~1s（interval 可调到 0.5s） | 持仓型跟单足够（永远跑在目标后，非 HFT）；dry-run 无所谓 |
+| 资源 | `fs.watchFile` 每秒一次 `fs.stat`（微秒级） | 比 60s REST 轮询便宜几个数量级，CPU/IO 不可见 |
+| 对账 | 收到信号后**对齐完整净仓** | 自愈断线/重启/部分成交/漏单（事件定"何时动"，对账定"怎么动"） |
+| 映射 | hype 实时 universe 校验 | `buildHypeAssetIndex` 已每 6h 拉 meta；coin 不在 universe=不可映射，随上下架自动跟，零手维护 |
+| 隔离 | watch=tracker 写 / copy=trader-exec 读 | 信号文件目录组权限，两进程不混 |
+
+### 时间度量（落 JSONL + 推送页脚）
+
+- `fullMs = t2−t0`：copy 一轮完整（拉取 + 处理）；`execMs = t2−t1`：copy 处理段（不含拉取）。
+- 真·端到端（N0→N6）另含 WS 传播 + watch 防抖 + ~1s 信号检测（均在 watch 侧）；事件驱动后可把 `fullMs` 起点前移到信号到达时刻量化端到端。
+
+### 落地子计划（4 阶段，每阶段 实现→测试→/k:check→commit）
+
+| 阶段 | 改动 | 代码触点 | 风险 |
+|---|---|---|---|
+| P0 信号契约 | seq/ts/address 编解码（纯函数）+ 原子写 + `fs.watchFile` reader | 新建 `service/lib/copy-signal/` | 低 |
+| P1 watch 发信号 | 在"变化确认"点(outFp 通过、TG 前) emit；**加法 + 配置开关**，不动检测主体 | `sodex-watch/process/watcher.mjs`、`HYPE-watch` 对称点 | **中**（动 live 服务，需回归：watch TG 输出 diff=0） |
+| P2 copy 订阅触发 | 轮询主触发 → 订阅信号触发；REST 降 180s 兜底；coalesce 合并 | `service/HYPE-copy/main.mjs` | 低 |
+| P3 映射自动化 | mapSymbol 接 hype universe 校验 | `process/mapping.mjs` + `buildHypeAssetIndex` | 低 |
+
+> 工作量估：聚焦投入约半天~1 天人力当量（~4 次提交）；P1 回归验证是主要耗时项。
+> 建议顺序 **P0→P3→P1→P2**：P3 与 watch 无关可先做降风险；P1 单独 checkpoint 跑回归；P2 最后接通。
 
 ---
 
