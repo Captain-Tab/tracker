@@ -18,13 +18,27 @@
 
 - **`setup/setup-copy.sh`**：加 `tracker` 用户创建（`[1/6]`）；步骤重新编号。
 - **`setup/Makefile`**：`make deploy` 补 `decimal.js @nktkas/hyperliquid` 依赖。
+- **`service/app/index.mjs`**：注释 `User=trader-exec`/`Group=trader-exec`、移除 `ProtectHome=true`（dry-run 期 `/root` 路径兼容，切实盘前迁至 `/opt/tracker` 后恢复）。
 - **`docs/deploy/hype-copy.md`**：修正步骤编号，补充 `/root` 路径与 systemd 加固冲突说明。
 - **`targets.json` / `targets.example.jsonc`**：`maxPositionPct` 0.5→0.6。
 
 ### 验证
 
-- 纯函数单测 53/53 全绿；watch 回归（sodex 21 / HYPE 14）+ copy-signal 6 全绿。
+- 纯函数单测 58/58 全绿；watch 回归（sodex 21 / HYPE 14）+ copy-signal 6 全绿。
 - VPS `HYPE-copy@demo-1` 已部署运行，JSONL 持续记录。
+
+### /k:check 修复（同版增量）
+
+- **`main.mjs`**：加 `hasContent` guard（常规轮无变化静默不推，仅启动轮/有变化轮推送）；时钟改用 `fmtClock()` 北京时间。
+- **`notify/templates.mjs`**：`fmtClock` 改为导出；`levStr` 空格修正。
+- **`notify/index.mjs`**：`toLogLine` 补 `szDecimals` / `positionNotional` / `maxPosNotional` 字段。
+- **`test/domain.test.mjs`**：新增 5 组单测（`fmtDisplaySize` / `fmtDisplayUsd` / `buildPositionCards` 空+单仓 / `buildRoundSummary` initial_sync+round）。
+- **`notify/templates.mjs`**：min-capital 文案「最低本金参考」→「最低本金下界」（附含义说明）。
+- **`docs/notify/copy.md`**：round icon `🆕`→`⏫` 对齐代码；min-capital 文案同步。
+
+### 验证
+
+- 纯函数单测 58/58 全绿；watch 回归 + copy-signal 全绿；`/k:check` 三闸门通过。
 
 ---
 

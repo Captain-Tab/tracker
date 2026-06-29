@@ -190,7 +190,7 @@ export function lineFor(a) {
     case "min-capital": {
       const mc = fmtDisplayUsd(a.minCapital ?? "0");
       const coins = a.canFollowCoins ?? "-";
-      return `${ICON.minCap} 最低本金参考：$${mc}（可跟 ${coins}）`;
+      return `${ICON.minCap} 最低本金下界：$${mc}（仅保证最大仓 ≥ $10 名义，可跟 ${coins}）`;
     }
     case "failed":
     case "error":

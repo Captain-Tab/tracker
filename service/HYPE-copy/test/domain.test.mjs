@@ -414,7 +414,7 @@ test("lineFor: 空头方向 + 告警/最低本金/noop", () => {
   assert.match(shortOpen, /🆕 ETH 做空 \| 新开 1 张 @ \$3000/);
   assert.match(lineFor({ result: "skip-unmappable", coin: "PLTR" }), /⛔.*无 hype 映射/);
   assert.match(lineFor({ result: "skip-capped", coin: "ETH" }), /⛔.*加仓拦截/);
-  assert.match(lineFor({ result: "min-capital", minCapital: 1680, canFollowCoins: "ETH" }), /💡 最低本金参考：\$1680（可跟 ETH）/);
+  assert.match(lineFor({ result: "min-capital", minCapital: 1680, canFollowCoins: "ETH" }), /💡 最低本金下界：\$1680（仅保证最大仓 ≥ \$10 名义，可跟 ETH）/);
   assert.match(lineFor({ result: "error", coin: "ETH", reason: "x" }), /⚠️ ETH 执行失败/);
   assert.equal(lineFor({ result: "noop", coin: "ETH" }), null);
 });
