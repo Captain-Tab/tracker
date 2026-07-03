@@ -4,6 +4,27 @@
 
 ---
 
+## 仓位状态持久化 + 启动 REST 兜底（sodex-watch + HYPE-watch 对称）— 2026-07-04
+
+修复服务重启后 `lastPositions` 丢失导致仓位基线错误，引发开仓漏报、剩余仓位不显示、fill 重复推送 CLOSE 的连锁问题。spec：`.claude/kit/spec/auto-copy-trade/08-position-persistence.md`。
+
+### 变更
+
+- **`tool/lastPositionsStore.mjs`（新建）**：仓位快照持久化工具—写盘（推送成功后）、读盘（启动恢复）、多地址隔离、文件损坏降级。
+- **`HYPE-watch/process/watcher.mjs`（三层防御）**：
+  - Layer 1：推送成功后 `saveLastPositions` 写盘。
+  - Layer 2：首帧调 `fetchClearinghouseState` REST 交叉验证，纠正 HL WS 重连快照不完整。
+  - Layer 3：跨帧 CLOSE 补丁加 `prevPositions` 守卫，延迟 fill 不再重复推送。
+- **`sodex-watch/process/watcher.mjs`**：对称实现 Layer 1+3；Layer 2 从磁盘恢复基线。
+- **`HYPE-watch/main.mjs` / `sodex-watch/main.mjs`**：传入 `stateDir` 参数。
+- **`HYPE-watch/test/lastPositionsStore.test.mjs`**：5 个单测。
+
+### 边界
+
+持久化文件缺失/损坏 → 降级空数组。REST 失败 → 降级到持久化数据 + 告警。WS 运行中丢帧 → Layer 3 兜底。
+
+---
+
 ## 服务运行日志聚合脚本 — 2026-07-04
 
 新增 `service/running-log/`：从 VPS journalctl 聚合提取核心运行事件（部署/重启、WS 断连、API 错误、崩溃、业务异常），生成 markdown 周报用于复盘。

@@ -13,12 +13,15 @@ import {
 } from "./render.mjs";
 import { reportSkipReason } from "../../tool/reportGate.mjs";
 import {
-  log, parseJsonSafe, fetchFrontendOpenOrders, fetchUserFills, sendTelegram,
+  log, parseJsonSafe, fetchFrontendOpenOrders, fetchUserFills, fetchClearinghouseState, sendTelegram,
   enterSharedRateLimit, nextSharedBackoffMs, resetSharedBackoff, watcherRegistry,
   sharedRateLimitUntil, THROTTLE_STATUSES, SEEN_IDS_CAP, szDecimalsOf,
 } from "../api/index.mjs";
 import { installWsProxy } from "../../lib/WARP/index.mjs";
 import { writeSignal } from "../../lib/copy-signal/index.mjs";
+import { loadLastPositions, saveLastPositions } from "../../tool/lastPositionsStore.mjs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const CHANNELS = ["clearinghouseState", "openOrders", "userFills", "orderUpdates"];
 const PING_INTERVAL_MS = 15_000;
@@ -91,6 +94,8 @@ export class AccountWatcher {
     // 跟单事件信号（可选，加法）：copy-signal-path 未配则全程 no-op，watch 行为 diff=0
     this.copySignalPath = flags["copy-signal-path"] ?? null;
     this.copySignalSeq = 0;
+    // 仓位状态持久化（08-position-persistence §2.1）：重启从磁盘恢复 lastPositions，不丢基线
+    this.stateDir = flags["state-dir"] ?? null;
     // 分档 debounce：与上次推送的"持仓键集合 / 离场单子集"比对判结构变化；
     // pendingStructural = 当前 debounce 窗口内是否出现结构变化（只升不降，取最紧急）。
     // 初值 null 表示"从未推送过"，使首帧 baseline（含空仓）必判结构变化 → 短档即时推 START WATCH。
@@ -260,6 +265,28 @@ export class AccountWatcher {
       for (const r of closeRecords) { if (!this.seenCloseOids.has(r.oid)) { this.seenCloseOids.add(r.oid); if (this.baselineLogged) newOids.add(r.oid); } }
       if (this.seenCloseOids.size > SEEN_IDS_CAP) this.seenCloseOids = new Set(closeRecords.map((r) => r.oid));
       const isBaseline = !this.baselineLogged;
+
+      // Layer 2: 首帧用 REST clearinghouseState 交叉验证（08-position-persistence §2.2）
+      // 纠正 HL WS 重连时可能返回的不完整快照 + 检测 downtime 仓位变化
+      if (isBaseline && this.stateDir) {
+        const persisted = loadLastPositions(this.stateDir, this.address);
+        if (persisted.length > 0) {
+          try {
+            const cs = await fetchClearinghouseState(this.env, this.address);
+            const restPositions = parsePositions(cs?.assetPositions, szDecimalsOf);
+            log(`[REST 兜底] 持久化 ${persisted.length} 个仓位，REST 返回 ${restPositions.length} 个仓位`);
+            // 以 REST 权威数据为准，用持久化数据作为 diff 基线检测 downtime 变化
+            this.positions = restPositions;
+            this.lastPositions = persisted; // 关键：保留持久化基线，用于 diff 产生 CLOSED/OPENED
+          } catch (e) {
+            log(`[REST 兜底] clearinghouseState REST 失败(${e.message})，降级到持久化数据`);
+            this.lastPositions = persisted;
+          }
+        } else {
+          // 无持久化数据（首次运行）→ 从磁盘加载空数组，行为与当前一致
+          this.lastPositions = [];
+        }
+      }
       this.baselineLogged = true;
 
       // 离场单变化提醒；首帧只建基线，不提醒
@@ -301,6 +328,10 @@ export class AccountWatcher {
           sendTelegram(this.tgToken, this.tgChat, text);
         }
       }
+      // Layer 1: 推送成功后持久化 lastPositions（08-position-persistence §2.1）
+      if (this.stateDir && this.lastPositions.length > 0) {
+        saveLastPositions(this.stateDir, this.address, this.lastPositions);
+      }
       this.tgReason = "event";
     } finally { this.fetching = false; }
   }
@@ -324,9 +355,18 @@ export class AccountWatcher {
 
     // 2) 平仓（CLOSED）→ 合并一条：摘要 + 剩余仓位全景 + 每平仓币 1 条历史
     let closedSummaries = events.filter((e) => e.startsWith("CLOSED")).map((e) => { const [, dir, coin] = e.split(" "); return { coin, dir }; });
-    // 跨帧：仓位 diff 未抓到 CLOSED 但有新平仓记录 → 凭记录补摘要（dir 取自 fill 的 "Close Long/Short"）
+    // 跨帧：仓位 diff 未抓到 CLOSED 但有新平仓记录 → 凭记录补摘要（dir 取自 fill 的 "Close Long/Short"）。
+    // Layer 3 守卫（08-position-persistence §2.3）：仅当受影响的 coin 在 prevPositions 中存在时才补 CLOSE，
+    // 若已不在 prevPositions 中，说明 CLOSE 已在上轮报告，延迟到达的 fill 不再重复推送。
     if (!closedSummaries.length && newOids.size) {
-      closedSummaries = histRecords.map((r) => ({ coin: r.coin, dir: String(r.dir).includes("Long") ? "LONG" : "SHORT" }));
+      const prevCoins = new Set(prevPositions.map((p) => p.coin));
+      const affected = [...new Set(histRecords.filter((r) => newOids.has(r.oid)).map((r) => r.coin))];
+      if (affected.some((c) => prevCoins.includes(c))) {
+        closedSummaries = affected.filter((c) => prevCoins.includes(c)).map((coin) => {
+          const r = histRecords.find((x) => x.coin === coin && newOids.has(x.oid));
+          return { coin, dir: String(r?.dir ?? "").includes("Long") ? "LONG" : "SHORT" };
+        });
+      }
     }
     if (closedSummaries.length) {
       msgs.push(buildCloseMessage(displayId, clock, closedSummaries, this.positions, exitOrders, histRecords, newOids));

@@ -18,6 +18,7 @@ import {
 } from "../api/index.mjs";
 import { installWsProxy } from "../../lib/WARP/index.mjs";
 import { writeSignal } from "../../lib/copy-signal/index.mjs";
+import { loadLastPositions, saveLastPositions } from "../../tool/lastPositionsStore.mjs";
 import { msUntilNextShanghai } from "./snapshot.mjs";
 
 const CHANNELS = ["accountState", "accountUpdate", "accountOrderUpdate", "accountTrade"];
@@ -87,6 +88,8 @@ export class AccountWatcher {
     // 跟单事件信号（可选，加法）：copy-signal-path 未配则全程 no-op，watch 行为 diff=0
     this.copySignalPath = flags["copy-signal-path"] ?? null;
     this.copySignalSeq = 0;
+    // 仓位状态持久化（08-position-persistence §2.1）
+    this.stateDir = flags["state-dir"] ?? null;
     // 分档 debounce：与上次推送的"持仓键集合 / 离场单集合"比对判结构变化；
     // pendingStructural = 当前 debounce 窗口内是否出现结构变化（只升不降，取最紧急）。
     // 初值 null 表示"从未推送过"，使首帧 baseline（含空仓账户）必判结构变化 → 短档即时推 START WATCH。
@@ -251,6 +254,15 @@ export class AccountWatcher {
       const isBaseline = !this.baselineLogged;
       this.baselineLogged = true;
 
+      // Layer 2: 首帧从磁盘恢复 lastPositions，避免重启丢基线（08-position-persistence §2.2）
+      if (isBaseline && this.stateDir) {
+        const persisted = loadLastPositions(this.stateDir, this.address);
+        if (persisted.length > 0) {
+          log(`[持久化恢复] 从磁盘加载 ${persisted.length} 个仓位基线`);
+          this.lastPositions = persisted; // 保留持久化基线用于 diff
+        }
+      }
+
       // G5/G6：检测到 CLOSED 仓位事件但平仓历史尚无对应新 position_id → positions 索引延迟，2s 补拉
       const hasClosed = events.some((e) => e.startsWith("CLOSED"));
       if (!force && !isBaseline && hasClosed && newPosIds.size === 0) {
@@ -308,6 +320,10 @@ export class AccountWatcher {
           sendTelegram(this.tgToken, this.tgChat, text);
         }
       }
+      // Layer 1: 推送成功后持久化 lastPositions（08-position-persistence §2.1）
+      if (this.stateDir && this.lastPositions.length > 0) {
+        saveLastPositions(this.stateDir, this.address, this.lastPositions);
+      }
       this.tgReason = "event";
     } finally { this.fetching = false; }
   }
@@ -331,9 +347,17 @@ export class AccountWatcher {
 
     // 2) 平仓（CLOSED）→ 合并一条：摘要 + 剩余仓位全景 + 每平仓币 1 条历史
     let closedSummaries = events.filter((e) => e.startsWith("CLOSED")).map((e) => { const [, dir, coin] = e.split(" "); return { coin, dir }; });
-    // 跨帧：仓位 diff 未抓到 CLOSED 但有新平仓记录 → 凭记录补摘要
+    // 跨帧：仓位 diff 未抓到 CLOSED 但有新平仓记录 → 凭记录补摘要。
+    // Layer 3 守卫（08-position-persistence §2.3）：仅当受影响的 coin 在 prevPositions 中存在时才补 CLOSE。
     if (!closedSummaries.length && newPosIds.size) {
-      closedSummaries = histRecords.map((r) => ({ coin: symbolMeta(r.symbolId).baseCoin || `#${r.symbolId}`, dir: RECORD_SIDE_DIR[Number(r.positionSide)] ?? "" }));
+      const prevCoins = new Set(prevPositions.map((p) => p.coin));
+      const affected = [...new Set(histRecords.filter((r) => newPosIds.has(r.positionId)).map((r) => symbolMeta(r.symbolId).baseCoin).filter(Boolean))];
+      if (affected.some((c) => prevCoins.includes(c))) {
+        closedSummaries = affected.filter((c) => prevCoins.includes(c)).map((coin) => {
+          const r = histRecords.find((x) => symbolMeta(x.symbolId).baseCoin === coin && newPosIds.has(x.positionId));
+          return { coin, dir: RECORD_SIDE_DIR[Number(r?.positionSide ?? 0)] ?? "" };
+        });
+      }
     }
     if (closedSummaries.length) {
       msgs.push(buildCloseMessage(displayId, clock, closedSummaries, this.positions, reduceOnly, histRecords, newPosIds));
