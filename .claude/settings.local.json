@@ -187,7 +187,8 @@
       "Bash(scp root@107.172.90.184:/root/service/HYPE-discovery/log/discovery-2026-07-03-1412.md service/HYPE-discovery/log/)",
       "Bash(python3 -c ' *)",
       "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/tabcaptain/Documents/code/tracker/service/sodex-watch/config.json'\\)\\); [print\\(f'  {w[\\\\\"label\\\\\"]}: {w[\\\\\"address\\\\\"][:10]}...'\\) for w in d['watches']]\")",
-      "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/tabcaptain/Documents/code/tracker/service/HYPE-watch/config.json'\\)\\); [print\\(f'  {w[\\\\\"label\\\\\"]}: {w[\\\\\"address\\\\\"][:10]}...'\\) for w in d['watches']]\")"
+      "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/tabcaptain/Documents/code/tracker/service/HYPE-watch/config.json'\\)\\); [print\\(f'  {w[\\\\\"label\\\\\"]}: {w[\\\\\"address\\\\\"][:10]}...'\\) for w in d['watches']]\")",
+      "Bash(TZ=Asia/Shanghai date -v-7d '+%Y-%m-%d')"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",
