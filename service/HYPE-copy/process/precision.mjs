@@ -46,6 +46,12 @@ export function formatSize(value, szDecimals) {
   return D(value).toDecimalPlaces(dec, Decimal.ROUND_DOWN).toString();
 }
 
+// 金额向上取整：needMargin 等"补足"场景必须 ROUND_UP，向下会差一点补不到目标 lp。默认 6 位（micro-USD，对齐 ntli×1e6）。
+export function ceilTo(value, decimals = 6) {
+  const dec = Number.isFinite(Number(decimals)) ? Number(decimals) : 6;
+  return D(value).toDecimalPlaces(dec, Decimal.ROUND_UP).toString();
+}
+
 // price 舍入：先限 5 位有效数字，再限 perps 小数上限(6-szDecimals)，取更严者；ROUND_DOWN。
 export function formatPrice(value, szDecimals = 0) {
   const dec = Number.isFinite(Number(szDecimals)) ? Number(szDecimals) : 0;

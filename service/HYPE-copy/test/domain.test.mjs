@@ -8,8 +8,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mapSymbol, loadTargets } from "../process/mapping.mjs";
 import { add, sub, mul, div, gt, lt, maxStr, formatSize, formatPrice, applySlippage } from "../process/precision.mjs";
-import { normalizeTargetPositions, parseHypeMeta, placeDryRun } from "../api/index.mjs";
+import { normalizeTargetPositions, parseHypeMeta, placeDryRun, getMyLiqPrice, buildWouldUpdateLeverage, buildWouldUpdateMargin } from "../api/index.mjs";
 import { computeRatio, computeDesired } from "../process/sizing.mjs";
+import { sideOf, selectLeverage, computeMyLiqPrice, planOpen, planDefend } from "../process/allocation.mjs";
 import { recommendMinCapital } from "../process/recommend.mjs";
 import { decideLeg } from "../process/risk.mjs";
 import { diffDelta, planReconcile } from "../process/reconcile.mjs";
@@ -190,6 +191,98 @@ test("api: normalizeTargetPositions 显式 marginUsed 优先、非数组安全�
   assert.equal(out[0].szi, "-1"); // 带符号保留（空头）
   assert.deepEqual(normalizeTargetPositions(null), []);
   assert.deepEqual(normalizeTargetPositions("x"), []);
+});
+
+test("api: normalizeTargetPositions 提取 lp（目标强平价；缺失=0）", () => {
+  const withLp = normalizeTargetPositions([{ s: "LIT-USD", sz: "-35600", ep: "1.777", l: 5, lp: "2.1225" }]);
+  assert.equal(withLp[0].lp, "2.1225");
+  const noLp = normalizeTargetPositions([{ s: "ETH-USD", sz: "10", ep: "2000", l: 5 }]);
+  assert.equal(noLp[0].lp, "0"); // 无 lp → "0"（视为无强平风险）
+});
+
+test("api: parseHypeMeta 提取 maxLeverage（供 mm + 杠杆上限）", () => {
+  const map = parseHypeMeta({ universe: [{ name: "LIT", szDecimals: 0, maxLeverage: 5 }] });
+  assert.equal(map.get("LIT").maxLeverage, 5);
+  assert.equal(map.get("LIT").szDecimals, 0);
+});
+
+test("api: getMyLiqPrice 注入抽象（dry-run 委托 estimate / 实盘 throw）", () => {
+  assert.equal(getMyLiqPrice({ dryRun: true, estimate: () => "2.337" }), "2.337");
+  assert.throws(() => getMyLiqPrice({ dryRun: true })); // 缺 estimate
+  assert.throws(() => getMyLiqPrice({ dryRun: false })); // 实盘分支占位 throw
+});
+
+test("api: buildWouldUpdateLeverage/Margin dry-run 构造", () => {
+  const lev = buildWouldUpdateLeverage({ assetIndex: 7, leverage: 2, dryRun: true });
+  assert.equal(lev.action, "would-update-leverage");
+  assert.deepEqual(lev.order, { asset: 7, isCross: false, leverage: 2 });
+  const mg = buildWouldUpdateMargin({ assetIndex: 7, isBuy: false, amountUsd: "105", dryRun: true });
+  assert.equal(mg.action, "would-update-margin");
+  assert.equal(mg.order.ntli, 105000000); // 105 × 1e6
+  assert.equal(mg.order.isBuy, false); // 空头
+  assert.throws(() => buildWouldUpdateLeverage({ assetIndex: 7, leverage: 2, dryRun: false })); // 真实提交占位
+});
+
+// ---------- 资金分配 v3（allocation.mjs，07 §3.3）----------
+const near = (s, expected, tol = 0.01) => Math.abs(Number(s) - expected) < tol;
+
+test("allocation: sideOf 由净张符号派生", () => {
+  assert.equal(sideOf("-35600"), "short");
+  assert.equal(sideOf("10"), "long");
+});
+
+test("allocation: selectLeverage floor(L*) clamp（LIT short）", () => {
+  // L* = 1.713/(2.1225×1.1−1.713) ≈ 2.755 → floor 2
+  const r = selectLeverage({ entryPx: "1.713", targetLp: "2.1225", mm: 0.1, maxLeverage: 5, side: "short" });
+  assert.equal(r.leverage, 2);
+  assert.equal(r.defendableToTargetLp, true);
+});
+
+test("allocation: selectLeverage L*≤0 不开 / lp=0 退化 / long", () => {
+  // 开仓价已越目标 lp 侧（short: targetLp×1.1 ≤ entry）→ null
+  const noOpen = selectLeverage({ entryPx: "2.40", targetLp: "2.1225", mm: 0.1, maxLeverage: 5, side: "short" });
+  assert.equal(noOpen.leverage, null);
+  // lp=0 → clamp(目标杠杆)，不防守
+  const lpZero = selectLeverage({ entryPx: "1.713", targetLp: "0", mm: 0.1, maxLeverage: 5, side: "short", targetLeverage: 3 });
+  assert.equal(lpZero.leverage, 3);
+  // long：L* = entry/(entry − targetLp×(1−mm))
+  const lng = selectLeverage({ entryPx: "2.0", targetLp: "1.5", mm: 0.1, maxLeverage: 10, side: "long" });
+  assert.ok(lng.leverage >= 1 && lng.leverage <= 10);
+});
+
+test("allocation: computeMyLiqPrice MM-aware short/long", () => {
+  // short：(500 + 583×1.713)/(583×1.1) ≈ 2.337
+  assert.ok(near(computeMyLiqPrice({ entryPx: "1.713", margin: "500", size: "-583", side: "short", mm: 0.1 }), 2.337));
+  // long：(|size|×entry − margin)/(|size|×(1−mm))，强平价在开仓价之下（margin=50，名义200，4x）
+  const lng = Number(computeMyLiqPrice({ entryPx: "2.0", margin: "50", size: "100", side: "long", mm: 0.1 }));
+  assert.ok(lng < 2.0 && lng > 0); // (200−50)/(100×0.9)=1.667
+
+});
+
+test("allocation: planOpen size=signOf×ROUND_DOWN / mindust", () => {
+  const ok = planOpen({ minOpenCapital: "500", openLeverage: 2, entryPx: "1.713", targetSzi: "-35600", szDecimals: 0 });
+  assert.equal(ok.size, "-583"); // 做空 ROUND_DOWN(1000/1.713)=583
+  // 本金太小 → 名义 < $10 → mindust
+  const dust = planOpen({ minOpenCapital: "3", openLeverage: 1, entryPx: "1.713", targetSzi: "-35600", szDecimals: 0 });
+  assert.equal(dust.skip, "skip-mindust");
+});
+
+test("allocation: planDefend 补保证金 / crossed noop / exhausted / lp=0", () => {
+  // 目标 lp 后撤到 2.50：need≈605，补≈105，新强平价≈2.50
+  const d = planDefend({ entryPx: "1.713", size: "-583", side: "short", myLiqPx: "2.337", targetLp: "2.50", currentMargin: "500", maxCoinCapital: "1000", mm: 0.1 });
+  assert.ok(near(d.wouldAddMargin, 104.57, 0.5));
+  assert.ok(near(d.newLiqPx, 2.50, 0.01));
+  assert.equal(d.exhausted, false);
+  // 我方强平价已越过目标（2.40 ≥ 2.30）→ 不补
+  const crossed = planDefend({ entryPx: "1.713", size: "-583", side: "short", myLiqPx: "2.40", targetLp: "2.30", currentMargin: "600", maxCoinCapital: "1000", mm: 0.1 });
+  assert.equal(crossed.wouldAddMargin, "0");
+  // 目标 lp 3.20：need≈1053 > maxCoin 1000 → 补满 500，exhausted
+  const ex = planDefend({ entryPx: "1.713", size: "-583", side: "short", myLiqPx: "2.337", targetLp: "3.20", currentMargin: "500", maxCoinCapital: "1000", mm: 0.1 });
+  assert.ok(near(ex.wouldAddMargin, 500, 0.01));
+  assert.equal(ex.exhausted, true);
+  // lp=0 → 不防守
+  const lpZero = planDefend({ entryPx: "1.713", size: "-583", side: "short", myLiqPx: "2.337", targetLp: "0", currentMargin: "500", maxCoinCapital: "1000", mm: 0.1 });
+  assert.equal(lpZero.wouldAddMargin, "0");
 });
 
 test("api: parseHypeMeta universe 下标即 asset index", () => {

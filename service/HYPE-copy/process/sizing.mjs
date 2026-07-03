@@ -6,6 +6,7 @@ import { mul, div, gt, signOf, toNumber } from "./precision.mjs";
 // 交易所最小名义（总纲 §3.3）；本常量规范归属本阶段，03 校验门 / 04 经 caps 复用。
 export const MIN_ORDER_NOTIONAL_USD = 10;
 
+// @deprecated 由 v3 预算模型（process/allocation.mjs）替换（07-budget-alloc §0）。保留防 import 历史断裂，新代码勿用。
 // computeRatio(avail, deployPct, targetMappableMargin) → number
 // ratio = (avail × deployPct) / targetMappableMargin；分母 ≤0 → 0（无可映射仓，等价 idle）。
 export function computeRatio(avail, deployPct, targetMappableMargin) {
@@ -13,6 +14,7 @@ export function computeRatio(avail, deployPct, targetMappableMargin) {
   return toNumber(div(mul(avail, deployPct), targetMappableMargin));
 }
 
+// @deprecated 由 v3 预算模型（process/allocation.mjs planOpen）替换（07-budget-alloc §0）。保留防 import 历史断裂，新代码勿用。
 // computeDesired(可映射仓[], ratio, prices) → {coin, size}[]（size 带符号张数，沿用 szi 方向）。
 // 每仓：desiredMargin=marginUsed×ratio → desiredNotional=×leverage → size=/price。
 // 缺价该仓标记跳过（reason="no-price"），不抛错、不中断整批；不做 mindust/触顶（那是 03）。

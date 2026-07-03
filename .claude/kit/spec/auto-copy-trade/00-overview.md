@@ -219,6 +219,7 @@ auto-copy-trade-api.md（横切，Phase0 底座，01-04 共享）
 | 4 | `04-notify-log.md` | 逻辑 | 03 |
 | 5 | `05-isolation-deploy.md` | 逻辑/部署 | 03、04 |
 | 6 | `06-docs.md` | 文档 | 01-05（系统成形后总结，写 `docs/copy/hype.md`） |
+| 7 | `07-budget-alloc.md` | 逻辑 | 01；**完全替换** 02 ratio + 改造 03 校验门。每币独立预算(minOpenCapital/maxCoinCapital) + 生存杠杆 floor(L\*) + 逐仓保证金防守(updateIsolatedMargin)。Phase1=开仓/防守/跟减平；Phase2(gated)=自浮盈滚仓。落地末阶段写 `docs/copy/allocation.md` |
 | 横切 | `auto-copy-trade-api.md` | 逻辑 | Phase0 |
 
 > 落地：每阶段读总纲+子件 → `/k:task` → `/k:check` → `/k:commit` → gate 停 → 下一阶段。冲突以总纲为准。

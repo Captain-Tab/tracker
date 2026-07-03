@@ -146,6 +146,7 @@ export function normalizeTargetPositions(rawPositions) {
       leverage,
       cr: String(pickField(p, ["cr", "cumRealized"]) ?? "0"), // 累计已实现盈亏
       cf: String(pickField(p, ["cf", "cumFee", "cumFunding"]) ?? "0"), // 累计资金费率
+      lp: String(pickField(p, ["lp", "liquidationPx"]) ?? "0"), // 目标强平价（生存杠杆锚定，07-budget-alloc §3.1）；"0"=无强平风险
       ...(entryPx !== undefined ? { entryPx: String(entryPx) } : {}),
     };
   });
@@ -187,7 +188,8 @@ export function parseHypeMeta(metaJson) {
   const universe = Array.isArray(metaJson?.universe) ? metaJson.universe : [];
   const map = new Map();
   universe.forEach((u, index) => {
-    map.set(String(u.name), { index, szDecimals: Number(u.szDecimals) });
+    // maxLeverage 供 mm=1/(2×maxLeverage) + openLeverage 上限（07-budget-alloc §3.1）
+    map.set(String(u.name), { index, szDecimals: Number(u.szDecimals), maxLeverage: Number(u.maxLeverage) });
   });
   return map;
 }
@@ -229,6 +231,42 @@ export function placeDryRun(leg, { assetIndex, szDecimals, slippageBps, dryRun }
       r: leg.reduceOnly === true,
       t: { limit: { tif: "Ioc" } },
     },
+    dryRun: true,
+  };
+}
+
+// ---------- getMyLiqPrice：我方强平价注入抽象（07-budget-alloc §3.6）----------
+// dry-run：委托注入的 estimate()（= computeMyLiqPrice，Phase B 提供，读 myMarginByCoin 模拟保证金）。
+// 实盘：读 clearinghouseState.assetPositions[].position.liquidationPx —— 留实盘阶段，本期 throw 占位。
+// 决策逻辑（planDefend）两阶段共用，只切换本函数的数据源。
+export function getMyLiqPrice({ dryRun = true, estimate } = {}) {
+  if (dryRun) {
+    if (typeof estimate !== "function") throw new Error("dry-run getMyLiqPrice 需注入 estimate()（computeMyLiqPrice）");
+    return estimate();
+  }
+  throw new Error("getMyLiqPrice 实盘分支留实盘阶段（读 clearinghouseState.liquidationPx）");
+}
+
+// ---------- buildWouldUpdateLeverage：dry-run 构造 updateLeverage 动作（不签名）----------
+// 对齐 SDK updateLeverage：{asset, isCross, leverage(整数≥1)}。逐仓恒 isCross=false。
+export function buildWouldUpdateLeverage({ assetIndex, leverage, dryRun }) {
+  if (dryRun !== true) throw new Error("real submit 留待后续阶段（一期仅 dry-run，不签名不提交）");
+  return {
+    ts: Date.now(),
+    action: "would-update-leverage",
+    order: { asset: assetIndex, isCross: false, leverage: Math.max(1, Math.trunc(Number(leverage))) },
+    dryRun: true,
+  };
+}
+
+// ---------- buildWouldUpdateMargin：dry-run 构造 updateIsolatedMargin 动作（不签名）----------
+// 对齐 SDK updateIsolatedMargin：{asset, isBuy(仓位方向 多true/空false), ntli(金额×1e6 整数, 正=加/负=减)}。size 不变。
+export function buildWouldUpdateMargin({ assetIndex, isBuy, amountUsd, dryRun }) {
+  if (dryRun !== true) throw new Error("real submit 留待后续阶段（一期仅 dry-run，不签名不提交）");
+  return {
+    ts: Date.now(),
+    action: "would-update-margin",
+    order: { asset: assetIndex, isBuy: isBuy === true, ntli: Math.round(Number(amountUsd) * 1e6) },
     dryRun: true,
   };
 }

@@ -4,6 +4,35 @@
 
 ---
 
+## HYPE-copy 资金分配 v3（预算优先 + 生存杠杆 + 逐仓保证金防守）spec + Phase A/B — 2026-06-30
+
+完全替换 ratio 资金模型：每币独立预算（minOpenCapital/maxCoinCapital）+ 生存杠杆 floor(L\*)（开仓即让我方强平价 ≥ 目标 lp）+ 逐仓保证金防守（updateIsolatedMargin 补保证金、size 不变、封顶 maxCoinCapital）。解决小资金跟集中型大户被 skip-maxpos 整仓拦截、一分钱跟不了的问题。spec：`.claude/kit/spec/auto-copy-trade/07-budget-alloc.md`；原理文档：`docs/copy/allocation.md`。
+
+### 变更
+
+- **`api/index.mjs`（Phase A）**：`normalizeTargetPositions` 加 `lp`（目标强平价）；`parseHypeMeta` 加 `maxLeverage`（供 mm=1/(2×maxLeverage) + 杠杆上限）；新增 `getMyLiqPrice` 注入抽象（dry-run 委托 estimate / 实盘读 liquidationPx 占位 throw）；新增 `buildWouldUpdateLeverage` / `buildWouldUpdateMargin` dry-run 构造（对齐 SDK action 字段）。
+- **`process/allocation.mjs`（Phase B，新建）**：四纯函数 `sideOf` / `selectLeverage`（floor(L\*) clamp[1,maxLev]，L\*≤0 不开、lp=0 退化）/ `computeMyLiqPrice`（MM-aware short/long，与实盘 liquidationPx 同口径）/ `planOpen`（size=signOf×ROUND_DOWN，<$10 mindust）/ `planDefend`（needMargin ROUND_UP、封顶 maxCoinCapital、exhausted 认栽）。
+- **`process/precision.mjs`**：加 `ceilTo`（ROUND_UP，needMargin 向上取整保证补足）。
+- **`process/sizing.mjs`**：`computeRatio`/`computeDesired` 标 `@deprecated`（保留防 import 断裂，v3 已替换）。
+- **接口依据**：三个 hype action（order/updateIsolatedMargin/updateLeverage）字段经 `@nktkas/hyperliquid` SDK 源码核实；liquidationPx/lp/maxLeverage 经实测 curl 确认。
+
+### 效果
+
+- 500 跟 0x267b…2566 LIT 不再整仓 skip：2x、做空 583 张、开仓真实强平价 2.337 > 目标 2.1225。
+- 防守用 updateIsolatedMargin（补保证金不增 size），目标 lp 后撤时追平；超 maxCoinCapital 认栽、单币最坏亏封顶。
+
+### 验证
+
+- 纯函数单测 68/68 全绿（含 selectLeverage short/long/边界、computeMyLiqPrice、planOpen mindust、planDefend 补/exhausted/lp=0）。
+- Phase A / Phase B 各过三闸门 `/k:check`。
+
+### 边界（阶段）
+
+- 一期 **dry-run**：三个 action 只产 would-\* 决策 + 推送，不签名。
+- Phase C（risk 校验门改造）/ D（reconcile+main 编排）/ E（notify 文案）尚未实现；自浮盈滚仓为 Phase 2（gated by 实盘 A5 验证）。
+
+---
+
 ## HYPE-copy 平仓盈亏 + 双卡片全集 + banner 自适应 — 2026-06-29
 
 ### 变更
