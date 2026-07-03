@@ -4,7 +4,7 @@
 //     parse/render 部分在此（被测函数现位于 process/parse.mjs 与 process/render.mjs）。
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { derivePositionView, exitOrderLines } from "../process/render.mjs";
+import { derivePositionView, exitOrderLines, classifyBanner } from "../process/render.mjs";
 import {
   canonicalReduceOnlyOrders, toPositionHistoryRecords, positionSideCN, marginModeNumLabel, diffReduceOnly,
   positionKeysFp,
@@ -207,4 +207,24 @@ test("diffReduceOnly: 单消失 → CANCEL", () => {
   assert.deepEqual(canceled.map((o) => o.orderId), ["1"]);
   assert.equal(placed.length, 0);
   assert.equal(modified.length, 0);
+});
+
+test("classifyBanner: 动词优先级 OPEN > CLOSE > INCREASE > REDUCE", () => {
+  assert.equal(classifyBanner(["OPENED LONG BTC 1 @ 100", "CLOSED SHORT ETH"]).kind, "OPEN");
+  assert.equal(classifyBanner(["CLOSED LONG BTC"]).kind, "CLOSE");
+  assert.equal(classifyBanner(["INCREASED LONG BTC 1→2"]).kind, "INCREASE");
+  assert.equal(classifyBanner(["DECREASED LONG BTC 2→1"]).kind, "REDUCE");
+});
+
+test("classifyBanner: 无仓位 diff + 有新平仓记录 → 判 CLOSE（开平跨帧跳过）", () => {
+  assert.equal(classifyBanner([], new Set(["pos-1"])).kind, "CLOSE");
+});
+
+test("classifyBanner: 无仓位 diff + 无新平仓记录 → null（离场单/抖动由消息流程分流，不再兜底 CHANGE）", () => {
+  assert.equal(classifyBanner([], new Set()).kind, null);
+  assert.equal(classifyBanner([]).kind, null); // 不传第二参也安全
+});
+
+test("classifyBanner: 有 CLOSED 动词时不受新平仓集合影响", () => {
+  assert.equal(classifyBanner(["CLOSED LONG BTC"], new Set(["pos-1"])).kind, "CLOSE");
 });

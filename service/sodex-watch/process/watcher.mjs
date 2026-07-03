@@ -1,19 +1,20 @@
 // 有状态编排层：WS 连接生命周期 + 事件监听 + 去抖触发 + 拉取聚合 + 推送。
 // WS polyfill 在此（非 api，避免 query 被迫依赖 ws）；共享限流状态经 live binding 读 api。
-import { fmtTime, fmtNum, directionCN, pickAt, formatDisplayId } from "../../tool/format.mjs";
+import { fmtTime, fmtNum, pickAt, formatDisplayId } from "../../tool/format.mjs";
 import { reportSkipReason } from "../../tool/reportGate.mjs";
 import {
   parseWsPosition, parseReduceOnlyOrders, canonicalReduceOnlyOrders, canonicalPositionsFp,
-  positionKeysFp, diffPositions, diffReduceOnly, baseCoin,
+  positionKeysFp, diffPositions, diffReduceOnly, baseCoin, positionDirection,
 } from "./parse.mjs";
 import {
-  classifyBanner, buildEventBanner, renderPositions, renderPositionHistory,
-  buildTgMessage, buildExitOrderBanner, derivePositionView, exitTpSlLabel,
+  classifyBanner, buildEventBanner, buildExitEventBanner, renderPositions, renderPositionHistory,
+  buildTgMessage, buildPositionChangeMessage, buildCloseMessage, buildExitOrderMessage,
+  derivePositionView, exitOrderLine,
 } from "./render.mjs";
 import {
   log, parseJsonSafe, fetchPositionHistory, sendTelegram, resolveAccountIdViaChain,
   enterSharedRateLimit, nextSharedBackoffMs, resetSharedBackoff, watcherRegistry,
-  sharedRateLimitUntil, THROTTLE_STATUSES, SEEN_IDS_CAP, symbolMetaBySymbol,
+  sharedRateLimitUntil, THROTTLE_STATUSES, SEEN_IDS_CAP, symbolMeta, symbolMetaBySymbol,
 } from "../api/index.mjs";
 import { installWsProxy } from "../../lib/WARP/index.mjs";
 import { writeSignal } from "../../lib/copy-signal/index.mjs";
@@ -32,6 +33,15 @@ try {
 } catch {
   console.error("需要安装 ws 包:\n  npm install ws");
   process.exit(1);
+}
+
+// 平仓历史 position_side 数字 → 方向英文（跨帧平仓摘要用；2=LONG / 3=SHORT）
+const RECORD_SIDE_DIR = { 2: "LONG", 3: "SHORT" };
+
+// 一组离场单变化的聚合动作：全同一动作则用之，混合回退 mixed。
+function aggregateExitAction(entries) {
+  const actions = new Set(entries.map((e) => e.action));
+  return actions.size === 1 ? [...actions][0] : "mixed";
 }
 
 // ---------- 监听器 ----------
@@ -231,14 +241,8 @@ export class AccountWatcher {
       const outFp = canonicalPositionsFp(this.positions) + "|" + canonicalReduceOnlyOrders(this.ordersRaw) + "|" + closedIdsFp;
       const force = this.forceReport; this.forceReport = false;
       if (!force && outFp === this.lastOutFp) return;
-      this.lastOutFp = outFp;
 
       const events = diffPositions(this.lastPositions, this.positions);
-      this.lastPositions = this.positions;
-      // 推进档位判定基准（仅在确认推送时推进，去重/限流 return 不动）：下次以本次状态为对照判结构变化。
-      this.lastKeysFp = positionKeysFp(this.positions);
-      this.lastReduceFp = canonicalReduceOnlyOrders(this.ordersRaw);
-      this.pendingStructural = false;
 
       // ★ 复用：首帧基线全部不标，之后新出现的已平仓位（新 position_id）标 ★
       const newPosIds = new Set();
@@ -255,41 +259,95 @@ export class AccountWatcher {
       }
       this.retryScheduled = false;
 
-      // 离场单变化提醒（独立 banner）；首帧只建立基线，不提醒
+      // 确认上报后才推进 diff/档位基准：G5/G6 补拉 return 前不推进，保证 2s 重拉仍以“变化前”为对照，
+      // 避免全平的 CLOSED（及同帧加减仓）动词被吞、banner 降级为 POSITION CHANGE。
+      this.lastOutFp = outFp;
+      // 保证金/量级变化需“变化前”仓位：推进 lastPositions 前快照 prev（events 已基于其算出）
+      const prevPositions = this.lastPositions;
+      this.lastPositions = this.positions;
+      this.lastKeysFp = positionKeysFp(this.positions);
+      this.lastReduceFp = canonicalReduceOnlyOrders(this.ordersRaw);
+      this.pendingStructural = false;
+
+      // 离场单变化提醒；首帧只建立基线，不提醒
       const exitChanges = isBaseline ? [] : this.computeExitChanges(reduceOnly, events);
       this.prevReduceOnly = new Map(reduceOnly.map((o) => [o.orderId, o]));
 
-      // banner 类型：首帧→START WATCH；每日 force→SNAPSHOT；否则按仓位 diff 动词化
-      const { kind } = isBaseline
-        ? { kind: "START" }
-        : this.tgReason === "daily"
-          ? { kind: "SNAPSHOT" }
-          : classifyBanner(events);
+      // banner 类型：首帧→START WATCH；每日 force→SNAPSHOT；否则按仓位 diff 动词化（可能为 null，如纯离场单/抖动帧）
+      const isOverview = isBaseline || this.tgReason === "daily";
+      const kind = isBaseline ? "START" : this.tgReason === "daily" ? "SNAPSHOT" : classifyBanner(events, newPosIds).kind;
       const clock = fmtTime();
       const displayId = this.makeDisplayId();
 
-      console.log(""); console.log(buildEventBanner(displayId, kind, clock)); log(`account_id=${this.accountId}`);
+      // 平仓历史裁剪（方案 D）：首帧/日报显示最近 N 条概览；事件驱动仅显示本轮新平仓(⭐️)，无则不显示
+      const histRecords = isOverview ? records : records.filter((r) => newPosIds.has(r.positionId));
+      const histLimit = isOverview ? this.historyLimit : histRecords.length;
+
+      // console 单条聚合全景（不拆）：主类型缺失时按离场单动作或纯抖动留痕
+      const consoleExitAction = exitChanges.length ? aggregateExitAction(exitChanges) : null;
+      console.log("");
+      if (kind) console.log(buildEventBanner(displayId, kind, clock));
+      else if (consoleExitAction) console.log(buildExitEventBanner(displayId, consoleExitAction, clock));
+      else log("无实质仓位/离场单变化（平仓历史窗口滚动），仅 console 留痕不推送");
+      log(`account_id=${this.accountId}`);
       console.log("\n--- 当前仓位 Positions ---"); console.log(renderPositions(this.positions, reduceOnly));
-      const histText = renderPositionHistory(records, newPosIds, this.historyLimit);
+      const histText = renderPositionHistory(histRecords, newPosIds, histLimit, isOverview);
       console.log("\n--- 平仓历史 Position History ---"); console.log(histText ?? "  （无平仓记录）");
       if (this.flags.raw && result?.raw) { console.log("\n--- raw positions ---"); console.log(JSON.stringify(result.raw, null, 2)); }
       console.log("=".repeat(60) + "\n");
 
-      const tgText = buildTgMessage(displayId, kind, clock, this.positions, reduceOnly, records, newPosIds, this.historyLimit);
-      this.tgReason = "event";
-      // 定时镜像快照：当前无持仓则不推 TG（仅 console 留痕）；事件驱动的平仓提醒不受此限
-      const hasOpenPositions = this.positions.some((p) => Number(p.size) !== 0);
-      const skipReason = reportSkipReason({ kind, hasOpenPositions, isNew: this.isNew });
-      if (skipReason) log(skipReason);
-      else sendTelegram(this.tgToken, this.tgChat, tgText);
-
-      // 离场单提醒在主报告之后单发，便于 TG 区分"账户状态" vs "前瞻信号"
-      if (exitChanges.length) {
-        const exitText = buildExitOrderBanner(displayId, clock, exitChanges);
-        console.log(exitText + "\n");
-        sendTelegram(this.tgToken, this.tgChat, exitText);
+      // TG：全景（START/SNAPSHOT）单条并走 reportGate；事件驱动按币种/动作拆多条，全空则不发
+      if (isOverview) {
+        const tgText = buildTgMessage(displayId, kind, clock, this.positions, reduceOnly, histRecords, newPosIds, histLimit);
+        const hasOpenPositions = this.positions.some((p) => Number(p.size) !== 0);
+        const skipReason = reportSkipReason({ kind, hasOpenPositions, isNew: this.isNew });
+        if (skipReason) log(skipReason);
+        else sendTelegram(this.tgToken, this.tgChat, tgText);
+      } else {
+        for (const text of this.buildEventMessages({ displayId, clock, events, prevPositions, newPosIds, histRecords, exitChanges, reduceOnly })) {
+          sendTelegram(this.tgToken, this.tgChat, text);
+        }
       }
+      this.tgReason = "event";
     } finally { this.fetching = false; }
+  }
+
+  // 事件驱动 TG 消息集合：非平仓变化币各一条 + 平仓合并一条 + 离场单按币各一条。
+  buildEventMessages({ displayId, clock, events, prevPositions, newPosIds, histRecords, exitChanges, reduceOnly }) {
+    const key = (p) => `${baseCoin(p.symbol)}:${positionDirection(p)}`;
+    const currMap = new Map(this.positions.filter((p) => Number(p.size) !== 0).map((p) => [key(p), p]));
+    const prevMap = new Map(prevPositions.filter((p) => Number(p.size) !== 0).map((p) => [key(p), p]));
+    const msgs = [];
+
+    // 1) 非平仓仓位变化（OPEN / INCREASE / REDUCE）→ 各一条，仅该币卡片
+    for (const e of events) {
+      const [verb, dir, coin] = e.split(" ");
+      const pos = currMap.get(`${coin}:${dir}`);
+      if (!pos) continue;
+      if (verb === "OPENED") msgs.push(buildPositionChangeMessage(displayId, "OPEN", clock, pos, null));
+      else if (verb === "INCREASED") msgs.push(buildPositionChangeMessage(displayId, "INCREASE", clock, pos, prevMap.get(`${coin}:${dir}`)));
+      else if (verb === "DECREASED") msgs.push(buildPositionChangeMessage(displayId, "REDUCE", clock, pos, prevMap.get(`${coin}:${dir}`)));
+    }
+
+    // 2) 平仓（CLOSED）→ 合并一条：摘要 + 剩余仓位全景 + 每平仓币 1 条历史
+    let closedSummaries = events.filter((e) => e.startsWith("CLOSED")).map((e) => { const [, dir, coin] = e.split(" "); return { coin, dir }; });
+    // 跨帧：仓位 diff 未抓到 CLOSED 但有新平仓记录 → 凭记录补摘要
+    if (!closedSummaries.length && newPosIds.size) {
+      closedSummaries = histRecords.map((r) => ({ coin: symbolMeta(r.symbolId).baseCoin || `#${r.symbolId}`, dir: RECORD_SIDE_DIR[Number(r.positionSide)] ?? "" }));
+    }
+    if (closedSummaries.length) {
+      msgs.push(buildCloseMessage(displayId, clock, closedSummaries, this.positions, reduceOnly, histRecords, newPosIds));
+    }
+
+    // 3) 离场单变化 → 按币分组，各一条（同币多动作回退 mixed）
+    const byCoin = new Map();
+    for (const c of exitChanges) { if (!byCoin.has(c.coin)) byCoin.set(c.coin, []); byCoin.get(c.coin).push(c); }
+    for (const [coin, entries] of byCoin) {
+      const action = aggregateExitAction(entries);
+      const pos = this.positions.find((p) => baseCoin(p.symbol) === coin && Number(p.size) !== 0);
+      msgs.push(buildExitOrderMessage(displayId, action, clock, pos, entries));
+    }
+    return msgs;
   }
 
   // 离场单 PLACE/MODIFY/CANCEL → 提醒条目。FILL 不双报：单消失且同窗口该 coin 仓位减/平 → 判成交，归平仓事件不报撤销。
@@ -299,31 +357,22 @@ export class AccountWatcher {
       events.filter((e) => e.startsWith("DECREASED") || e.startsWith("CLOSED")).map((e) => e.split(" ")[2]),
     );
     const out = [];
-    for (const o of placed) out.push(this.exitChangeEntry("place", o, reduceOnly));
-    for (const o of modified) out.push(this.exitChangeEntry("modify", o, reduceOnly));
+    for (const o of placed) out.push(this.exitChangeEntry("place", o));
+    for (const o of modified) out.push(this.exitChangeEntry("modify", o));
     for (const o of canceled) {
       if (reducedCoins.has(baseCoin(o.symbol))) continue; // 成交→平仓事件已表达，不发撤销提醒
-      out.push(this.exitChangeEntry("cancel", o, reduceOnly));
+      out.push(this.exitChangeEntry("cancel", o));
     }
     return out;
   }
 
-  // 单条离场变化的展示上下文（coin / 方向 / 价 / TP-SL 标签）。标签需对应持仓 mark，取不到则省略。
-  exitChangeEntry(action, order, reduceOnly) {
-    const closesDir = order.posSide === "LONG" || order.posSide === "SHORT"
-      ? order.posSide
-      : order.side === "SELL" ? "LONG" : order.side === "BUY" ? "SHORT" : "";
+  // 单条离场变化条目：coin + 完整展示行（离场单消息前置 ⭐️）。取不到持仓则退化仅价。
+  exitChangeEntry(action, order) {
     const pos = this.positions.find((p) => baseCoin(p.symbol) === baseCoin(order.symbol) && Number(p.size) !== 0);
     const view = pos ? derivePositionView(pos) : null;
     const meta = symbolMetaBySymbol(order.symbol);
-    const label = view ? exitTpSlLabel(view, order) : "";
-    return {
-      action,
-      coin: meta.baseCoin || baseCoin(order.symbol),
-      dirCN: directionCN(closesDir),
-      priceStr: fmtNum(order.price, meta.pricePrecision),
-      label,
-    };
+    const line = view ? exitOrderLine(view, order) : `离场挂单  @ ${fmtNum(order.price, meta.pricePrecision)}`;
+    return { action, coin: meta.baseCoin || baseCoin(order.symbol), line };
   }
 
   close() { watcherRegistry.delete(this); this.closing = true; this.clearTimers(); try { this.ws?.close(); } catch {} }

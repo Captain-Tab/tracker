@@ -180,7 +180,14 @@
       "Bash(rm /Users/tabcaptain/Documents/code/tracker/service/HYPE-discovery/log/discovery-2026-06-23-0838.*)",
       "Bash(rm /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/discovery-2026-06-20-1300.*)",
       "Bash(curl *)",
-      "Bash(bash *)"
+      "Bash(bash *)",
+      "Bash(scp root@107.172.90.184:/root/service/sodex-discovery/log/discovery-2026-07-03-1311.json service/sodex-discovery/log/)",
+      "Bash(scp root@107.172.90.184:/root/service/sodex-discovery/log/discovery-2026-07-03-1311.md service/sodex-discovery/log/)",
+      "Bash(scp root@107.172.90.184:/root/service/HYPE-discovery/log/discovery-2026-07-03-1412.json service/HYPE-discovery/log/)",
+      "Bash(scp root@107.172.90.184:/root/service/HYPE-discovery/log/discovery-2026-07-03-1412.md service/HYPE-discovery/log/)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/tabcaptain/Documents/code/tracker/service/sodex-watch/config.json'\\)\\); [print\\(f'  {w[\\\\\"label\\\\\"]}: {w[\\\\\"address\\\\\"][:10]}...'\\) for w in d['watches']]\")",
+      "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/tabcaptain/Documents/code/tracker/service/HYPE-watch/config.json'\\)\\); [print\\(f'  {w[\\\\\"label\\\\\"]}: {w[\\\\\"address\\\\\"][:10]}...'\\) for w in d['watches']]\")"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",

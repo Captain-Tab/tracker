@@ -4,6 +4,98 @@
 
 ---
 
+## 通知按币种/动作拆多条消息（sodex-watch + HYPE-watch 对称）— 2026-07-03
+
+原 watch 通知冗余：仓位卡片全币种展示、离场单变化额外单发一条 banner、平仓历史一次列多条、多动作同帧被 banner 优先级压缩成一个动词。重构为「一帧发 N 条独立消息」，只留本次变化、一眼看清哪个币做了什么动作。
+
+### 变更（两端对称：`process/render.mjs` + `process/watcher.mjs`）
+
+- **`fetchAndReport` 消息循环**：从"一帧一条（`classifyBanner` 取最高优先级）"改为按 `events` / `exitChanges` 拆多条——非平仓变化币（OPEN/INCREASE/REDUCE）各一条仅该币卡片；平仓（CLOSE）合并一条（摘要 + 剩余全景 + 每平仓币 1 条历史）；离场单变化按币各一条；`events` 与 `exitChanges` 全空（纯抖动）不发。新增 `buildEventMessages` 方法编排。
+- **离场单双发消除**：删主报告后独立 `buildExitOrderBanner` 单发，合并进离场单消息，banner 按动作细化（ORDER PLACED/CANCELED/MODIFIED，同币多动作回退 OPEN ORDER），变化挂单行前 ⭐️。
+- **加/减仓量级 + 保证金变化**：卡片新增 `⭐️ 增加/减少持仓 5→8 (+3)` 与 `⭐️ 保证金 $754→$1,206 (+$452)`；watcher 推进 `lastPositions` 前快照 prev，渲染层重算（HYPE 读 `marginUsed`，sodex 用 `(size×entry)/lev`）。`diffPositions` events 字符串签名不变。
+- **⭐️ 全站统一**：开仓 `📊 仓位` 行前、加/减仓变化行、离场单变化行、平仓历史行；平仓历史 `★` → `⭐️`，事件平仓去掉"（最近N条）"且仅每平仓币 1 条。
+- **`const/bannerLabels.mjs`**：`WATCH_BANNER_LABEL` 删 `CHANGE`；新增 `EXIT_ORDER_BANNER_LABEL`（place/cancel/modify/mixed）。连带清理两端 `bannerHead` 的 `?? CHANGE` 兜底、`BANNER_EMOJI.CHANGE`，`classifyBanner` 无动词改返 `{ kind: null }`（不再兜底 CHANGE，避免渲染 "undefined"）。
+- **console 不拆**：仍单条聚合全景留痕，仅 TG 按币种/动作拆多条；纯抖动帧 console 记一行不推。`reportGate` skip 仅作用于 START/SNAPSHOT 全景。
+- **`test/domain.test.mjs`**：sodex classifyBanner 兜底断言改 null；HYPE 新增 classifyBanner 单测。
+
+### 边界
+
+- HYPE-copy 未改（仅依赖 copySignal 脏标 + 独立 templates，`this.positions` 仍全量获取只渲染过滤）；数据获取层不变（WS 全量 + REST 全量，仅渲染过滤）。
+
+### 验证
+
+- sodex-watch 25/25、HYPE-watch 15/15、HYPE-copy 68/68，全量 171/171 单测全绿；`node --check` 两端 render/watcher 通过；渲染冒烟脚本核对 8 种消息面板与设计稿一致。
+
+---
+
+## banner 文案集中到 service/const 并加中文（中英同行）— 2026-07-03
+
+watch banner 原为纯英文、两端各存一份重复；copy banner 原为纯中文。统一抽到共享常量，每条 banner 英文 + 中文同行（如 `OPEN POSITION 开仓`）。
+
+### 变更
+
+- **`const/bannerLabels.mjs`（新建）**：导出 `WATCH_BANNER_LABEL`（7 种：START/SNAPSHOT/OPEN/CLOSE/INCREASE/REDUCE/CHANGE）+ `COPY_BANNER_LABEL`（6 种：initial_sync/startup/round_open/round_close/round/shutdown）。图标不入此表，仍由各 render/templates 按 kind 决定。
+- **`sodex-watch` / `HYPE-watch` 的 `process/render.mjs`**：删本地 `BANNER_VERB`，import `WATCH_BANNER_LABEL`，`bannerHead` 改用之。
+- **`HYPE-copy/notify/templates.mjs`**：删本地 `BANNER_ACTION`，import `COPY_BANNER_LABEL`，`buildBanner` 改用之（icon 逻辑保留）。
+- **`HYPE-copy/test/domain.test.mjs`**：banner 头断言更新为中英同行文案。
+
+### 中文映射
+
+START WATCH 开始监控 / SNAPSHOT 每日快照 / OPEN POSITION 开仓 / CLOSE POSITION 平仓 / INCREASE POSITION 加仓 / REDUCE POSITION 减仓 / POSITION CHANGE 仓位变化；copy 另有 COPY START 跟单启动 / RECONCILE 跟单对账 / COPY STOP 跟单关闭。
+
+### 验证
+
+- sodex 25/25、HYPE-watch 14/14、HYPE-copy 68/68 单测全绿。
+
+---
+
+## sodex-watch 开平跨帧跳过的平仓凭记录判 CLOSE（classifyBanner 增吃新平仓集合）— 2026-07-03
+
+场景②-b：仓位在两次轮询之间「开→平」，仓位 diff（`diffPositions`）从没抓到 CLOSED 边沿，只剩一条平仓历史记录。此前 `classifyBanner` 只看 `events`，events 空 → 兜底 POSITION CHANGE，真实平仓被漏报。
+
+### 变更（仅 sodex-watch，HYPE 不适用见下）
+
+- **`process/render.mjs`**：`classifyBanner(events)` → `classifyBanner(events, newClosedIds)`；兜底 CHANGE 前加一道：`events` 无 CLOSED 但 `newClosedIds` 非空 → 判 `CLOSE`（有平仓记录为证，唯一合理解释是开平被跨帧跳过）。
+- **`process/watcher.mjs`**：调用点传入本轮新平仓集合 `newPosIds`。
+- **`test/domain.test.mjs`**：新增 classifyBanner 单测（动词优先级、新平仓判 CLOSE、无记录兜底 CHANGE、不传参安全、有 CLOSED 不受影响）。
+
+### 为何 HYPE-watch 不做此改动（非对称）
+
+sodex 有 G5/G6 guard（`watcher.mjs:246`：检测到 CLOSED 但 `newPosIds` 空 → 2s 重拉、不报），保证"仓位平了但平仓记录未到"时不报、等记录到齐同帧才报唯一一次 CLOSE；新分支只在真·开平跨帧跳过（从无 events CLOSED）时触发，不与正常 CLOSE 重复。
+
+HYPE **无此 guard**：positions 走 WS `clearinghouseState`、平仓记录走 REST `fetchUserFills`，两源异步。若给 HYPE 加同款分支，正常平仓会重复报——t0 仓位消失（events CLOSED）报一次 CLOSE，t1 REST fill 迟到（events 空、newOids 非空）又报一次 CLOSE。故 HYPE 保持原样，平仓仅靠 events 里的 CLOSED 触发。
+
+### 效果
+
+- 正常平仓延迟仍由 G5/G6 + events 里的 CLOSED 触发（不走此分支），不会重复报。
+- 仅"开平跨帧跳过"这一子情况凭记录升级为 🔴 CLOSE，不再降级为 CHANGE。
+
+### 验证
+
+- sodex 25/25、HYPE 14/14 单测全绿。
+
+---
+
+## sodex-watch 全平被降级为 POSITION CHANGE 修复（基准推进时序）— 2026-07-03
+
+全平仓位被显示成 🟡 POSITION CHANGE 而非 🔴 CLOSE POSITION。根因：`fetchAndReport` 的 G5/G6 补拉分支（检测到 CLOSED 但平仓历史索引未跟上 → 2s 重拉）在 `return` 抑制本次上报**之前**已推进 diff 基准（`lastPositions` 等），导致 2s 重拉时以"变化后 vs 变化后"对照，算不出任何动词、`classifyBanner` 兜底成 CHANGE。同帧夹带的加/减仓动词一并被吞。HYPE-watch 无此 guard 分支，不受影响。
+
+### 变更
+
+- **`process/watcher.mjs`**：把基准推进五行（`lastOutFp` / `lastPositions` / `lastKeysFp` / `lastReduceFp` / `pendingStructural`）从 G5/G6 补拉 `return` 之前下移到之后（`:252-258`）。`diffPositions` 仍在 guard 之前计算（guard 依赖 `events`）。纯时序调整，渲染层未改。
+
+### 效果
+
+- 全平仓位 2s 重拉时以"变化前"为对照，正确算出 CLOSED，banner 显示 🔴 CLOSE POSITION。
+- 同帧"加/减仓 + 另一仓全平"不再把加减仓动词吞成 CHANGE。
+- 修后 POSITION CHANGE 仅剩"仓位量确实未变"场景（离场单挂撤改 / 平仓历史延迟到达但仓位上帧已更新）。
+
+### 遗留（未在本次处理）
+
+- 多币同帧 / 反手（平多开空）仍只显示优先级最高的单个 banner 动词，逐币种动作明细未渲染——`diffPositions` 数据层已带量级（`parse.mjs:128` `5→3`），属渲染层增强项。
+
+---
+
 ## HYPE-copy 资金分配 v3（预算优先 + 生存杠杆 + 逐仓保证金防守）spec + Phase A/B — 2026-06-30
 
 完全替换 ratio 资金模型：每币独立预算（minOpenCapital/maxCoinCapital）+ 生存杠杆 floor(L\*)（开仓即让我方强平价 ≥ 目标 lp）+ 逐仓保证金防守（updateIsolatedMargin 补保证金、size 不变、封顶 maxCoinCapital）。解决小资金跟集中型大户被 skip-maxpos 整仓拦截、一分钱跟不了的问题。spec：`.claude/kit/spec/auto-copy-trade/07-budget-alloc.md`；原理文档：`docs/copy/allocation.md`。

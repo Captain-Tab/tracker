@@ -2,6 +2,7 @@
 // 精度比较走 precision.mjs（禁裸 parseFloat）；HTML 文案经 escapeHtml（sendTelegram 用 parse_mode HTML）。
 // 消息风格对齐 watch render.mjs：banner 头 + 卡片式仓位展示 + 分隔线。
 import { absStr, gt, lt, eq, signOf, mul, div } from "../process/precision.mjs";
+import { COPY_BANNER_LABEL } from "../../const/bannerLabels.mjs";
 
 // 事件 icon（用户确认集）
 const ICON = {
@@ -49,16 +50,6 @@ export function fmtClock(tsMs) {
 
 // ---------- Banner 头部 ----------
 
-// 轮次动作 → banner 动词
-const BANNER_ACTION = {
-  initial_sync: "跟单启动",
-  round_close: "平仓",
-  round_open: "开仓",
-  round: "跟单对账",
-  startup: "跟单启动",
-  shutdown: "跟单关闭",
-};
-
 function buildBanner(kind, clock, headerId) {
   const icon = kind === "round_close" ? ICON.close
     : kind === "round_open" ? ICON.open
@@ -66,7 +57,7 @@ function buildBanner(kind, clock, headerId) {
     : kind === "startup" ? ICON.start
     : kind === "initial_sync" ? ICON.start
     : ICON.add;
-  const action = BANNER_ACTION[kind] ?? "跟单对账";
+  const action = COPY_BANNER_LABEL[kind] ?? COPY_BANNER_LABEL.round;
   return `${icon} ${action}\n🕐 ${clock}\n📡 ${headerId}`;
 }
 

@@ -573,7 +573,7 @@ test("buildRoundSummary: initial_sync 含卡片 + footer", () => {
     lines: ["💡 最低本金参考：$4.07（可跟 ETH）"],
     footer: "⏱ 执行 25ms｜完整 775ms",
   });
-  assert.match(summary, /▶ 跟单启动/);
+  assert.match(summary, /▶ COPY START 跟单启动/);
   assert.match(summary, /🕐 2026\/06\/29 12:05:03/);
   assert.match(summary, /📡 跟 0x26...66/);
   assert.match(summary, /📊 （测试卡片）/);
@@ -589,7 +589,7 @@ test("buildRoundSummary: round 无卡片只有变化行", () => {
     lines: ["🆕 ETH 做多 | 新开 0.5 张 @ $3,000.50  ratio 1.98%"],
     footer: "⏱ 执行 30ms｜完整 650ms",
   });
-  assert.match(summary, /⏫ 跟单对账/);
+  assert.match(summary, /⏫ RECONCILE 跟单对账/);
   assert.match(summary, /新开 0\.5 张/);
   assert.match(summary, /ratio 1\.98%/);
 });

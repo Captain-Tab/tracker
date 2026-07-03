@@ -6,6 +6,7 @@ import {
   canonicalPositionsFp, canonicalOpenOrdersFp, diffPositions, diffExitOrders, pricePrecisionOf, positionDirection,
   positionKeysFp, canonicalExitOrdersFp,
 } from "../process/parse.mjs";
+import { classifyBanner } from "../process/render.mjs";
 
 const szOf = (coin) => ({ HYPE: 2, BTC: 5 }[coin] ?? 4);
 
@@ -148,4 +149,13 @@ test("canonicalExitOrdersFp: 仅开仓单变化（滚仓挂单 sz 递减）→ �
 test("canonicalExitOrdersFp: 空/非数组 → 空串", () => {
   assert.equal(canonicalExitOrdersFp([]), "");
   assert.equal(canonicalExitOrdersFp(null), "");
+});
+
+// ---------- classifyBanner（console 主动词；无动词 → null，不再兜底 CHANGE）----------
+test("classifyBanner: 动词优先级 OPEN > CLOSE > INCREASE > REDUCE；无动词 → null", () => {
+  assert.equal(classifyBanner(["OPENED LONG BTC 1 @ 100", "CLOSED SHORT ETH"]).kind, "OPEN");
+  assert.equal(classifyBanner(["CLOSED LONG HYPE"]).kind, "CLOSE");
+  assert.equal(classifyBanner(["INCREASED LONG HYPE 1→2"]).kind, "INCREASE");
+  assert.equal(classifyBanner(["DECREASED LONG HYPE 2→1"]).kind, "REDUCE");
+  assert.equal(classifyBanner([]).kind, null);
 });

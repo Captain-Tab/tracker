@@ -1,13 +1,15 @@
 // 有状态编排层：HYPE WS 连接生命周期 + 聚焦频道监听 + 去抖触发 + REST 拉取聚合 + 推送。
 // 仓位取自 WS clearinghouseState 快照；离场单/平仓在变化时用 info REST 拉取。
-import { fmtTime, fmtNum, directionCN, pickAt, formatDisplayId } from "../../tool/format.mjs";
+import { fmtTime, fmtNum, pickAt, formatDisplayId } from "../../tool/format.mjs";
 import {
   parsePositions, parseExitOrders, parseCloseRecords,
   canonicalPositionsFp, canonicalOpenOrdersFp, positionKeysFp, canonicalExitOrdersFp,
   diffPositions, diffExitOrders, pricePrecisionOf,
 } from "./parse.mjs";
 import {
-  classifyBanner, buildEventBanner, renderPositions, renderCloseHistory, buildTgMessage, buildExitOrderBanner,
+  classifyBanner, buildEventBanner, buildExitEventBanner, renderPositions, renderCloseHistory,
+  buildTgMessage, buildPositionChangeMessage, buildCloseMessage, buildExitOrderMessage,
+  derivePositionView, exitOrderLine,
 } from "./render.mjs";
 import { reportSkipReason } from "../../tool/reportGate.mjs";
 import {
@@ -39,6 +41,12 @@ try {
 } catch {
   console.error("需要安装 ws 包:\n  npm install ws");
   process.exit(1);
+}
+
+// 一组离场单变化的聚合动作：全同一动作则用之，混合回退 mixed。
+function aggregateExitAction(entries) {
+  const actions = new Set(entries.map((e) => e.action));
+  return actions.size === 1 ? [...actions][0] : "mixed";
 }
 
 export class AccountWatcher {
@@ -239,6 +247,8 @@ export class AccountWatcher {
       this.lastOutFp = outFp;
 
       const events = diffPositions(this.lastPositions, this.positions);
+      // 保证金/量级变化需“变化前”仓位：推进 lastPositions 前快照 prev（events 已基于其算出）
+      const prevPositions = this.lastPositions;
       this.lastPositions = this.positions;
       // 推进档位判定基准（仅确认推送时推进，去重/限流 return 不动）：下次以本次状态为对照判结构变化。
       this.lastKeysFp = positionKeysFp(this.positions);
@@ -252,39 +262,85 @@ export class AccountWatcher {
       const isBaseline = !this.baselineLogged;
       this.baselineLogged = true;
 
-      // 离场单变化提醒（独立 banner）；首帧只建基线，不提醒
+      // 离场单变化提醒；首帧只建基线，不提醒
       const exitChanges = isBaseline ? [] : this.computeExitChanges(exitOrders, events);
       this.prevExitOrders = new Map(exitOrders.map((o) => [o.oid, o]));
 
-      const { kind } = isBaseline
-        ? { kind: "START" }
-        : this.tgReason === "daily"
-          ? { kind: "SNAPSHOT" }
-          : classifyBanner(events);
+      // banner 类型：首帧→START；每日 force→SNAPSHOT；否则按仓位 diff 动词化（跨帧平仓凭新 oid 补 CLOSE，纯离场单/抖动为 null）
+      const isOverview = isBaseline || this.tgReason === "daily";
+      const kind = isBaseline ? "START" : this.tgReason === "daily" ? "SNAPSHOT"
+        : (classifyBanner(events).kind ?? (newOids.size ? "CLOSE" : null));
       const clock = fmtTime();
       const displayId = this.makeDisplayId();
 
-      console.log(""); console.log(buildEventBanner(displayId, kind, clock)); log(`address=${this.address}`);
+      // 平仓历史裁剪（方案 D）：首帧/日报显示最近 N 条概览；事件驱动仅显示本轮新平仓(⭐️)，无则不显示
+      const histRecords = isOverview ? closeRecords : closeRecords.filter((r) => newOids.has(r.oid));
+      const histLimit = isOverview ? this.historyLimit : histRecords.length;
+
+      // console 单条聚合全景（不拆）：主类型缺失时按离场单动作或纯抖动留痕
+      const consoleExitAction = exitChanges.length ? aggregateExitAction(exitChanges) : null;
+      console.log("");
+      if (kind) console.log(buildEventBanner(displayId, kind, clock));
+      else if (consoleExitAction) console.log(buildExitEventBanner(displayId, consoleExitAction, clock));
+      else log("无实质仓位/离场单变化（平仓历史窗口滚动），仅 console 留痕不推送");
+      log(`address=${this.address}`);
       console.log("\n--- 当前仓位 Positions ---"); console.log(renderPositions(this.positions, exitOrders, this.marginSummary));
-      const histText = renderCloseHistory(closeRecords, newOids, this.historyLimit);
+      const histText = renderCloseHistory(histRecords, newOids, histLimit, isOverview);
       console.log("\n--- 平仓历史 Position History ---"); console.log(histText ?? "  （无平仓记录）");
       console.log("=".repeat(60) + "\n");
 
-      const tgText = buildTgMessage(displayId, kind, clock, this.positions, exitOrders, closeRecords, newOids, this.historyLimit, this.marginSummary, this.withdrawable);
-      this.tgReason = "event";
-      // 定时镜像快照：当前无持仓则不推 TG（仅 console 留痕）；事件驱动不受此限
-      const hasOpenPositions = this.positions.length > 0;
-      const skipReason = reportSkipReason({ kind, hasOpenPositions, isNew: this.isNew });
-      if (skipReason) log(skipReason);
-      else sendTelegram(this.tgToken, this.tgChat, tgText);
-
-      // 离场单提醒在主报告之后单发，便于 TG 区分"账户状态" vs "前瞻信号"
-      if (exitChanges.length) {
-        const exitText = buildExitOrderBanner(displayId, clock, exitChanges);
-        console.log(exitText + "\n");
-        sendTelegram(this.tgToken, this.tgChat, exitText);
+      // TG：全景（START/SNAPSHOT）单条并走 reportGate；事件驱动按币种/动作拆多条，全空则不发
+      if (isOverview) {
+        const tgText = buildTgMessage(displayId, kind, clock, this.positions, exitOrders, histRecords, newOids, histLimit, this.marginSummary, this.withdrawable);
+        const hasOpenPositions = this.positions.length > 0;
+        const skipReason = reportSkipReason({ kind, hasOpenPositions, isNew: this.isNew });
+        if (skipReason) log(skipReason);
+        else sendTelegram(this.tgToken, this.tgChat, tgText);
+      } else {
+        for (const text of this.buildEventMessages({ displayId, clock, events, prevPositions, newOids, histRecords, exitChanges, exitOrders })) {
+          sendTelegram(this.tgToken, this.tgChat, text);
+        }
       }
+      this.tgReason = "event";
     } finally { this.fetching = false; }
+  }
+
+  // 事件驱动 TG 消息集合：非平仓变化币各一条 + 平仓合并一条 + 离场单按币各一条。
+  buildEventMessages({ displayId, clock, events, prevPositions, newOids, histRecords, exitChanges, exitOrders }) {
+    const key = (p) => `${p.coin}:${p.dir}`;
+    const currMap = new Map(this.positions.map((p) => [key(p), p]));
+    const prevMap = new Map(prevPositions.map((p) => [key(p), p]));
+    const msgs = [];
+
+    // 1) 非平仓仓位变化（OPEN / INCREASE / REDUCE）→ 各一条，仅该币卡片
+    for (const e of events) {
+      const [verb, dir, coin] = e.split(" ");
+      const pos = currMap.get(`${coin}:${dir}`);
+      if (!pos) continue;
+      if (verb === "OPENED") msgs.push(buildPositionChangeMessage(displayId, "OPEN", clock, pos, null));
+      else if (verb === "INCREASED") msgs.push(buildPositionChangeMessage(displayId, "INCREASE", clock, pos, prevMap.get(`${coin}:${dir}`)));
+      else if (verb === "DECREASED") msgs.push(buildPositionChangeMessage(displayId, "REDUCE", clock, pos, prevMap.get(`${coin}:${dir}`)));
+    }
+
+    // 2) 平仓（CLOSED）→ 合并一条：摘要 + 剩余仓位全景 + 每平仓币 1 条历史
+    let closedSummaries = events.filter((e) => e.startsWith("CLOSED")).map((e) => { const [, dir, coin] = e.split(" "); return { coin, dir }; });
+    // 跨帧：仓位 diff 未抓到 CLOSED 但有新平仓记录 → 凭记录补摘要（dir 取自 fill 的 "Close Long/Short"）
+    if (!closedSummaries.length && newOids.size) {
+      closedSummaries = histRecords.map((r) => ({ coin: r.coin, dir: String(r.dir).includes("Long") ? "LONG" : "SHORT" }));
+    }
+    if (closedSummaries.length) {
+      msgs.push(buildCloseMessage(displayId, clock, closedSummaries, this.positions, exitOrders, histRecords, newOids));
+    }
+
+    // 3) 离场单变化 → 按币分组，各一条（同币多动作回退 mixed）
+    const byCoin = new Map();
+    for (const c of exitChanges) { if (!byCoin.has(c.coin)) byCoin.set(c.coin, []); byCoin.get(c.coin).push(c); }
+    for (const [coin, entries] of byCoin) {
+      const action = aggregateExitAction(entries);
+      const pos = this.positions.find((p) => p.coin === coin);
+      msgs.push(buildExitOrderMessage(displayId, action, clock, pos, entries));
+    }
+    return msgs;
   }
 
   // 离场单 PLACE/MODIFY/CANCEL → 提醒条目。CANCEL 消歧：单消失且同窗口该 coin 仓位减/平 → 判成交，不报撤销。
@@ -303,18 +359,12 @@ export class AccountWatcher {
     return out;
   }
 
-  // 单条离场变化展示上下文（coin / 方向 / 价 / TP-SL 标签）。方向取自对应持仓，取不到按 side 推。
+  // 单条离场变化条目：coin + 完整展示行（离场单消息前置 ⭐️）。取不到持仓则退化仅价。
   exitChangeEntry(action, order) {
     const pos = this.positions.find((p) => p.coin === order.coin);
-    const closesDir = pos ? pos.dir : order.side === "A" ? "LONG" : order.side === "B" ? "SHORT" : "";
-    const prec = pricePrecisionOf(szDecimalsOf(order.coin));
-    return {
-      action,
-      coin: order.coin,
-      dirCN: directionCN(closesDir),
-      priceStr: fmtNum(order.price, prec),
-      label: order.kind ? (order.kind === "TP" ? "止盈" : "止损") : "",
-    };
+    const view = pos ? derivePositionView(pos) : null;
+    const line = view ? exitOrderLine(view, order) : `离场挂单  @ ${fmtNum(order.price, pricePrecisionOf(szDecimalsOf(order.coin)))}`;
+    return { action, coin: order.coin, line };
   }
 
   close() { watcherRegistry.delete(this); this.closing = true; this.clearTimers(); try { this.ws?.close(); } catch {} }
