@@ -1,18 +1,20 @@
-// HYPE 跟单执行器入口（单目标，对账循环）。一期 dry-run：只产 would-place，不签名不下单。
+// HYPE 跟单执行器入口（单目标，对账循环）。一期 dry-run：只产 would-*，不签名不下单。
 // 用法：node service/HYPE-copy/main.mjs --target=<id> --config=service/HYPE-copy/targets.json
-// 通知：每轮对账后把 开/加/减/平 + 告警 合成一条 TG 汇总推送（去重 + 计时）；每动作落 JSONL。
-import { loadTargets } from "./process/mapping.mjs";
-import { mapSymbol } from "./process/mapping.mjs";
-import { computeRatio, computeDesired, MIN_ORDER_NOTIONAL_USD } from "./process/sizing.mjs";
-import { recommendMinCapital } from "./process/recommend.mjs";
-import { planReconcile } from "./process/reconcile.mjs";
-import { add, mul, absStr } from "./process/precision.mjs";
-import { ENVS, fetchTargetState, fetchHypePrices, buildHypeAssetIndex, placeDryRun, log } from "./api/index.mjs";
+// 资金模型 v3（spec 07/09）：每币独立预算 + 生存杠杆 + 逐仓保证金防守；编排走 planBudgetReconcile。
+// 只跟部署后新开仓（启动基线快照，spec 09 §3.6）；myPosByCoin/baseline 持久化跨重启。
+import { loadTargets, mapSymbol } from "./process/mapping.mjs";
+import { planBudgetReconcile } from "./process/reconcile.mjs";
+import { add, sub, mul, div, absStr, gt } from "./process/precision.mjs";
+import { ENVS, fetchTargetState, fetchHypePrices, buildHypeAssetIndex, placeDryRun, buildWouldUpdateLeverage, buildWouldUpdateMargin, log } from "./api/index.mjs";
 import { recordAction, pushRoundSummary, decidePushLine } from "./notify/index.mjs";
-import { buildHeader, buildFooter, buildPositionCards, fmtClock, lineStart, lineStop, buildRoundSummary } from "./notify/templates.mjs";
+import { buildHeader, buildFooter, buildPositionCards, fmtClock, lineStop, buildRoundSummary } from "./notify/templates.mjs";
 import { watchSignal, makeSingleFlight, DEFAULT_SIGNAL_DIR } from "../lib/copy-signal/index.mjs";
+import { loadCopyState, saveCopyState } from "./tool/copyStateStore.mjs";
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { join, dirname } from "node:path";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // 执行腿参数（blueprint §10.6 建议默认）
 const RECONCILE_INTERVAL_SEC = 180; // 周期对账兜底间隔（事件驱动主触发用信号；轮询仅防漏接）
@@ -33,20 +35,46 @@ function parseArgs(argv) {
 
 // 跟单生命周期 + 通知状态（编排层持有；纯逻辑层不沾状态）
 const state = {
-  phase: "idle",
-  anchoredRatio: null,
-  lastWouldHold: new Map(), // coin → 带符号 size（上一轮 would-hold）；喂 diffDelta 当 current
+  pendingStartup: true, // 首轮 = 启动 + 建基线
+  myPosByCoin: new Map(), // coin → {margin,openSize,openTargetSzi,leverage,side,curSize}（spec 09 §3.4）
+  baselineCoins: new Set(), // 部署前存量币，永不跟（spec 09 §3.6）
+  baselineCaptured: false, // 是否已建基线（区分"确无仓"与"状态丢失"，降级安全）
   lastAlertFp: new Set(), // "coin:result"：持续告警去重
-  wasFollowing: false, // min-capital 仅锚定轮推一次
-  pendingStartup: true, // 首轮 = 启动 + 初始镜像同步
-  lastCrByCoin: new Map(), // coin → cr（目标累计已实现，平仓快照用）
-  lastCfByCoin: new Map(), // coin → cf（目标累计资金费率）
-  lastTargetSziByCoin: new Map(), // coin → szi（目标仓位量，平仓卡片用）
-  lastLeverageByCoin: new Map(), // coin → leverage（目标杠杆，平仓卡片用）
+  // 平仓 P&L 快照（目标平仓后 coin 从 mappable 消失，靠此取值；close 卡片用）
+  lastCrByCoin: new Map(),
+  lastCfByCoin: new Map(),
+  lastTargetSziByCoin: new Map(),
+  lastLeverageByCoin: new Map(),
 };
 
-// 单轮对账（顺序铁律见总纲 §2.2）。返回收集的事件，由调用方统一记录 + 汇总推送。
-async function reconcileOnce(env, target, avail, push) {
+// 应用 orchestrator 产出的 stateUpdates 到 myPosByCoin（副作用集中此处，纯函数不改 Map）
+function applyStateUpdate(su) {
+  const { coin, op, payload } = su;
+  if (op === "set") state.myPosByCoin.set(coin, { ...payload });
+  else if (op === "delete") state.myPosByCoin.delete(coin);
+  else if (op === "setCurSize") { const p = state.myPosByCoin.get(coin); if (p) p.curSize = payload.curSize; }
+  else if (op === "addMargin") { const p = state.myPosByCoin.get(coin); if (p) p.margin = add(String(p.margin ?? "0"), String(payload.addMargin)); }
+  else if (op === "baseline-remove") state.baselineCoins.delete(coin);
+}
+
+// 仓位卡片：当前 myPosByCoin（我方镜像现状）+ 目标数据（对齐 watch 双卡片风格）
+function buildMirrorCards(mappable, prices, assetIndex) {
+  const byCoin = new Map(mappable.map((m) => [m.coin, m]));
+  const positions = [];
+  for (const [coin, p] of state.myPosByCoin) {
+    const m = byCoin.get(coin);
+    const meta = assetIndex.get(coin);
+    positions.push({
+      coin, size: p.curSize, leverage: p.leverage, szDecimals: meta?.szDecimals,
+      refPx: prices[coin] ?? null, marginUsed: m?.marginUsed, targetEntryPx: m?.entryPx, targetSzi: m?.szi,
+    });
+  }
+  if (positions.length === 0) return "📊 跟单仓位：无（等待目标新开仓）";
+  return buildPositionCards(positions);
+}
+
+// 单轮对账（v3 预算模型）。返回收集的事件，由调用方统一记录 + 汇总推送。
+async function reconcileOnce(env, target, avail, push, stateDir) {
   const t0 = Date.now();
   const [rawPositions, prices, assetIndex] = await Promise.all([
     fetchTargetState(env, target.source.address),
@@ -54,179 +82,126 @@ async function reconcileOnce(env, target, avail, push) {
     buildHypeAssetIndex(env),
   ]);
   const t1 = Date.now();
+  const events = [];
 
-  const events = []; // 待记录 + 待推送的动作；顺序即推送顺序
-
-  // 标的映射：不可映射 → skip-unmappable 告警，不计 ratio 分母
-  // universe 非空才传入校验（冷启动/失败时 assetIndex 空 → 跳过校验直通，避免误判全不可映射）
+  // 标的映射：不可映射 → skip-unmappable 告警。universe 空时跳过校验直通（冷启动/失败兜底）。
   const universe = assetIndex && assetIndex.size > 0 ? assetIndex : undefined;
   const mappable = [];
   for (const p of rawPositions) {
     const coin = mapSymbol(p.symbol, target.source.platform, universe);
     if (coin === null) events.push({ coin: p.symbol, side: "", result: "skip-unmappable", reason: "无 hype 映射" });
-    else if (Number(p.szi) !== 0) mappable.push({ coin, szi: p.szi, marginUsed: p.marginUsed, leverage: p.leverage, entryPx: p.entryPx, cr: p.cr, cf: p.cf });
+    else if (Number(p.szi) !== 0) mappable.push({ coin, szi: p.szi, marginUsed: p.marginUsed, leverage: p.leverage, entryPx: p.entryPx, lp: p.lp, cr: p.cr, cf: p.cf });
   }
-
-  let targetMappableMargin = "0";
+  // 平仓 P&L 快照（目标平仓后 coin 消失，靠此取盈亏）
   for (const m of mappable) {
-    targetMappableMargin = add(targetMappableMargin, m.marginUsed);
-    // 平仓快照：记下本轮 cr/cf（目标平仓后 coin 从 mappable 消失，靠此快照取盈亏）
     state.lastCrByCoin.set(m.coin, String(m.cr ?? "0"));
     state.lastCfByCoin.set(m.coin, String(m.cf ?? "0"));
     state.lastTargetSziByCoin.set(m.coin, String(m.szi ?? "0"));
     state.lastLeverageByCoin.set(m.coin, m.leverage);
   }
-  const hasMappable = mappable.length > 0 && Number(targetMappableMargin) > 0;
-  const prevCoins = new Set(state.lastWouldHold.keys()); // 上轮持仓币种（平仓/开仓检测用）
-  const prevRatio = state.anchoredRatio; // 平仓 P&L 快照（hasMappable=false 时 ratio 为 null，靠此取值）
 
-  let desired = [];
-  let desiredEnriched = [];
-  let ratio = null;
-  if (hasMappable) {
-    if (state.anchoredRatio == null) {
-      state.anchoredRatio = computeRatio(avail, target.initialDeployPct, targetMappableMargin);
-      log(`[${target.id}] 锚定 ratio=${state.anchoredRatio}（avail=${avail} × ${target.initialDeployPct} / margin=${targetMappableMargin}）`);
-    }
-    state.phase = "following";
-    ratio = state.anchoredRatio;
+  const startupRound = state.pendingStartup;
 
-    const rec = recommendMinCapital(mappable, prices, target.initialDeployPct, ratio);
-    const canFollowCoins = rec.perLeg.filter((l) => l.canFollow).map((l) => l.coin).join(",") || "-";
-    events.push({ coin: "", side: "", result: "min-capital", minCapital: rec.minCapital, canFollowCoins, ratio });
-
-    const desiredRaw = computeDesired(mappable, ratio, prices);
-    desired = desiredRaw.filter((d) => !d.skipped);
-    for (const d of desiredRaw) if (d.skipped) events.push({ coin: d.coin, side: "", result: "skip-no-price", reason: d.reason });
-
-    // 增强 desired 仓位元数据（leverage / szDecimals / refPx），供模板卡片展示
-    desiredEnriched = desired.map((d) => {
-      const m = mappable.find((x) => x.coin === d.coin);
-      const meta = assetIndex.get(d.coin);
-      return {
-        coin: d.coin,
-        size: d.size,
-        leverage: m?.leverage,
-        szDecimals: meta?.szDecimals,
-        refPx: prices[d.coin] ?? null,
-        marginUsed: m?.marginUsed,
-        targetEntryPx: m?.entryPx,
-        targetSzi: m?.szi,
-        targetCr: m?.cr,
-        targetCf: m?.cf,
-      };
-    });
-  } else {
-    state.phase = state.lastWouldHold.size > 0 ? "flat" : "idle";
-    state.anchoredRatio = null; // flat → 下轮重锚
+  // 首次部署 / 状态丢失 → 快照目标当前持仓为 baseline（只跟部署后新开，spec 09 §3.6 安全默认）
+  if (!state.baselineCaptured) {
+    state.baselineCoins = new Set(mappable.map((m) => m.coin));
+    state.baselineCaptured = true;
+    saveCopyState(stateDir, target.id, state);
+    events.push({ coin: "", side: "", result: "baseline", coins: [...state.baselineCoins] });
+    log(`[${target.id}] 建立基线快照（只跟部署后新开）：${[...state.baselineCoins].join(",") || "无存量仓"}`);
   }
 
-  // 对账：current = 上一轮 would-hold 中仍在 desired 的币种（关闭币走平仓检测，不走 planReconcile，防重复 close 行）
-  const desiredCoinSet = new Set(desired.map((d) => d.coin));
-  const current = [...state.lastWouldHold]
-    .filter(([coin]) => desiredCoinSet.has(coin))
-    .map(([coin, size]) => ({ coin, size }));
-  const caps = {
-    maxDeployPct: target.maxDeployPct,
-    maxPositionPct: target.maxPositionPct,
-    minDeltaPct: target.minDeltaPct,
-    minNotional: MIN_ORDER_NOTIONAL_USD,
-    minOrderSize: DEFAULT_MIN_ORDER_SIZE,
-    currentDeployedNotional: "0",
+  // v3 编排（dry-run getMyLiqPrice 缺省 → planBudgetReconcile 内部用 computeMyLiqPrice 模拟）
+  const { actions, stateUpdates, alerts } = planBudgetReconcile({
+    mappable, prices, assetIndex,
+    myPosByCoin: state.myPosByCoin,
+    config: { minOpenCapital: target.minOpenCapital, maxCoinCapital: target.maxCoinCapital, minDeltaPct: target.minDeltaPct, minOrderSize: DEFAULT_MIN_ORDER_SIZE },
     availBalance: avail,
-  };
-  const { actions } = planReconcile(desired, current, caps, prices);
+    baselineCoins: state.baselineCoins,
+  });
 
+  // 执行 actions → dry-run 构造 + 收集事件（顺序：开仓先 would-update-leverage 再 would-place）
   for (const a of actions) {
-    const side = a.isBuy ? "buy" : "sell";
-    const base = { coin: a.coin, side, currentSize: a.currentSize, desiredSize: a.desiredSize, deltaSize: a.deltaSize, refPx: a.refPx, ratio };
-    if (a.decision !== "place") {
-      // skip 类事件：附加上下文供模板展示（仓位名义 / 上限数值）
-      const posNotional = a.refPx ? mul(absStr(a.desiredSize ?? "0"), String(a.refPx)) : null;
-      events.push({
-        ...base, result: a.decision, size: a.size, reason: a.decision,
-        szDecimals: assetIndex.get(a.coin)?.szDecimals,
-        ...(a.decision === "skip-maxpos" && posNotional ? { positionNotional: posNotional, maxPosNotional: mul(String(avail), String(target.maxPositionPct)), availBalance: avail, maxPositionPct: target.maxPositionPct } : {}),
-        ...(a.decision === "skip-capped" ? { wouldDeploy: add(String(caps.currentDeployedNotional), mul(absStr(a.desiredSize ?? "0"), String(a.refPx))), maxDeployNotional: mul(String(avail), String(target.maxDeployPct)) } : {}),
-      });
-      continue;
-    }
     const meta = assetIndex.get(a.coin);
-    if (!meta) { events.push({ coin: a.coin, side, result: "skip-unmappable", reason: "hype universe 无此 coin" }); continue; }
-    const wp = placeDryRun(
-      { coin: a.coin, isBuy: a.isBuy, size: a.size, refPx: a.refPx, reduceOnly: a.reduceOnly },
-      { assetIndex: meta.index, szDecimals: meta.szDecimals, slippageBps: MAX_SLIPPAGE_BPS, dryRun: target.dryRun },
-    );
-    // dry-run fillPx 假定=refPx（总纲 §3.2 ActionResult）→ slippageBps 0、fee 估算 "0"
-    events.push({ ...base, result: "place", size: wp.order.s, fillPx: a.refPx, slippageBps: 0, fee: "0", szDecimals: meta.szDecimals });
+    if (a.decision === "place") {
+      if (!meta) { events.push({ coin: a.coin, result: "skip-unmappable", reason: "hype universe 无此 coin" }); continue; }
+      if (a.reason === "open" && a.openLeverage != null) {
+        buildWouldUpdateLeverage({ assetIndex: meta.index, leverage: a.openLeverage, dryRun: target.dryRun });
+        events.push({ coin: a.coin, result: "leverage", leverage: a.openLeverage, reason: "open" });
+      }
+      const wp = placeDryRun(
+        { coin: a.coin, isBuy: a.isBuy, size: a.size, refPx: a.refPx, reduceOnly: a.reduceOnly },
+        { assetIndex: meta.index, szDecimals: meta.szDecimals, slippageBps: MAX_SLIPPAGE_BPS, dryRun: target.dryRun },
+      );
+      if (a.reason === "target-gone" || a.reason === "reverse-close") {
+        // 平仓：出富 close 卡片（用上轮快照的目标 cr/cf 折算我方 P&L；权威 closedPnl 留 Part B userFills）
+        const tCr = state.lastCrByCoin.get(a.coin) ?? "0";
+        const tSzi = state.lastTargetSziByCoin.get(a.coin) ?? "0";
+        const ratio = gt(absStr(tSzi), "0") ? div(absStr(a.currentSize ?? "0"), absStr(tSzi)) : "0";
+        events.push({
+          coin: a.coin, result: "close", szDecimals: meta.szDecimals,
+          targetPnl: tCr, targetFee: state.lastCfByCoin.get(a.coin) ?? "0",
+          mirrorPnl: mul(tCr, ratio), mirrorFee: "0",
+          prevSize: a.currentSize, targetPrevSzi: tSzi, leverage: state.lastLeverageByCoin.get(a.coin),
+        });
+      } else {
+        events.push({
+          coin: a.coin, side: a.isBuy ? "buy" : "sell", result: "place",
+          currentSize: a.currentSize, desiredSize: a.desiredSize, deltaSize: sub(String(a.desiredSize ?? "0"), String(a.currentSize ?? "0")),
+          size: wp.order.s, refPx: a.refPx, fillPx: a.refPx, slippageBps: 0, fee: "0",
+          szDecimals: meta.szDecimals, reason: a.reason, openLeverage: a.openLeverage, M0: a.M0,
+        });
+      }
+    } else if (a.decision === "would-defend") {
+      if (!meta) continue;
+      buildWouldUpdateMargin({ assetIndex: meta.index, isBuy: a.isBuy, amountUsd: a.wouldAddMargin, dryRun: target.dryRun });
+      events.push({ coin: a.coin, result: "would-defend", wouldAddMargin: a.wouldAddMargin, ntli: a.ntli, liqBefore: a.liqBefore, liqAfter: a.liqAfter, exhausted: a.exhausted, targetLp: a.targetLp, size: a.size });
+    } else {
+      // skip-unmappable / skip-mindust / skip-no-open / noop
+      events.push({ coin: a.coin, side: "", result: a.decision, reason: a.reason, targetLp: a.targetLp });
+    }
+  }
+  // alerts → 告警事件（top-N 超限 / 认栽封顶）
+  for (const al of alerts) {
+    if (al.type === "max-positions") events.push({ coin: "", result: "alert", reason: `资金仅够跟 ${al.maxPositions} 个币，未跟：${(al.dropped || []).join(",") || "-"}` });
+    else if (al.type === "defend-exhausted") events.push({ coin: al.coin, result: "alert", reason: `${al.coin} 已达单币上限 $${al.maxCoinCapital}，强平价 ${al.newLiqPx} 仍早于目标 lp ${al.targetLp}` });
   }
 
-  // 平仓检测：上轮有、本轮 desired 无 → 目标平仓
-  const newCoins = desired.filter((d) => !prevCoins.has(d.coin)).map((d) => d.coin);
-  for (const coin of prevCoins) {
-    if (!desiredCoinSet.has(coin) && prevRatio != null) {
-      const targetPnl = state.lastCrByCoin.get(coin) ?? "0";
-      const targetFee = state.lastCfByCoin.get(coin) ?? "0";
-      const meta = assetIndex.get(coin);
-      events.push({
-        coin, side: "", result: "close",
-        szDecimals: meta?.szDecimals,
-        targetPnl, targetFee,
-        mirrorPnl: mul(targetPnl, String(prevRatio)),
-        mirrorFee: "0", // dry-run 无手续费
-        ratio: prevRatio,
-        prevSize: state.lastWouldHold.get(coin) ?? "0",
-        targetPrevSzi: state.lastTargetSziByCoin.get(coin) ?? "0",
-        leverage: state.lastLeverageByCoin.get(coin),
-      });
-    }
-  }
+  // 应用状态更新 + 落盘（副作用集中）
+  for (const su of stateUpdates) applyStateUpdate(su);
+  saveCopyState(stateDir, target.id, state);
 
   const t2 = Date.now();
   const fullMs = t2 - t0;
   const execMs = t2 - t1;
 
   // 记录（每动作一条 JSONL + journald，始终）+ 收集推送行（去重）
-  const startupRound = state.pendingStartup;
   state.pendingStartup = false;
   const lines = [];
   const newAlertFp = new Set();
   for (const ev of events) {
     recordAction({ targetId: target.id, dryRun: target.dryRun, fullMs, execMs, ...ev });
-    if (startupRound && ev.result === "place") continue; // 首轮 place 由初始镜像同步卡片覆盖，不逐仓推
-    const line = decidePushLine(ev, { lastAlertFp: state.lastAlertFp, wasFollowing: state.wasFollowing, newAlertFp });
+    if (ev.result === "baseline" || ev.result === "leverage") continue; // 基线/杠杆内部记录，不单独推
+    if (startupRound && ev.result === "place") continue; // 首轮 place 由启动卡片覆盖，不逐仓推
+    const line = decidePushLine(ev, { lastAlertFp: state.lastAlertFp, wasFollowing: !startupRound, newAlertFp });
     if (line) lines.push(line);
   }
   state.lastAlertFp = newAlertFp;
-  state.wasFollowing = hasMappable;
 
-  // 更新 would-hold = 本轮 desired 镜像（关闭仓自然从集合移除）
-  state.lastWouldHold = new Map(desired.map((d) => [d.coin, String(d.size)]));
+  // banner kind：启动轮 startup；常规轮据 actions 含开/平判定
+  const hasOpen = actions.some((a) => a.decision === "place" && a.reason === "open");
+  const hasClose = actions.some((a) => a.decision === "place" && (a.reason === "target-gone" || a.reason === "reverse-close"));
+  const kind = startupRound ? "startup" : hasClose ? "round_close" : hasOpen ? "round_open" : "round";
 
-  // 构建轮次汇总（卡片式，对齐 watch 风格）
-  const clock = fmtClock();
-  const headerId = buildHeader(target.id, target.source.address, target.subAccount);
-  // banner kind 推导：启动轮 fixed，常规轮根据事件含 close/open 判定
-  let kind;
-  if (startupRound) {
-    kind = hasMappable ? "initial_sync" : "startup";
-  } else {
-    const hasClose = [...prevCoins].some((c) => !desiredCoinSet.has(c));
-    const hasOpen = newCoins.length > 0;
-    kind = hasClose ? "round_close" : hasOpen ? "round_open" : "round";
-  }
-  // 仅有效内容时推送（常规轮无变化静默跳过）
-  const hasContent = startupRound || (lines && lines.length > 0);
-  // skip-maxpos 币种：目标仓位可展示，跟单仓位标 ⛔ 不跟
-  const skippedCoins = new Set(events.filter((e) => e.result === "skip-maxpos").map((e) => e.coin));
-  // 仓位卡片：有仓展示双卡片，无仓展示"无持仓"（对齐 watch render.mjs）
-  const activeCards = hasMappable ? buildPositionCards(desiredEnriched, skippedCoins) : "🎯 目标 / 📊 跟单：无持仓";
+  const cards = buildMirrorCards(mappable, prices, assetIndex);
+  const hasContent = startupRound || lines.length > 0;
   if (hasContent) {
     const summary = buildRoundSummary({
       kind,
-      clock,
-      headerId,
-      positionCards: activeCards,
+      clock: fmtClock(),
+      headerId: buildHeader(target.id, target.source.address, target.subAccount),
+      positionCards: cards,
+      startupExtra: startupRound ? `只跟部署后新开仓${state.baselineCoins.size ? `（忽略存量：${[...state.baselineCoins].join(",")}）` : ""}` : "",
       lines,
       footer: buildFooter(execMs, fullMs),
     });
@@ -243,24 +218,28 @@ async function main() {
   }
 
   const env = ENVS.production;
-  // 跟单推送独立配置：token 走文件根 tgToken，chat 走每目标 tgChat（与 watch 物理分离）
   const push = { token: tgToken, chat: target.tgChat };
-  // dry-run 我方可用余额：一期为模拟输入（availBalanceSim）。真实余额拉取留待真实下单阶段。
+  // dry-run 我方可用余额：仍为模拟输入（availBalanceSim）。真实余额（clearinghouseState）留 Part B B-1。
   const avail = String(target.availBalanceSim ?? flags.avail ?? "");
   if (!avail || !(Number(avail) > 0)) {
     throw new Error("dry-run 需 availBalanceSim（targets.json）或 --avail=<余额> 提供模拟可用余额");
   }
 
-  // single-flight：信号触发 / 180s 兜底 / 启动首轮 全部汇入同一串行入口，
-  // 防并发改 state / 双记录 /（实盘）双下单；跑中再触发合并为结束后补跑一次。
+  // 状态持久化目录：--state-dir 覆盖，默认 HYPE-copy/state。重启恢复 baseline + myPos（spec 09 §3.6）。
+  const stateDir = flags["state-dir"] || join(__dirname, "state");
+  const restored = loadCopyState(stateDir, target.id);
+  state.baselineCaptured = restored.baselineCaptured;
+  state.baselineCoins = restored.baselineCoins;
+  state.myPosByCoin = restored.myPos;
+  if (restored.baselineCaptured) log(`[${target.id}] 恢复状态：baseline ${restored.baselineCoins.size} 币 / 在跟 ${restored.myPos.size} 币`);
+
+  // single-flight：信号触发 / 180s 兜底 / 启动首轮 汇入同一串行入口，防并发改 state / 双记录 /（实盘）双下单。
   const trigger = makeSingleFlight(async () => {
-    try { await reconcileOnce(env, target, avail, push); }
+    try { await reconcileOnce(env, target, avail, push, stateDir); }
     catch (e) { log(`[${target.id}] 对账失败：${e.message}`); }
   });
 
-  // 信号订阅（事件驱动主触发）：copy 零配置——按 <信号目录>/<source.address>.json 自动派生，
-  // 无需在 targets.json 填路径（可选 copySignalPath 覆盖）。信号目录存在=已 setup → 订阅；否则仅轮询兜底。
-  // 文件名地址统一小写——与 watch 侧派生口径一致（防 checksum/小写不一致导致路径对不上）
+  // 信号订阅（事件驱动主触发）：按 <信号目录>/<source.address 小写>.json 自动派生。
   const signalPath = target.copySignalPath || join(DEFAULT_SIGNAL_DIR, `${String(target.source.address).toLowerCase()}.json`);
   let stopWatch = null;
   if (existsSync(dirname(signalPath))) {
@@ -270,7 +249,7 @@ async function main() {
     log(`[${target.id}] 信号目录不存在（${dirname(signalPath)}）→ 仅 ${RECONCILE_INTERVAL_SEC}s 轮询兜底`);
   }
 
-  // 关闭跟单（进程停止）：SIGTERM/SIGINT → 推 ⏹ 后退出（区别于"目标平仓 🏁"）
+  // 关闭跟单（进程停止）：SIGTERM/SIGINT → 推 ⏹ 后退出
   let shuttingDown = false;
   const header = buildHeader(target.id, target.source.address, target.subAccount);
   const shutdown = async (sig) => {
@@ -284,7 +263,7 @@ async function main() {
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));
 
-  log(`HYPE-copy 启动：target=${target.id} dryRun=${target.dryRun} avail(sim)=${avail} 兜底=${RECONCILE_INTERVAL_SEC}s`);
+  log(`HYPE-copy 启动：target=${target.id} dryRun=${target.dryRun} avail(sim)=${avail} 预算 M0=${target.minOpenCapital}/max=${target.maxCoinCapital} 兜底=${RECONCILE_INTERVAL_SEC}s`);
 
   await trigger(); // 启动首轮
   setInterval(trigger, RECONCILE_INTERVAL_SEC * 1000); // 周期兜底（防漏接信号）

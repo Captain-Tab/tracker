@@ -5,10 +5,15 @@
 import { readFileSync } from "node:fs";
 import { isAddress } from "../../tool/format.mjs";
 
-// targets 可选字段默认值（总纲 §3.1 注释）；dryRun 一期恒真。
+// targets 可选字段默认值。v3 预算模型（spec 07/09）：minOpenCapital/maxCoinCapital；dryRun 一期恒真。
+// initialDeployPct/maxDeployPct 为旧 ratio 模型遗留（@deprecated），保留默认防历史配置断裂。
 const TARGET_DEFAULTS = {
-  initialDeployPct: 0.5,
-  maxDeployPct: 0.9,
+  allocationModel: "budget",
+  minOpenCapital: 500,
+  maxCoinCapital: 1000,
+  minDeltaPct: 0.003,
+  initialDeployPct: 0.5, // @deprecated（旧 ratio）
+  maxDeployPct: 0.9, // @deprecated（旧 ratio）
   dryRun: true,
 };
 
@@ -86,5 +91,21 @@ export function loadTargets(path) {
     throw new Error(`target.exchange 必须为 "hype"（执行所恒 hype），当前: ${target.exchange}`);
   }
 
-  return { tgToken: cfg.tgToken ?? null, target: { ...TARGET_DEFAULTS, ...target } };
+  const merged = { ...TARGET_DEFAULTS, ...target };
+
+  // v3 预算模型必填校验（spec 09 §3.5）：minOpenCapital/maxCoinCapital 必须 >0 且 max ≥ min。
+  const minOpen = Number(merged.minOpenCapital);
+  const maxCoin = Number(merged.maxCoinCapital);
+  if (!(minOpen > 0) || !(maxCoin > 0)) {
+    throw new Error(`v3 预算模型需 minOpenCapital/maxCoinCapital > 0，当前: ${merged.minOpenCapital}/${merged.maxCoinCapital}`);
+  }
+  if (maxCoin < minOpen) {
+    throw new Error(`maxCoinCapital(${maxCoin}) 必须 ≥ minOpenCapital(${minOpen})`);
+  }
+  // 实盘（dryRun=false）必须有 masterAddress（我方持仓账户，查余额/持仓用；与 source.address 目标地址正交）。
+  if (merged.dryRun === false && !isAddress(merged.masterAddress)) {
+    throw new Error(`实盘（dryRun:false）需合法 masterAddress（我方账户地址），当前: ${merged.masterAddress}`);
+  }
+
+  return { tgToken: cfg.tgToken ?? null, target: merged };
 }

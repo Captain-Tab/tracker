@@ -172,17 +172,16 @@ export function lineFor(a) {
       return `${ICON.skip} ${coin} 名义 < 最小 $10，跳过`;
     case "skip-no-price":
       return `${ICON.skip} ${coin} 无价格数据，本轮跳过`;
-    case "skip-maxpos": {
-      // 仓位过重不跟：目标仓按比例缩小后仍需 X，超单仓风控上限
-      const notional = a.positionNotional ? `$${fmtDisplayUsd(a.positionNotional)}` : "";
-      const limit = a.maxPosNotional ? `$${fmtDisplayUsd(a.maxPosNotional)}` : "单仓上限";
-      const limitFormula = a.maxPosNotional ? `（余额 $${fmtDisplayUsd(a.availBalance)} × ${a.maxPositionPct ? fmtRatioPct(a.maxPositionPct) : ""}）` : "";
-      return `${ICON.skip} ${coin} 仓位过重不跟${notional ? `——目标仓按比例缩小后仍需 ${notional}` : ""}，超单仓上限 ${limit}${limitFormula}`;
-    }
-    case "skip-capped": {
-      const would = a.wouldDeploy ? `需 $${fmtDisplayUsd(a.wouldDeploy)}` : "部署需求";
-      const limit = a.maxDeployNotional ? `资金上限 $${fmtDisplayUsd(a.maxDeployNotional)}` : "超资金上限";
-      return `${ICON.skip} ${coin} ${would} > ${limit}，加仓拦截`;
+    case "skip-no-open":
+      // v3：开仓价已越过目标 lp 侧（selectLeverage 返回 null），不开仓（spec 09 §3.1）
+      return `${ICON.skip} ${coin} 开仓价已越目标强平价侧${a.targetLp ? `（目标 lp $${fmtDisplayUsd(a.targetLp)}）` : ""}，不开仓`;
+    case "would-defend": {
+      // v3 逐仓保证金防守：补保证金追回强平价 ≥ 目标 lp（size 不变，spec 09 §3.1）
+      const add = a.wouldAddMargin ? `$${fmtDisplayUsd(a.wouldAddMargin)}` : "保证金";
+      const before = a.liqBefore ? `$${fmtDisplayUsd(a.liqBefore)}` : "-";
+      const after = a.liqAfter ? `$${fmtDisplayUsd(a.liqAfter)}` : "-";
+      const tail = a.exhausted ? "，⚠️ 已达单币上限仍追不上目标 lp（认栽封顶）" : "";
+      return `🛡 ${coin} 补保证金 ${add}（强平价 ${before}→${after}，size 不变）${tail}`;
     }
     case "close": {
       // 双卡片格式：🎯 目标 + 📊 跟单（对齐活跃仓位卡片风格）
@@ -216,6 +215,9 @@ export function lineFor(a) {
       const coins = a.canFollowCoins ?? "-";
       return `${ICON.minCap} 最低本金下界：$${mc}（仅保证最大仓 ≥ $10 名义，可跟 ${coins}）`;
     }
+    case "alert":
+      // 编排告警（top-N 未跟币 / 防守认栽封顶）——reason 自带完整文案
+      return `${ICON.error} ${escapeHtml(a.reason ?? "")}`;
     case "failed":
     case "error":
       return `${ICON.error} ${coin} 执行失败 — ${escapeHtml(a.reason ?? "未知")}`;

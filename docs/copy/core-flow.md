@@ -2,6 +2,7 @@
 
 > 目标动作 → 我方镜像完成的完整链路与节点拆解。
 > 完整落地方案（信号契约 / 延迟 / P0-P3 子计划 / 验收）见 spec：`.claude/kit/spec/2026-06-29-hype-copy-event-driven.md`。
+> **⚠️ 2026-07-04（Part A 完成）**：主循环已切 **v3 预算模型**——`reconcile.planBudgetReconcile`（每币预算 + 生存杠杆 + 逐仓防守）取代旧 `computeRatio/computeDesired`；`decideLeg` 四分支；启动基线快照只跟部署后新开仓。下方框图 N5 的 ratio 步骤为旧描述，实际见文末 N5 文字说明。
 
 ---
 
@@ -29,7 +30,7 @@
 │        → mapSymbol(sodex→hype + hype universe 校验) 过滤可映射  │
 │        → computeRatio(锚定) → computeDesired(保证金等比换算)    │
 │        → planReconcile(desired, current=lastWouldHold)         │
-│        → diffDelta → decideLeg 六分支校验门                    │
+│        → diffDelta → decideLeg 四分支校验门                    │
 │        → placeDryRun(IOC would-place，不签名) ─t2             │
 │ N6  notify：                                                  │
 │      → 每动作 recordAction（JSONL+journald，含 fullMs/execMs） │
@@ -94,7 +95,7 @@
 - **做什么**：`fs.watchFile`(~1s) **mtime 变即触发**（非 `seq>lastSeq`，否则 watch 重启 seq 归零会漏信号）→ `ts` 去重 → **single-flight**（同时只一个 reconcile，跑中置 pending、结束补跑一次取最新态 = coalesce）
 - **数据源**：信号文件（`{seq, ts, address}`，seq/ts 仅去重+缺口检测，非触发 gate）
 - **延迟**：~1s（轮询；可调 0.5s / `fs.watch` 事件近 0）
-- **要点**：single-flight 防信号与 180s 兜底**并发**改 `lastWouldHold` / 双记录 /（实盘）双下单
+- **要点**：single-flight 防信号与 180s 兜底**并发**改 `myPosByCoin` / 双记录 /（实盘）双下单
 
 ### N5 · reconcileOnce（对账，幂等）
 
@@ -102,9 +103,9 @@
 - **做什么**：
   - `t0` → 并行拉 `fetchTargetState(sodex)` ∥ `fetchHypePrices(hype)` ∥ `buildHypeAssetIndex(缓存)` → `t1`
   - `mapSymbol`（sodex→hype + hype universe 校验）过滤可映射
-  - `computeRatio`（锚定）→ `computeDesired`（保证金等比换算）
-  - `planReconcile(desired, current=lastWouldHold)` → `diffDelta` → `decideLeg` 六分支校验门
-  - `placeDryRun`（IOC would-place，不签名）→ `t2`
+  - `planBudgetReconcile`（v3 编排）：baseline 过滤 → 逐币分派（新开 `selectLeverage`+`planOpen` / 反手先平 / 同向 `planFollow`+`planDefend` / 目标消失平仓）→ `decideLeg` 四分支单点 gate → 产 actions/stateUpdates/alerts
+  - 执行：新开先 `buildWouldUpdateLeverage`（生存杠杆）再 `placeDryRun`（IOC would-place）；防守走 `buildWouldUpdateMargin`；均不签名 → `t2`
+  - `applyStateUpdate` 落 `myPosByCoin` + `copyStateStore` 持久化（跨重启）
 - **数据源**：sodex REST（目标仓）+ hype REST（价格）+ 缓存（assetIndex）
 - **延迟**：拉取 0.3–1s+（并行，经 WARP）+ 计算 ~10ms
 - **要点**：对账 = 对齐目标完整净仓（非复制单动作），自愈断线/重启/部分成交/漏单
@@ -115,7 +116,7 @@
 - **做什么**：
   - 每动作 `recordAction`（JSONL + journald，含 `fullMs=t2-t0` / `execMs=t2-t1`）
   - 事件分类 开/加/减/平 + 去重 → `pushRoundSummary` 一条 TG 汇总
-  - 更新 `lastWouldHold` / `lastAlertFp` / `wasFollowing`
+  - 应用 `stateUpdates` 到 `myPosByCoin` + `copyStateStore` 落盘 / 更新 `lastAlertFp`
 - **数据源**：本轮动作结果
 - **延迟**：JSONL 同步写 ~ms；TG 推送是出口（不在 would-place 关键路径）
 

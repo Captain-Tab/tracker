@@ -4,6 +4,71 @@
 
 ---
 
+## HYPE-copy Agent Wallet 授权 CLI + 到期检查 timer（Part B 前置）— 2026-07-04
+
+切实盘 Part B 的密钥/凭据基建：本地授权 agent wallet 的 CLI + server 端 agent 到期主动提醒。**不动真钱、不签单**；真正授权待 B-3 前夕再本地跑。设计见 `docs/copy/agent-wallet.md`，spec `.claude/kit/spec/2026-07-04-agent-expiry-notify.md`。
+
+### 背景
+
+执行器不裸持主钱包私钥，用 Hyperliquid Agent Wallet：主钱包本地签一次 `approveAgent(agentAddress)` 授权一个"只能交易不能提现"的独立 agent 私钥，服务器只存 agent key。agent 带 `valid_until` 过期，过期会导致签不了单、仓位失管，需主动提醒续签。
+
+### 变更
+
+- **`provision/hype-copy-approve-agent.mjs`（新建，repo 根，部署树外）**：agent wallet 授权/续签 CLI。纯函数 `approveAgentForCopy`（只吃 agentAddress，不碰 agent 私钥）+ `resolveAgent`（三模式：A 已有私钥派生 / B 只给地址 / C 生成）+ `formatAgentName`（valid_until 后缀，默认 180 天）；CLI 主私钥 stdin 隐藏输入、仅内存、二次确认；`--renew` 续签（禁生成）。放 `service/` 外 → 永不随部署上服务器（主私钥工具只在本地）。单测 8/8。
+- **`service/HYPE-copy/expiry-check.mjs`（新建，server 端）**：agent 到期主动检查。纯函数 `evaluateExpiry`（据 extraAgents 判 not-found/expired/expiring/ok）+ `buildExpiryMessage` + 薄 IO（查 `info.extraAgents(masterAddress)` → 按 agentName 前缀 `hype-copy` 匹配 → 临期/过期/撤销 TG 告警）。**B1 纯查询**：零存储、validUntil 实时查、临期每天催、续签自停；dry-run 无 masterAddress → 静默跳过。单测 8/8。
+- **`service/app/index.mjs`**：新增 `HYPE-copy-expiry.{service,timer}`（oneshot + 每日 09:00 Asia/Shanghai + `Persistent=true`，随 `hypeCopy.enabled` 启用；OnFailure 告警）。
+- **`setup/setup-copy.sh`**：完成提示补 expiry timer（app apply 自动建单元）。
+- **`.gitignore`**：合并 provision 密钥兜底（`*.key`/`*.pem`）+ copy 运行期 `service/HYPE-copy/state/`；删冗余 `provision/.gitignore`。
+- **文档**：`docs/copy/agent-wallet.md`（新建，十章 + 流程图：概念/原理/三模式/授权流程/安全/续签/到期通知 B1/撤销）；spec 09 §5 指向之。
+
+### 边界
+
+- **不动真钱、不签单**：provision CLI 本地手动跑、真正授权待 B-3 前夕；expiry-check 只读无密钥。
+- **反应式到期处理**（执行器签名失败 → 安全态）留 Part B（耦合 B-3 真实签名）。
+- 不自动续签（需主私钥在服务器，违背红线）；到期由 timer 提醒、人工本地 renew。
+
+### 验证
+
+- 单测：expiry-check 8 + provision 8；HYPE-copy 全量 88/88 绿；`node --check` 全通过。
+- `app render` 确认 `HYPE-copy-expiry.{service,timer}` 单元生成正确（每日 09:00 / Persistent / 随 hypeCopy 启用）。
+- subagent 独立审核 PASS（evaluateExpiry 边界/多agent/null、B1 零存储、三条错误路径、SDK extraAgents 字段、名称前缀匹配、systemd 单元、只读无密钥安全均核实）。
+
+---
+
+## HYPE-copy 切实盘 spec + v3 资金模型接入主循环（Part A 全量，仍 dry-run）— 2026-07-04
+
+取消 dry-run 切真实下单的落地蓝图 + 把 v3 资金分配（每币独立预算 + 生存杠杆 + 逐仓保证金防守）完整接入主循环。**Part A 全部完成（A-C/A-D1/A-D2/A-D3/A-E）**，dry-run 现按 v3 输出；真钱（Part B）另行。spec：`.claude/kit/spec/auto-copy-trade/09-go-live-real-trading.md`。
+
+### 背景
+
+排查发现 v3 资金分配（spec 07）只落了 Phase A（api）+ B（allocation 四纯函数），**C/D/E 从未接线**：`main.mjs` 仍跑旧 ratio、`allocation.mjs` 缺 `planFollow`、`risk.mjs` 未删 skip-maxpos/capped、`targets.json` 已填 v3 字段但代码不读（风控错配）。本次补完接线，dry-run 才真正反映 v3 决策，为动真钱前验证铺路。
+
+### 变更
+
+- **`.claude/kit/spec/auto-copy-trade/09-go-live-real-trading.md`（新建）**：经 4 轮 subagent 核实（v3 缺口 / SDK 契约 / 对抗复查 / 安全审计）。Part A（补完 v3，dry-run）→ gate → Part B（真钱）。含已核实 SDK 契约（§2，**修正：order 回执无 fee 须查 `userFills`**）、启动基线快照（§3.6）、Agent Wallet 操作指引（§5）、14 条安全缺口（§8，S2–S7 为切实盘硬阻断）。
+- **`process/allocation.mjs`（A-D1）**：新增 `planFollow`（size 跟随，followRatio=min(1,|目标szi|/|T0|)，[0,S0] 区间跟减/平/回补，封顶 S0）。
+- **`process/risk.mjs`（A-C）**：`decideLeg` 六分支→四分支，删 skip-maxpos/skip-capped（v3 由 maxCoinCapital 定额 + maxPositions 槽位封顶替代）。
+- **`process/reconcile.mjs`（A-D2）**：新增顶层编排 `planBudgetReconcile`（spec 07 §3.7 纯函数）——baseline 过滤 → 逐币分派（新开 selectLeverage+planOpen / 反手先平 / 同向 planFollow+planDefend / 目标消失平仓）→ decideLeg 单点 gate → top-N（maxPositions 槽位）+ mm=1/(2×maxLeverage) 折算，产 actions/stateUpdates/alerts。`planReconcile` 标 @deprecated。
+- **`main.mjs`（A-D3）**：`reconcileOnce` 从旧 ratio 切到 `planBudgetReconcile`；新增 `state.myPosByCoin`（{margin,openSize,openTargetSzi,leverage,side,curSize}）+ `applyStateUpdate`（set/delete/setCurSize/addMargin/baseline-remove）；**启动基线快照**（只跟部署后新开仓，spec 09 §3.6）；would-place 前先 would-update-leverage（生存杠杆）、would-defend 走 would-update-margin。
+- **`tool/copyStateStore.mjs`（新建，A-D3）**：baseline + myPos 原子落盘/恢复；损坏/缺失 → 降级"未建基线"（重新快照当前为 baseline，绝不当新开跟，安全默认）。
+- **notify（A-E）**：`templates.lineFor` 加 `would-defend`(🛡)/`skip-no-open` 文案、删 skip-maxpos/capped；`index` ALERT_RESULTS 去 maxpos/capped 加 skip-no-open、actionOf 加 defend。
+- **`process/mapping.mjs` + `targets.example.jsonc`（A-E）**：配置 schema 换 v3 字段（allocationModel/minOpenCapital/maxCoinCapital），loadTargets 校验（>0、max≥min、实盘必填 masterAddress）。
+- **`docs/copy/*`**：hype-go-live / hype / core-flow 同步 v3；allocation.md 补 planFollow/planBudgetReconcile。修正 #7（生存杠杆非镜像）、#9（fee 查 userFills）。
+- **`targets.json`**：`chmod 600`（原 0644 含活 TG token，安全审计 S1）。**依赖**：补 `viem`（Part B 签名）。
+
+### 边界
+
+- **仍 dry-run**：`placeDryRun`/`buildWouldUpdate*` 恒 `dryRun!==true` throw 占位；真实余额仍用 availBalanceSim。真钱走 Part B（B-1 余额 / B-2 agent wallet / B-3 签名 / B-4 fee+chase / B-sec 安全 / B-5 翻转）。
+- 平仓（target-gone/reverse-close）出富 close 卡片，dry-run 用上轮快照目标 cr/cf 折算 mirrorPnl（`|我方size|/|目标szi|×targetCr`）；权威 closedPnl 回填留 Part B（userFills）。
+- 编排告警（top-N 未跟币 / 防守认栽封顶 exhausted）经 `result:"alert"` → lineFor(⚠️) + ALERT_RESULTS 去重进 TG 推送，保证 dry-run gate 可观察。
+
+### 验证
+
+- `node --check` 全模块通过；单测 HYPE-copy 80（+planFollow 6 / planBudgetReconcile 10 / copyStateStore 3，删 maxpos/capped 2）、copy-signal 6、watch 回归 sodex 25 / HYPE 20，合计 **131/131 全绿**。
+- 集成冒烟（含重启恢复）：开仓(生存杠杆 L*=2/size 583)→重启从盘恢复→跟随减仓(291)→防守补保证金(封顶 500/exhausted)→平仓删除，全链路 stateUpdate op 契约一致。
+
+---
+
 ## 仓位状态持久化 + 启动 REST 兜底（sodex-watch + HYPE-watch 对称）— 2026-07-04
 
 修复服务重启后 `lastPositions` 丢失导致仓位基线错误，引发开仓漏报、剩余仓位不显示、fill 重复推送 CLOSE 的连锁问题。spec：`.claude/kit/spec/auto-copy-trade/08-position-persistence.md`。

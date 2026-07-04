@@ -10,10 +10,12 @@ import { mapSymbol, loadTargets } from "../process/mapping.mjs";
 import { add, sub, mul, div, gt, lt, maxStr, formatSize, formatPrice, applySlippage } from "../process/precision.mjs";
 import { normalizeTargetPositions, parseHypeMeta, placeDryRun, getMyLiqPrice, buildWouldUpdateLeverage, buildWouldUpdateMargin } from "../api/index.mjs";
 import { computeRatio, computeDesired } from "../process/sizing.mjs";
-import { sideOf, selectLeverage, computeMyLiqPrice, planOpen, planDefend } from "../process/allocation.mjs";
+import { sideOf, selectLeverage, computeMyLiqPrice, planOpen, planDefend, planFollow } from "../process/allocation.mjs";
 import { recommendMinCapital } from "../process/recommend.mjs";
 import { decideLeg } from "../process/risk.mjs";
-import { diffDelta, planReconcile } from "../process/reconcile.mjs";
+import { diffDelta, planReconcile, planBudgetReconcile } from "../process/reconcile.mjs";
+import { loadCopyState, saveCopyState } from "../tool/copyStateStore.mjs";
+import { writeFileSync as wfs } from "node:fs";
 import { toLogLine, decidePushLine } from "../notify/index.mjs";
 import { lineFor, classifyMirrorEvent, escapeHtml, buildHeader, buildFooter, buildPositionCards, buildRoundSummary, fmtDisplaySize, fmtDisplayUsd } from "../notify/templates.mjs";
 import { aggregateStats } from "../process/stats.mjs";
@@ -285,6 +287,32 @@ test("allocation: planDefend 补保证金 / crossed noop / exhausted / lp=0", ()
   assert.equal(lpZero.wouldAddMargin, "0");
 });
 
+test("allocation: planFollow size 跟随（减/平/回补/增仓封顶，解 §0 偏移）", () => {
+  // 场景 6：S0=583(T0=-35600)，目标减到 -17800(半仓) → followRatio=0.5 → desiredSize=-291
+  const half = planFollow({ openSize: "-583", openTargetSzi: "-35600", targetSzi: "-17800", szDecimals: 0 });
+  assert.equal(half.followRatio, "0.5");
+  assert.equal(half.desiredSize, "-291"); // 做空 ROUND_DOWN(583×0.5)=291
+  // 目标平仓 → followRatio=0 → desiredSize=0
+  const flat = planFollow({ openSize: "-583", openTargetSzi: "-35600", targetSzi: "0", szDecimals: 0 });
+  assert.equal(flat.followRatio, "0");
+  assert.equal(flat.desiredSize, "0");
+  // 目标回补到基线 → followRatio=1 → 回 S0（不超基线）
+  const back = planFollow({ openSize: "-583", openTargetSzi: "-35600", targetSzi: "-35600", szDecimals: 0 });
+  assert.equal(back.followRatio, "1");
+  assert.equal(back.desiredSize, "-583");
+  // 目标增仓超基线 T0 → followRatio 封顶 1（不跟增，滚仓留 Phase 2）
+  const over = planFollow({ openSize: "-583", openTargetSzi: "-35600", targetSzi: "-50000", szDecimals: 0 });
+  assert.equal(over.followRatio, "1");
+  assert.equal(over.desiredSize, "-583");
+  // long 方向：符号跟随目标
+  const lng = planFollow({ openSize: "10", openTargetSzi: "100", targetSzi: "50", szDecimals: 2 });
+  assert.equal(lng.desiredSize, "5");
+  // |openTargetSzi|≤0 异常 → followRatio=1 保持 S0
+  const degenerate = planFollow({ openSize: "-583", openTargetSzi: "0", targetSzi: "-17800", szDecimals: 0 });
+  assert.equal(degenerate.followRatio, "1");
+  assert.equal(degenerate.desiredSize, "-583");
+});
+
 test("api: parseHypeMeta universe 下标即 asset index", () => {
   const map = parseHypeMeta({ universe: [{ name: "BTC", szDecimals: 5 }, { name: "ETH", szDecimals: 4 }] });
   assert.equal(map.get("BTC").index, 0);
@@ -409,13 +437,12 @@ test("diffDelta: dry-run current 恒空 → delta 即 desired", () => {
   assert.equal(out[0].deltaSize, "0.625");
 });
 
-// ---------- 03 decideLeg 六分支（顺序铁律）----------
-const baseCaps = { maxDeployPct: 0.9, maxPositionPct: 0.5, minDeltaPct: 0.003, minNotional: 10, minOrderSize: "0.0001", currentDeployedNotional: "0", availBalance: "500" };
+// ---------- decideLeg 四分支（v3：删 maxpos/capped，spec 09 §3.1）----------
+const baseCaps = { minDeltaPct: 0.003, minNotional: 10, minOrderSize: "0.0001" };
 
-test("decideLeg: place（正常开仓）", () => {
-  // ETH 0.625 @ 3000，名义 1875；单仓上限 500×0.5=250 → 注意会被 maxpos 拦
-  // 用小仓避免 maxpos：0.05 @ 3000 名义 150 < 250，delta 全量，未触顶
-  assert.equal(decideLeg({ coin: "ETH", size: "0.05" }, null, baseCaps, { ETH: "3000" }), "place");
+test("decideLeg: place（正常开仓，v3 无名义百分比封顶）", () => {
+  // v3 删 maxpos/capped：0.1 @ 3000 名义 300 照常 place（封顶交给 maxCoinCapital/maxPositions）
+  assert.equal(decideLeg({ coin: "ETH", size: "0.1" }, null, baseCaps, { ETH: "3000" }), "place");
 });
 
 test("decideLeg: skip-unmappable（无 coin）", () => {
@@ -427,29 +454,14 @@ test("decideLeg: skip-mindust（本笔名义 < $10）", () => {
   assert.equal(decideLeg({ coin: "ETH", size: "0.002" }, null, baseCaps, { ETH: "3000" }), "skip-mindust");
 });
 
-test("decideLeg: skip-maxpos（单仓名义 > 余额×maxPositionPct，仅拦加仓）", () => {
-  // 0.1 @ 3000 = 300 > 250；从 0 加仓 → maxpos
-  assert.equal(decideLeg({ coin: "ETH", size: "0.1" }, null, baseCaps, { ETH: "3000" }), "skip-maxpos");
-});
-
-test("decideLeg: skip-capped（部署需求超顶，仅拦加仓）", () => {
-  // 场景2：ETH 需求名义 562.5 > 余额×maxDeploy=450；放宽 maxPositionPct 排除 maxpos 先命中
-  const caps = { ...baseCaps, maxPositionPct: 2 };
-  assert.equal(decideLeg({ coin: "ETH", size: "0.1875" }, null, caps, { ETH: "3000" }), "skip-capped");
-});
-
-test("decideLeg: capped 时减仓/平仓放行（不阻止降风险，场景3）", () => {
-  // 已触顶（currentDeployed 高），但目标减仓：current 10 → desired 8（量级缩小=减仓）
-  const caps = { ...baseCaps, maxPositionPct: 2, currentDeployedNotional: "100000" };
-  // delta=-2 名义 6000 > 10、未碰 minDelta；减仓方向 isIncrease=false → 不 capped → place
-  assert.equal(decideLeg({ coin: "ETH", size: "8" }, { size: "10" }, caps, { ETH: "3000" }), "place");
+test("decideLeg: 减仓放行 place（量级缩小=减仓）", () => {
+  // current 10 → desired 8：delta=-2 名义 6000 ≥ 10、未碰 minDelta → place
+  assert.equal(decideLeg({ coin: "ETH", size: "8" }, { size: "10" }, baseCaps, { ETH: "3000" }), "place");
 });
 
 test("decideLeg: noop（|delta|/|desired| < minDeltaPct，碎步追单）", () => {
-  // 需绕开 mindust（本笔名义≥$10）：desired 2 @3000 名义 6000，delta 0.005 名义 15≥10；
-  // 相对变动 0.005/2=0.0025 < minDeltaPct 0.003 → noop。放宽 maxPos/avail 排除 maxpos/capped。
-  const caps = { ...baseCaps, maxPositionPct: 1, availBalance: "100000" };
-  assert.equal(decideLeg({ coin: "ETH", size: "2" }, { size: "1.995" }, caps, { ETH: "3000" }), "noop");
+  // desired 2 @3000 名义 6000，delta 0.005 名义 15≥10；相对变动 0.005/2=0.0025 < 0.003 → noop
+  assert.equal(decideLeg({ coin: "ETH", size: "2" }, { size: "1.995" }, baseCaps, { ETH: "3000" }), "noop");
 });
 
 // ---------- 03 planReconcile（滚仓一步对齐）----------
@@ -480,6 +492,133 @@ test("planReconcile: skip 类不进 would-place（顺序铁律）", () => {
   assert.equal(actions.filter((a) => a.decision === "place").length, 1);
 });
 
+// ---------- planBudgetReconcile（v3 顶层编排，spec 07 §3.7 / §7 LIT 实数据）----------
+const litMeta = () => new Map([["LIT", { index: 3, szDecimals: 0, maxLeverage: 5 }]]);
+const litPrices = { LIT: "1.713" };
+const litTarget = { coin: "LIT", szi: "-35600", leverage: 10, entryPx: "1.713", lp: "2.1225", marginUsed: "5084" };
+const budgetCfg = { minOpenCapital: "500", maxCoinCapital: "1000", minDeltaPct: 0.003 };
+const litPos = () => new Map([["LIT", { margin: "500", openSize: "-583", openTargetSzi: "-35600", leverage: 2, side: "short", curSize: "-583" }]]);
+
+test("planBudgetReconcile: 新开（生存杠杆 L*=2 + size 583 + 状态 set）", () => {
+  const r = planBudgetReconcile({ mappable: [litTarget], prices: litPrices, assetIndex: litMeta(), myPosByCoin: new Map(), config: budgetCfg, availBalance: "1000", baselineCoins: new Set() });
+  const a = r.actions.find((x) => x.coin === "LIT");
+  assert.equal(a.decision, "place");
+  assert.equal(a.reason, "open");
+  assert.equal(a.size, "583"); // ROUND_DOWN(500×2/1.713)=583
+  assert.equal(a.isBuy, false); // 做空
+  assert.equal(a.openLeverage, 2); // floor(L*=2.755) clamp[1,5]
+  assert.equal(a.M0, "500");
+  const su = r.stateUpdates.find((x) => x.op === "set");
+  assert.equal(su.payload.openSize, "-583");
+  assert.equal(su.payload.curSize, "-583");
+  assert.equal(su.payload.side, "short");
+});
+
+test("planBudgetReconcile: baseline 币跳过（不开/不跟/不防守）", () => {
+  const r = planBudgetReconcile({ mappable: [litTarget], prices: litPrices, assetIndex: litMeta(), myPosByCoin: new Map(), config: budgetCfg, availBalance: "1000", baselineCoins: new Set(["LIT"]) });
+  assert.equal(r.actions.length, 0);
+});
+
+test("planBudgetReconcile: skip-no-open（开仓价已越目标 lp 侧）", () => {
+  const t = { coin: "LIT", szi: "-35600", leverage: 10, entryPx: "2.40", lp: "2.1225", marginUsed: "5084" };
+  const r = planBudgetReconcile({ mappable: [t], prices: { LIT: "2.40" }, assetIndex: litMeta(), myPosByCoin: new Map(), config: budgetCfg, availBalance: "1000", baselineCoins: new Set() });
+  assert.equal(r.actions[0].decision, "skip-no-open");
+});
+
+test("planBudgetReconcile: skip-unmappable（hype universe 无此 coin）", () => {
+  const r = planBudgetReconcile({ mappable: [{ coin: "ZZZ", szi: "-100", leverage: 5, entryPx: "1", lp: "1.5", marginUsed: "20" }], prices: { ZZZ: "1" }, assetIndex: new Map(), myPosByCoin: new Map(), config: budgetCfg, availBalance: "1000", baselineCoins: new Set() });
+  assert.equal(r.actions[0].decision, "skip-unmappable");
+});
+
+test("planBudgetReconcile: 跟随减仓（目标半仓 → reduceOnly 减到 291）", () => {
+  const t = { ...litTarget, szi: "-17800" };
+  const r = planBudgetReconcile({ mappable: [t], prices: litPrices, assetIndex: litMeta(), myPosByCoin: litPos(), config: budgetCfg, availBalance: "1000", baselineCoins: new Set() });
+  const a = r.actions.find((x) => x.reason === "follow");
+  assert.equal(a.decision, "place");
+  assert.equal(a.reduceOnly, true);
+  assert.equal(a.desiredSize, "-291"); // followRatio 0.5 → ROUND_DOWN(583×0.5)=291
+  assert.equal(a.isBuy, true); // 减空仓=买
+  assert.equal(r.stateUpdates.find((x) => x.op === "setCurSize").payload.curSize, "-291");
+});
+
+test("planBudgetReconcile: 目标平仓 → target-gone 平仓 + delete", () => {
+  const r = planBudgetReconcile({ mappable: [], prices: litPrices, assetIndex: litMeta(), myPosByCoin: litPos(), config: budgetCfg, availBalance: "1000", baselineCoins: new Set() });
+  const a = r.actions.find((x) => x.reason === "target-gone");
+  assert.equal(a.decision, "place");
+  assert.equal(a.reduceOnly, true);
+  assert.equal(a.size, "583");
+  assert.equal(a.isBuy, true); // 平空=买
+  assert.ok(r.stateUpdates.find((x) => x.op === "delete" && x.coin === "LIT"));
+});
+
+test("planBudgetReconcile: 防守（目标 lp 后撤 3.20 → would-defend + exhausted 告警）", () => {
+  const t = { ...litTarget, lp: "3.20" }; // szi 不变 → follow noop，只防守
+  const r = planBudgetReconcile({ mappable: [t], prices: litPrices, assetIndex: litMeta(), myPosByCoin: litPos(), config: budgetCfg, availBalance: "1000", baselineCoins: new Set() });
+  const d = r.actions.find((x) => x.decision === "would-defend");
+  assert.ok(near(d.wouldAddMargin, 500, 1)); // need≈1053 封顶补 500
+  assert.equal(d.ntli, Math.round(500 * 1e6));
+  assert.equal(d.isBuy, false); // 空仓
+  assert.equal(d.exhausted, true);
+  assert.ok(r.alerts.find((x) => x.type === "defend-exhausted"));
+  assert.ok(r.stateUpdates.find((x) => x.op === "addMargin"));
+});
+
+test("planBudgetReconcile: 反手（目标 short→long → reverse-close + delete）", () => {
+  const t = { ...litTarget, szi: "35600" };
+  const r = planBudgetReconcile({ mappable: [t], prices: litPrices, assetIndex: litMeta(), myPosByCoin: litPos(), config: budgetCfg, availBalance: "1000", baselineCoins: new Set() });
+  const a = r.actions.find((x) => x.reason === "reverse-close");
+  assert.equal(a.decision, "place");
+  assert.equal(a.reduceOnly, true);
+  assert.equal(a.isBuy, true); // 平空=买
+  assert.ok(r.stateUpdates.find((x) => x.op === "delete"));
+});
+
+test("planBudgetReconcile: top-N（1 槽 2 候选 → 只开名义大者 + 告警）", () => {
+  const meta = new Map([["LIT", { index: 3, szDecimals: 0, maxLeverage: 5 }], ["AAA", { index: 9, szDecimals: 0, maxLeverage: 5 }]]);
+  const mappable = [litTarget, { coin: "AAA", szi: "-1000", leverage: 5, entryPx: "1.0", lp: "1.5", marginUsed: "200" }];
+  const r = planBudgetReconcile({ mappable, prices: { LIT: "1.713", AAA: "1.0" }, assetIndex: meta, myPosByCoin: new Map(), config: budgetCfg, availBalance: "1000", baselineCoins: new Set() });
+  const opened = r.actions.filter((x) => x.reason === "open");
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0].coin, "LIT"); // 名义 60982 > AAA 1000
+  assert.ok(r.alerts.find((x) => x.type === "max-positions" && x.dropped.includes("AAA")));
+});
+
+test("planBudgetReconcile: baseline 币目标平掉 → baseline-remove", () => {
+  const r = planBudgetReconcile({ mappable: [], prices: {}, assetIndex: litMeta(), myPosByCoin: new Map(), config: budgetCfg, availBalance: "1000", baselineCoins: new Set(["LIT"]) });
+  assert.ok(r.stateUpdates.find((x) => x.op === "baseline-remove" && x.coin === "LIT"));
+});
+
+// ---------- copyStateStore（持久化，spec 09 §3.6）----------
+test("copyStateStore: 存取往返（baseline + myPos）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "copystate-"));
+  const st = {
+    baselineCaptured: true,
+    baselineCoins: new Set(["LIT", "BTC"]),
+    myPos: new Map([["LIT", { margin: "500", openSize: "-583", openTargetSzi: "-35600", leverage: 2, side: "short", curSize: "-583" }]]),
+  };
+  saveCopyState(dir, "demo-1", st);
+  const r = loadCopyState(dir, "demo-1");
+  assert.equal(r.baselineCaptured, true);
+  assert.deepEqual([...r.baselineCoins].sort(), ["BTC", "LIT"]);
+  assert.equal(r.myPos.get("LIT").openSize, "-583");
+  assert.equal(r.myPos.get("LIT").curSize, "-583");
+});
+
+test("copyStateStore: 缺失 → 降级空状态（未建基线，安全默认）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "copystate-"));
+  const r = loadCopyState(dir, "nonexistent");
+  assert.equal(r.baselineCaptured, false);
+  assert.equal(r.baselineCoins.size, 0);
+  assert.equal(r.myPos.size, 0);
+});
+
+test("copyStateStore: 损坏 JSON → 降级空状态", () => {
+  const dir = mkdtempSync(join(tmpdir(), "copystate-"));
+  wfs(join(dir, "HYPE-copy-x-state.json"), "{ not valid json");
+  const r = loadCopyState(dir, "x");
+  assert.equal(r.baselineCaptured, false); // 损坏 → 重新建基线，不当新开跟
+});
+
 // ---------- 04 通知增强：事件分类 ----------
 test("classifyMirrorEvent: 开/加/减/平/不变", () => {
   assert.equal(classifyMirrorEvent("0", "0.5"), "open"); // 0→有
@@ -506,7 +645,10 @@ test("lineFor: 空头方向 + 告警/最低本金/noop", () => {
   const shortOpen = lineFor({ result: "place", coin: "ETH", side: "sell", currentSize: "0", desiredSize: "-1", deltaSize: "-1", refPx: "3000" });
   assert.match(shortOpen, /🆕 ETH 做空 \| 新开 1 张 @ \$3000/);
   assert.match(lineFor({ result: "skip-unmappable", coin: "PLTR" }), /⛔.*无 hype 映射/);
-  assert.match(lineFor({ result: "skip-capped", coin: "ETH" }), /⛔.*加仓拦截/);
+  assert.match(lineFor({ result: "skip-no-open", coin: "ETH", targetLp: "2.1" }), /⛔.*不开仓/);
+  assert.match(lineFor({ result: "would-defend", coin: "ETH", wouldAddMargin: "105", liqBefore: "2.33", liqAfter: "2.5" }), /🛡.*补保证金/);
+  // 编排告警（top-N / 认栽封顶）：reason 自带文案，须能进推送（否则 dry-run gate 看不到）
+  assert.match(lineFor({ result: "alert", coin: "LIT", reason: "已达单币上限 $1000，仍早于目标 lp" }), /⚠️.*单币上限/);
   // 平仓 close 双卡片格式
   const closeLine = lineFor({ result: "close", coin: "TRUMP", targetPnl: "3.50", targetFee: "-0.07", mirrorPnl: "46.64", mirrorFee: "0", prevSize: "-56.5", targetPrevSzi: "-50", leverage: 5 });
   assert.match(closeLine, /🎯 目标仓位：TRUMP 5x 做空  已平仓/);
@@ -626,7 +768,8 @@ test("toLogLine: action/side 映射 + 缺省 + fullMs/execMs", () => {
   assert.equal(place.slippageBps, 0);
   assert.equal(place.fullMs, 340);
   assert.equal(place.execMs, 12);
-  assert.equal(toLogLine({ result: "skip-capped", coin: "ETH" }).action, "cap-warn");
+  assert.equal(toLogLine({ result: "would-defend", coin: "ETH" }).action, "defend");
+  assert.equal(toLogLine({ result: "skip-no-open", coin: "ETH" }).action, "skip");
   assert.equal(toLogLine({ result: "noop", coin: "ETH" }).action, "skip");
   assert.equal(toLogLine({ result: "error", coin: "ETH", side: "sell" }).action, "error");
   assert.equal(toLogLine({ result: "place", side: "sell", coin: "ETH" }).side, "short"); // sell → short
@@ -641,7 +784,7 @@ test("stats: 聚合笔数/Σfee/滑点分布/净收益（04 场景4）", () => {
     { result: "place", fee: "1.0", slippageBps: 20, dryRun: true },
     { result: "noop", fee: "0", slippageBps: 0, dryRun: true },
     { result: "noop", fee: "0", slippageBps: 0, dryRun: true },
-    { result: "skip-capped", fee: "0", slippageBps: 0, dryRun: true },
+    { result: "skip-no-open", fee: "0", slippageBps: 0, dryRun: true },
   ];
   const s = aggregateStats(lines);
   assert.equal(s.trades, 3); // 只计 place/ok

@@ -1,11 +1,11 @@
-// 校验门：decideLeg 六分支（unmappable → mindust → maxpos → capped → noop → place）。
-// 总纲 §2.2 顺序铁律：先命中先返回，互斥。精度走 precision.mjs（禁裸 parseFloat）。
-import { sub, add, mul, div, gt, lt, absStr, signOf } from "./precision.mjs";
+// 校验门：decideLeg 四分支（unmappable → mindust → noop → place）。
+// v3 预算模型（spec 07/09）删 skip-maxpos/skip-capped——单仓上限由 maxCoinCapital 定额封顶、
+// 部署上限由 maxPositions 槽位替代，不再在此做名义百分比校验。would-defend/skip-no-open 由
+// orchestrator（planBudgetReconcile）直接产出，不过 decideLeg。总纲 §2.2 顺序铁律：先命中先返回。
+import { sub, mul, div, gt, lt, absStr, signOf } from "./precision.mjs";
 
-// caps（从 02/targets 透传）：
-//   maxDeployPct / maxPositionPct / minDeltaPct / minNotional / minOrderSize /
-//   currentDeployedNotional / availBalance
-// desiredLeg：{ coin, size }（size=带符号目标净仓）；current：我方当前同币仓 {size} 或 null（dry-run 恒 null）。
+// caps（v3）：minDeltaPct / minNotional / minOrderSize。desiredLeg：{ coin, size }（带符号目标净仓）；
+// current：我方当前同币仓 {size} 或 null（新开=null）。
 export function decideLeg(desiredLeg, current, caps, prices) {
   // 1) unmappable：无有效 coin（01/02 已过滤不可映射；此处保险拦截，总纲 §2.2）
   if (!desiredLeg || !desiredLeg.coin) return "skip-unmappable";
@@ -18,30 +18,16 @@ export function decideLeg(desiredLeg, current, caps, prices) {
   const currentSize = String(current?.size ?? "0");
   const deltaSize = sub(desiredSize, currentSize);
   const absDelta = absStr(deltaSize);
-
-  // 加仓判定：目标净仓绝对值 > 当前绝对值（量级增大）。capped/maxpos 仅拦加仓方向。
-  const isIncrease = gt(absStr(desiredSize), absStr(currentSize));
-
   const orderNotional = mul(absDelta, price); // 本笔变动名义
-  const positionNotional = mul(absStr(desiredSize), price); // 目标净仓名义
 
   // 2) mindust：本笔名义 < 交易所最小名义
   if (lt(orderNotional, String(caps.minNotional))) return "skip-mindust";
 
-  // 3) maxpos：单仓名义 > 余额×maxPositionPct（仅拦加仓部分，防目标高杠杆单仓打爆）
-  const maxPosNotional = mul(String(caps.availBalance), String(caps.maxPositionPct));
-  if (isIncrease && gt(positionNotional, maxPosNotional)) return "skip-maxpos";
-
-  // 4) capped：部署需求（已部署 + 本仓名义）> 余额×MAX_DEPLOY_PCT → 仅拦加仓，放行减仓/平仓
-  const maxDeployNotional = mul(String(caps.availBalance), String(caps.maxDeployPct));
-  const wouldDeploy = add(String(caps.currentDeployedNotional ?? "0"), positionNotional);
-  if (isIncrease && gt(wouldDeploy, maxDeployNotional)) return "skip-capped";
-
-  // 5) noop：|delta| < 最小下单量，或 |delta|/|desired| < minDeltaPct（防碎步追单，滚仓三层之③）
+  // 3) noop：|delta| < 最小下单量，或 |delta|/|desired| < minDeltaPct（防碎步追单）
   if (lt(absDelta, String(caps.minOrderSize))) return "noop";
   if (gt(absStr(desiredSize), "0") && lt(div(absDelta, absStr(desiredSize)), String(caps.minDeltaPct))) return "noop";
 
-  // 6) place
+  // 4) place
   return "place";
 }
 

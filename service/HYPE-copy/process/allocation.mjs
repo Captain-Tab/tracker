@@ -63,6 +63,24 @@ export function planOpen({ minOpenCapital, openLeverage, entryPx, targetSzi, szD
   return { size, M0, notional };
 }
 
+// planFollow：连接「size 由预算定一次(S0)」与「size 跟目标相对轨迹」（spec 07 §3.3，解 §0 偏移）。
+// followRatio = min(1, |targetSzi|/|openTargetSzi|)：封顶 1（增仓超开仓基线不跟，滚仓留 Phase 2）。
+// desiredSize = signOf(targetSzi) × ROUND_DOWN(|openSize| × followRatio, szDecimals)：[0,S0] 区间跟减/平/回补。
+// |openTargetSzi|≤0（异常）→ followRatio=1（退化保持 S0）。
+export function planFollow({ openSize, openTargetSzi, targetSzi, szDecimals }) {
+  const openAbs = absStr(openTargetSzi ?? "0");
+  let followRatio;
+  if (!gt(openAbs, "0")) {
+    followRatio = "1";
+  } else {
+    const raw = div(absStr(targetSzi ?? "0"), openAbs);
+    followRatio = gt(raw, "1") ? "1" : raw; // 封顶 1
+  }
+  const magnitude = formatSize(mul(absStr(openSize ?? "0"), followRatio), szDecimals); // ROUND_DOWN
+  const desiredSize = signOf(String(targetSzi ?? "0")) < 0 ? mul(magnitude, "-1") : magnitude;
+  return { desiredSize, followRatio };
+}
+
 // planDefend：维持「我方真实强平价越过目标 lp」，缺口补保证金（size 不变），封顶 maxCoinCapital。
 // needMargin = |size| × |targetLp×(1±mm) − entry|（short:+mm / long:−mm），ROUND_UP 保证补足。
 export function planDefend({ entryPx, size, side, myLiqPx, targetLp, currentMargin, maxCoinCapital, mm }) {

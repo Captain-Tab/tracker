@@ -41,7 +41,7 @@ fs.writeFileSync(p, JSON.stringify(c, null, 2) + '\n');
 console.log('  hypeCopy.enabled=true targets=[$TARGET_ID]');
 "
 
-echo "[6/6] app apply：生成/启动 HYPE-copy@$TARGET_ID.service"
+echo "[6/6] app apply：生成/启动 HYPE-copy@$TARGET_ID.service + HYPE-copy-expiry.timer（agent 到期检查，每日；dry-run 无 masterAddress 自动跳过）"
 if command -v systemctl >/dev/null 2>&1; then
   node "$ROOT_DIR/app/index.mjs" apply
 else
@@ -53,8 +53,11 @@ cat <<EOF
 ✅ 部署完成（dry-run）。target=$TARGET_ID
   事件驱动：信号目录已建 → watch（重启后）自动写信号、copy 自动订阅；无需改 watch config。
   关闭事件驱动（如需）：watch config.json 设 "copySignal": false。
+  agent 到期检查：HYPE-copy-expiry.timer 每日 09:00 跑（只读 extraAgents，无密钥）；
+    dry-run 无 masterAddress → 自动跳过；切实盘填 masterAddress 后自动生效（临期 7 天 TG 提醒、续签自停）。
   验证：
     journalctl -u HYPE-copy@$TARGET_ID -f
+    systemctl list-timers HYPE-copy-expiry.timer
     tail -f $ROOT_DIR/HYPE-copy/log/HYPE-copy-$TARGET_ID-\$(date +%F).jsonl
   注意：watch 服务需重启一次才会按"信号目录已存在"自动开始发信号（systemctl restart sodex-watch / HYPE-watch）。
 详见 docs/deploy/hype-copy.md

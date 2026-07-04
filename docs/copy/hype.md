@@ -1,5 +1,7 @@
 # 自动跟单执行腿 · hype（一期 dry-run）
 
+> **⚠️ 已切 v3 预算模型（2026-07-04，Part A 完成）**：`main.mjs` 现跑 **v3 预算模型**——每币独立预算（`minOpenCapital`/`maxCoinCapital`）+ 生存杠杆 `selectLeverage(floor L*)` + 逐仓保证金防守 `planDefend`，编排走 `reconcile.planBudgetReconcile`；`decideLeg` 四分支。下文 §三仍保留的 `computeRatio`/`computeDesired` ratio 描述为**旧模型历史记录**（`sizing.mjs` 已 @deprecated，不再被 main 调用）。仍 dry-run 不签名；真钱见 [`../../.claude/kit/spec/auto-copy-trade/09-go-live-real-trading.md`](../../.claude/kit/spec/auto-copy-trade/09-go-live-real-trading.md) Part B。
+>
 > 执行端**恒在 hype**：所有镜像下单都在 Hyperliquid 完成，信号源可来自 sodex（跨所，仅监听）或 hype（同所）。
 > 本文记录跟单**思路 / 端到端流程 / 核心方法 / 核心处理 / sodex-hype 差异 / 隔离安全 / 阶段边界**，作为团队理解与后续 sodex 执行腿移植的权威参考。
 >
@@ -32,7 +34,7 @@
 sodex/hype 监听目标仓变化
    → 标的映射（mapSymbol：sodex 映射表 / hype 同所直通）
    → 资金换算（computeRatio 锚定 + computeDesired 等比折算）
-   → 校验门（decideLeg 六分支）
+   → 校验门（decideLeg 四分支）
    → 仅 place 进 dry-run would-place（placeDryRun，不签名）
    → 推送（独立跟单 TG）+ JSONL 日志
 ```
@@ -85,18 +87,19 @@ minCapital        = ratioMin × targetMappableMargin / initialDeployPct
 
 输出 `perLeg` 标每仓 `canFollow` + `reason`（`ok` / `below-min-notional` / `no-price`）。开跟轮推送「推荐最低本金 + 当前本金可跟 / 跳过清单」。
 
-### ③ 校验门六分支 `decideLeg`（`process/risk.mjs`，顺序铁律 = 总纲 §2.2）
+### ③ 校验门四分支 `decideLeg`（`process/risk.mjs`，顺序铁律 = 总纲 §2.2）
+
+> **2026-07-04 已简化为四分支**：v3 删 `skip-maxpos`/`skip-capped`（单仓上限改由 `maxCoinCapital` 定额封顶、部署上限改由 `maxPositions` 槽位替代，不再做名义百分比校验）。`would-defend`/`skip-no-open` 由 v3 orchestrator `planBudgetReconcile` 直接产出，不过 decideLeg。详见 spec 09 §3.1。
 
 先命中先返回，互斥：
 
 | 顺序 | decision | 条件 | 动作 |
 |---|---|---|---|
-| 1 | `skip-unmappable` | 无 hype 映射（仅 sodex 跨所源可能命中） | 不下单，不计 ratio 分母 |
+| 1 | `skip-unmappable` | 无 hype 映射（仅 sodex 跨所源可能命中） | 不下单，不计入分母 |
 | 2 | `skip-mindust` | 本笔名义 `\|delta\|×px` < $10 | 跳过 + 告警 |
-| 3 | `skip-maxpos` | 单仓名义 > `avail×maxPositionPct`（仅拦加仓） | 封顶拦截加仓部分 |
-| 4 | `skip-capped` | 部署需求（已部署 + 本仓名义）> `avail×maxDeployPct`（仅拦加仓） | 拦加仓，**放行减仓 / 平仓** |
-| 5 | `noop` | `\|delta\|` < 最小下单量，或 `\|delta\|/\|desired\|` < `minDeltaPct` | 跳过（防碎步追单） |
-| 6 | `place` | 以上都不命中 | dry-run would-place |
+| 3 | `noop` | `\|delta\|` < 最小下单量，或 `\|delta\|/\|desired\|` < `minDeltaPct` | 跳过（防碎步追单） |
+| 4 | `place` | 以上都不命中 | dry-run would-place |
+| ~~skip-maxpos / skip-capped~~ | — | v3 已删（见上方说明） | — |
 
 ### ④ 滚仓三层处理
 
@@ -114,7 +117,7 @@ minCapital        = ratioMin × targetMappableMargin / initialDeployPct
 - **precision ROUND_DOWN**：px / sz / 金额运算全程走 `process/precision.mjs`（decimal.js，向零截断防超额）；`formatPrice` = 5 位有效数字 + perps 小数上限(6−szDecimals)，`formatSize` = szDecimals 位。**禁裸 `parseFloat` 算术 / 比较，禁用 `tool/format` 做精度**（其仅展示）。
 - **滑点保护**：`MAX_SLIPPAGE_BPS`（IOC 限价偏移，买 +、卖 −）≠ `MAX_CHASE_BPS`（参考价偏离超此放弃跟单），两者语义不同不可混用。
 - **收敛幂等自愈**：dry-run `current` 恒空 → 每轮 desired 即全量 would-place（唯一口径，可重放，无隐式累计态）。
-- **触顶 / 跳过告警**：六分支 skip 类均落 JSONL + 推送告警（`noop` 去重不推但可记）。
+- **触顶 / 跳过告警**：skip 类均落 JSONL + 推送告警（`noop` 去重不推但可记）。
 
 ---
 

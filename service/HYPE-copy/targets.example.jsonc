@@ -20,13 +20,18 @@
       "agentKeyRef": "agent-key",
       "subAccount": "",
 
-      "initialDeployPct": 0.5,   // 锚定首仓部署比例（默认 0.5）
-      "maxDeployPct": 0.9,       // 部署上限（默认 0.9，触顶 → capped）
-      "capitalWeight": 1,        // 多目标资金分配权重（一期单目标=1，增量阶段用）
-      "maxPositionPct": 0.6,     // 单仓名义占余额上限（防目标高杠杆单仓打爆）
-      "minDeltaPct": 0.003,      // 最小变动阈值（< 此比例不修正，防碎步追单）
+      // 我方持仓账户地址（= agent wallet 授权的主钱包地址；与 source.address 目标地址正交）。
+      // dry-run 可空；实盘（dryRun:false）必填——查余额/持仓用（spec 09 §3.5/§4.1）。
+      "masterAddress": "",
 
-      "dryRun": true,            // 一期恒 true（false 会被 placeDryRun 拒绝，真实下单未实现）
+      // v3 预算模型（spec 07/09）：每币独立预算 + 生存杠杆 + 逐仓保证金防守。
+      "allocationModel": "budget", // 恒 "budget"（ratio 已废弃）
+      "minOpenCapital": 500,       // 每币最小开仓资金 M0（定初始 size），默认 500
+      "maxCoinCapital": 1000,      // 单币最大投入=最大亏损（定能陪目标扛多深），默认 1000
+      "minDeltaPct": 0.003,        // 最小变动阈值（< 此比例不修正，防碎步追单）
+      // @deprecated 旧 ratio 字段（initialDeployPct/maxDeployPct/maxPositionPct/capitalWeight）已弃用
+
+      "dryRun": true,            // 一期恒 true（false 需 masterAddress + Part B 真实下单实现）
 
       // 一期 dry-run 模拟可用余额（真实余额拉取 hype clearinghouseState 留后续阶段，见 go-live 文档）
       "availBalanceSim": "500",

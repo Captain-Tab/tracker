@@ -132,6 +132,34 @@ wouldAddMargin = min(needMargin − 当前保证金, maxCoinCapital − 当前�
 
 > dry-run：以上不签名，各产 `would-update-leverage` / `would-place` / `would-update-margin` 决策 + 推送。
 
+### size 跟随 `planFollow`（连接"预算定 size"与"跟目标轨迹"）
+
+开仓 size `S0` 由预算定一次（`planOpen`），此后**不再重算**，改由 `planFollow` 按目标相对轨迹在 `[0, S0]` 内缩放：
+
+```
+followRatio = min(1, |目标当前 szi| / |开仓时目标 szi T0|)   // 封顶 1
+desiredSize = signOf(目标 szi) × ROUND_DOWN(|S0| × followRatio, szDecimals)
+```
+
+- 目标减仓 → followRatio<1 → reduceOnly 减到 desiredSize；目标平 → 0 → 平。
+- 目标增仓**超过** T0 → followRatio 封顶 1 → **不跟增**（size 永不超 S0，滚仓留 Phase 2）；亏损只 `planDefend` 追 lp，不加 size。
+- 与 `planDefend` 正交：planFollow 管 size（[0,S0]），planDefend 管保证金（不改 size）。
+
+### 顶层编排 `planBudgetReconcile`（`process/reconcile.mjs`，纯函数）
+
+一轮对账把上述原语串成决策（spec 07 §3.7）：
+
+```
+遍历目标可映射仓（跳过 baseline 存量币）：
+  未持仓 → selectLeverage(null→skip-no-open) + planOpen(dust→skip-mindust) → would-update-leverage + would-place
+  反手（方向翻转）→ 先平原仓 + delete（下轮重新开）
+  同向持仓 → planFollow 调 size + planDefend 调保证金（正交）
+  目标已消失 → 平仓 + delete
+maxPositions = floor(availBalance / maxCoinCapital)：目标币数超之 → 跟名义 top-N + 告警
+```
+
+产出 `{actions, stateUpdates, alerts}`；副作用（改 `myPosByCoin`）留 `main.mjs` 的 `applyStateUpdate`，状态经 `tool/copyStateStore.mjs` 持久化跨重启。**只跟部署后新开仓**：首轮快照目标存量为 `baselineCoins` 永不跟（spec 09 §3.6）。
+
 ---
 
 ## 七、关键概念：size（货）vs 保证金（备用现金）
@@ -191,7 +219,7 @@ wouldAddMargin = min(needMargin − 当前保证金, maxCoinCapital − 当前�
 
 | | dry-run（一期） | 实盘 |
 |--|----------------|------|
-| 我方强平价 | `computeMyLiqPrice`（读 `myMarginByCoin` 模拟保证金） | 读 hype `liquidationPx`（含 MM 精确） |
+| 我方强平价 | `computeMyLiqPrice`（读 `myPosByCoin.margin` 模拟保证金） | 读 hype `liquidationPx`（含 MM 精确） |
 | 三个 action | 只产 `would-*` 决策 + 推送，不签名 | EIP-712 签名 + 提交 |
 | 抽象 | `getMyLiqPrice()` 注入，决策逻辑两阶段共用 | — |
 

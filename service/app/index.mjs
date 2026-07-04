@@ -176,6 +176,26 @@ function hypeCopyTemplateUnit(cfg) {
   ].join("\n");
 }
 
+// agent 到期检查（oneshot + daily timer）：只读 extraAgents，无签名无密钥；dry-run（无 masterAddress）自动跳过。
+// 设计见 docs/copy/agent-wallet.md §八 / spec 2026-07-04-agent-expiry-notify.md。随 hypeCopy.enabled 一起启用。
+function hypeCopyExpiryServiceUnit(cfg) {
+  return [
+    "[Unit]", "Description=HYPE-copy Agent Expiry Check", "After=network-online.target",
+    "Wants=network-online.target", ...warpDeps(cfg),
+    "OnFailure=tracker-alert@%n.service", "", // 监控自身失败也告警
+    "[Service]", "Type=oneshot",
+    `ExecStart=${NODE_BIN} ${ROOT_DIR}/HYPE-copy/expiry-check.mjs --config=${ROOT_DIR}/HYPE-copy/targets.json`,
+    ...envLines(cfg), "",
+  ].join("\n");
+}
+function hypeCopyExpiryTimerUnit() {
+  return [
+    "[Unit]", "Description=HYPE-copy Agent Expiry Check Timer", "",
+    "[Timer]", `OnCalendar=${scheduleToOnCalendar({ freq: "daily", hour: 9 })}`, "Persistent=true", "", // 每日 09:00，停机补跑
+    "[Install]", "WantedBy=timers.target", "",
+  ].join("\n");
+}
+
 // 单元清单。controlUnit = 实际 enable/start 的单元（discovery 控 timer，service 由 timer 触发不直接 enable）。
 // instance:true = systemd 模板实例（HYPE-copy@<id>.service），无独立文件，仅按名 enable/start。
 function buildUnits(cfg) {
@@ -188,6 +208,9 @@ function buildUnits(cfg) {
     { name: "HYPE-discovery.timer", content: hypeDiscoveryTimerUnit(cfg), enabled: cfg.hypeDiscovery.enabled, control: true },
     // 模板本身只装文件、不 enable（control:false）
     { name: "HYPE-copy@.service", content: hypeCopyTemplateUnit(cfg), enabled: false, control: false },
+    // agent 到期检查 timer（随 hypeCopy 启用；service 由 timer 触发不直接 enable）
+    { name: "HYPE-copy-expiry.service", content: hypeCopyExpiryServiceUnit(cfg), enabled: cfg.hypeCopy.enabled, control: false },
+    { name: "HYPE-copy-expiry.timer", content: hypeCopyExpiryTimerUnit(cfg), enabled: cfg.hypeCopy.enabled, control: true },
   ];
   // 每个配置的 target id 装一份实例（无文件，按名 enable）；一期单目标
   for (const id of cfg.hypeCopy.targets) {

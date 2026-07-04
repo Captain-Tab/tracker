@@ -9,18 +9,20 @@ import { escapeHtml, lineFor } from "./templates.mjs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = join(__dirname, "..", "log");
 const TG_TIMEOUT_MS = 8_000;
-// 持续性告警（同状态每轮重现）：进入推一次，靠指纹去重防刷屏
-const ALERT_RESULTS = new Set(["skip-unmappable", "skip-mindust", "skip-maxpos", "skip-capped", "skip-no-price"]);
+// 持续性告警（同状态每轮重现）：进入推一次，靠指纹去重防刷屏。
+// v3：删 skip-maxpos/skip-capped，加 skip-no-open / alert（编排告警：top-N 未跟 / 认栽封顶）。
+// would-defend 是动作非告警，正常推不去重。
+const ALERT_RESULTS = new Set(["skip-unmappable", "skip-mindust", "skip-no-open", "skip-no-price", "alert"]);
 
 const ts = () => new Date().toISOString().slice(11, 19);
 
-// result → JSONL action（总纲 04 schema）：skip-capped 归 cap-warn，其余 skip/noop 归 skip。
+// result → JSONL action（总纲 04 schema）：v3 加 would-defend 归 defend；skip 类归 skip。
 function actionOf(result) {
   if (result === "place" || result === "ok") return "place";
-  if (result === "skip-capped") return "cap-warn";
+  if (result === "would-defend") return "defend";
   if (result === "min-capital") return "min-capital";
   if (result === "failed" || result === "error") return "error";
-  return "skip"; // skip-unmappable / skip-mindust / skip-maxpos / skip-no-price / noop
+  return "skip"; // skip-unmappable / skip-mindust / skip-no-open / skip-no-price / noop
 }
 
 // 订单 side(buy/sell) → 持仓方向 long/short
