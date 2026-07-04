@@ -4,6 +4,28 @@
 
 ---
 
+## HYPE-copy dry-run 部署 + provision CLI 改进 + 快捷部署脚本 — 2026-07-04
+
+Part A（v3 dry-run）首次 VPS 部署与联网观察，搭配 provision 脚本交互改进。
+
+### 变更
+
+- **`provision/hype-copy-approve-agent.mjs`**：stdout flush 修复提示行缓冲不显示；兼容 Ethereum 64 字符纯 hex 私钥自动补 `0x`；`const`→`let`；格式错误时打印输入长度/前缀便于定位。
+- **`setup/deploy-copy.sh`（新建）**：一键推代码 + 重启 + 验证的快捷脚本（sync/restart/status/logs/log-jsonl），补 `make sync` 排除 `config.json` 导致 watch config 遗漏的坑。
+- **`docs/copy/dry-run-report-2026-07-04.md`（新建）**：首次部署观察报告（baseline / 黑名单 / HL universe / top-N alert 全部跑通；ETH 因模拟预算不足未触发 would-place）。
+
+### 边界
+
+- 部署时发现 sodex-watch config 未含 target 地址（`make sync` 设计排除 `config.json`），手动推送后修复。
+- MSTR/XAUT 正确 skip-unmappable；ETH alert（资金仅够跟 0 个币）因 `availBalanceSim=500` 太小。
+- 基线逻辑验证通过：部署前存量仓不跟，重启盘恢复 baseline 不重复接盘。
+
+### 验证
+
+- 四服务全绿；71 次 reconcile 无崩溃；baseline / unmappable / alert 三类输出均与预期一致。
+
+---
+
 ## HYPE-copy Agent Wallet 授权 CLI + 到期检查 timer（Part B 前置）— 2026-07-04
 
 切实盘 Part B 的密钥/凭据基建：本地授权 agent wallet 的 CLI + server 端 agent 到期主动提醒。**不动真钱、不签单**；真正授权待 B-3 前夕再本地跑。设计见 `docs/copy/agent-wallet.md`，spec `.claude/kit/spec/2026-07-04-agent-expiry-notify.md`。

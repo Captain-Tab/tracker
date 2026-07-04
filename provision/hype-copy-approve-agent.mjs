@@ -72,7 +72,7 @@ function parseArgs(argv) {
 // 隐藏输入（不回显，支持 TTY 与管道）。仅内存，调用方用完不持有。
 function readSecret(promptText) {
   return new Promise((resolve) => {
-    process.stdout.write(promptText);
+    process.stdout.write(promptText, () => {}); // 显式 flush，避免缓冲吞提示
     const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
     rl._writeToOutput = () => {}; // 静默回显
     rl.question("", (answer) => { rl.close(); process.stdout.write("\n"); resolve(answer.trim()); });
@@ -109,8 +109,13 @@ async function cli() {
   console.log(`  名称     : ${agentName}`);
   console.log(`  有效期   : ${validUntilMs ? `${new Date(validUntilMs).toISOString()}（${expireDays} 天）` : "长期不过期（不推荐）"}`);
 
-  const mainKey = await readSecret("\n主钱包私钥（输入不回显）: ");
-  if (!RE_PRIV.test(mainKey)) throw new Error("主私钥格式非法（应为 0x + 64 hex）");
+  let mainKey = await readSecret("\n主钱包私钥（输入不回显）: ");
+  // 兼容 Ethereum 私钥格式：64字符纯 hex 自动补 0x
+  if (/^[0-9a-fA-F]{64}$/.test(mainKey)) mainKey = "0x" + mainKey;
+  if (!RE_PRIV.test(mainKey)) {
+    const preview = mainKey.length > 20 ? `${mainKey.slice(0, 20)}...（总长${mainKey.length}）` : mainKey || "(空)";
+    throw new Error(`主私钥格式非法（应为 0x + 64 hex，共 66 字符）。收到: ${preview}`);
+  }
   const mainAddr = privateKeyToAccount(mainKey).address;
   console.log(`  主钱包地址: ${mainAddr}`);
 
