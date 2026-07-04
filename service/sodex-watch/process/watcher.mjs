@@ -4,7 +4,7 @@ import { fmtTime, fmtNum, pickAt, formatDisplayId } from "../../tool/format.mjs"
 import { reportSkipReason } from "../../tool/reportGate.mjs";
 import {
   parseWsPosition, parseReduceOnlyOrders, canonicalReduceOnlyOrders, canonicalPositionsFp,
-  positionKeysFp, diffPositions, diffReduceOnly, baseCoin, positionDirection,
+  positionKeysFp, diffPositions, diffReduceOnly, baseCoin, positionDirection, parseRestPositions,
 } from "./parse.mjs";
 import {
   classifyBanner, buildEventBanner, buildExitEventBanner, renderPositions, renderPositionHistory,
@@ -18,7 +18,7 @@ import {
 } from "../api/index.mjs";
 import { installWsProxy } from "../../lib/WARP/index.mjs";
 import { writeSignal } from "../../lib/copy-signal/index.mjs";
-import { loadLastPositions, saveLastPositions } from "../../tool/lastPositionsStore.mjs";
+import { loadLastPositions, saveLastPositions, loadAccountId, saveAccountId } from "../../tool/lastPositionsStore.mjs";
 import { msUntilNextShanghai } from "./snapshot.mjs";
 
 const CHANNELS = ["accountState", "accountUpdate", "accountOrderUpdate", "accountTrade"];
@@ -90,6 +90,8 @@ export class AccountWatcher {
     this.copySignalSeq = 0;
     // 仓位状态持久化（08-position-persistence §2.1）
     this.stateDir = flags["state-dir"] ?? null;
+    // 从磁盘恢复 accountId（供 Layer 2 REST 兜底）
+    this.accountId = flags["account-id"] ?? (this.stateDir ? loadAccountId(this.stateDir, address) : null);
     // 分档 debounce：与上次推送的"持仓键集合 / 离场单集合"比对判结构变化；
     // pendingStructural = 当前 debounce 窗口内是否出现结构变化（只升不降，取最紧急）。
     // 初值 null 表示"从未推送过"，使首帧 baseline（含空仓账户）必判结构变化 → 短档即时推 START WATCH。
@@ -159,7 +161,7 @@ export class AccountWatcher {
 
     if (msg.channel === "accountState") {
       const data = msg.data ?? {};
-      if (!this.accountId) { const aid = data.aid ?? data.accountId ?? data.account_id ?? null; if (aid) { this.accountId = String(aid); log(`accountId = ${this.accountId}（来自 WS 快照）`); } }
+      if (!this.accountId) { const aid = data.aid ?? data.accountId ?? data.account_id ?? null; if (aid) { this.accountId = String(aid); log(`accountId = ${this.accountId}（来自 WS 快照）`); if (this.stateDir) saveAccountId(this.stateDir, this.address, this.accountId); } }
       this.positions = Array.isArray(data.P) ? data.P.map(parseWsPosition) : [];
       this.ordersRaw = Array.isArray(data.O) ? data.O : [];
       // 触发指纹 = 仓位身份 + 离场单集合（reduceOnly 挂/改/撤即时触发；开仓单不计，避免 churn）
@@ -254,12 +256,36 @@ export class AccountWatcher {
       const isBaseline = !this.baselineLogged;
       this.baselineLogged = true;
 
-      // Layer 2: 首帧从磁盘恢复 lastPositions，避免重启丢基线（08-position-persistence §2.2）
+      // Layer 2: 首帧从磁盘恢复 lastPositions + REST 兜底（08-position-persistence §2.2）
       if (isBaseline && this.stateDir) {
         const persisted = loadLastPositions(this.stateDir, this.address);
-        if (persisted.length > 0) {
-          log(`[持久化恢复] 从磁盘加载 ${persisted.length} 个仓位基线`);
-          this.lastPositions = persisted; // 保留持久化基线用于 diff
+        // 尝试 REST 交叉验证（需要 accountId）
+        if (this.accountId) {
+          try {
+            const result = await fetchPositionHistory(this.env, this.accountId);
+            const restRows = result?.raw?.data;
+            if (Array.isArray(restRows)) {
+              const restPositions = parseRestPositions(restRows, symbolMeta);
+              if (restPositions.length > 0 || persisted.length > 0) {
+                // 转换 REST 格式 → diffPositions 兼容格式
+                const restCurr = restPositions.map((p) => ({
+                  coin: baseCoin(p.symbol),
+                  dir: positionDirection(p),
+                  size: Number(p.size),
+                  entry: p.entry,
+                }));
+                log(`[REST 兜底] 持久化 ${persisted.length} 个仓位，REST 返回 ${restCurr.length} 个仓位`);
+                this.positions = restCurr;
+                this.lastPositions = persisted; // 保留持久化基线用于 diff
+              }
+            }
+          } catch (e) {
+            log(`[REST 兜底] fetchPositionHistory 失败(${e.message})，降级`);
+            if (persisted.length > 0) this.lastPositions = persisted;
+          }
+        } else if (persisted.length > 0) {
+          log(`[持久化恢复] 从磁盘加载 ${persisted.length} 个仓位基线（无 accountId，跳过 REST）`);
+          this.lastPositions = persisted;
         }
       }
 

@@ -43,3 +43,25 @@ export function saveLastPositions(path, address, positions) {
     console.error(`lastPositions 写入失败（不阻断）：${e.message}`);
   }
 }
+
+// 读取持久化的 accountId（sodex-watch REST 兜底用）。文件缺失 → null。
+export function loadAccountId(path, address) {
+  const file = `${path}/accountId-${safeAddr(address)}.json`;
+  try {
+    const data = JSON.parse(readFileSync(file, "utf8"));
+    return typeof data?.accountId === "string" ? data.accountId : null;
+  } catch {
+    return null;
+  }
+}
+
+// 写入 accountId。自动创建目录，写失败仅告警不阻断。
+export function saveAccountId(path, address, accountId) {
+  const file = `${path}/accountId-${safeAddr(address)}.json`;
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify({ accountId: String(accountId), updatedAt: Date.now() }, null, 2), "utf8");
+  } catch (e) {
+    console.error(`accountId 写入失败（不阻断）：${e.message}`);
+  }
+}

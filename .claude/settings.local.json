@@ -188,7 +188,9 @@
       "Bash(python3 -c ' *)",
       "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/tabcaptain/Documents/code/tracker/service/sodex-watch/config.json'\\)\\); [print\\(f'  {w[\\\\\"label\\\\\"]}: {w[\\\\\"address\\\\\"][:10]}...'\\) for w in d['watches']]\")",
       "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/tabcaptain/Documents/code/tracker/service/HYPE-watch/config.json'\\)\\); [print\\(f'  {w[\\\\\"label\\\\\"]}: {w[\\\\\"address\\\\\"][:10]}...'\\) for w in d['watches']]\")",
-      "Bash(TZ=Asia/Shanghai date -v-7d '+%Y-%m-%d')"
+      "Bash(TZ=Asia/Shanghai date -v-7d '+%Y-%m-%d')",
+      "Bash(sed -n '/sodex-watch.*WS 断连/,/```/p' /Users/tabcaptain/Documents/code/tracker/service/running-log/log/weekly-2026-07-04.md)",
+      "Bash(sed -n '/sodex-watch.*重启/,/^$/p' /Users/tabcaptain/Documents/code/tracker/service/running-log/log/weekly-2026-07-04.md)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",

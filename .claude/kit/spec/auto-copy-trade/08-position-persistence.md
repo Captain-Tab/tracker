@@ -115,7 +115,7 @@ Layer 3: 跨帧 CLOSE 守卫           ← 运行时兜底
 
 **REST 端点**：
 - HYPE-watch：`/info` `{type:"clearinghouseState", user:address}` — 与 WS 同格式，`parsePositions` 直接复用
-- sodex-watch：已有 `fetchTargetState` 读仓位
+- sodex-watch：`GET /api/v1/perps/positions?account_id=...` — 返回全部仓位（含当前持仓），`parseRestPositions` 转为 WS 兼容格式。accountId 从 WS 首次拿到后持久化到磁盘（`saveAccountId`），重启从磁盘恢复（`loadAccountId`），无需等 WS 重连。
 
 **比对逻辑**（`fetchAndReport` 首帧）：
 
@@ -163,13 +163,13 @@ if (!closedSummaries.length && newOids.size) {
 
 | 文件 | 改动 | 层 |
 |------|------|:--:|
-| `service/tool/lastPositionsStore.mjs` | **新建**：持久化读写工具函数 | 1 |
-| `service/sodex-watch/process/watcher.mjs` | 读/写 lastPositions + 启动 REST 比对 + 跨帧守卫 | 1+2+3 |
-| `service/HYPE-watch/process/watcher.mjs` | 同上（对称） | 1+2+3 |
-| `service/HYPE-watch/api/index.mjs` | 新增 `fetchClearinghouseState(user)` REST 调用 | 2 |
-| `service/sodex-watch/api/index.mjs` | 确认 `fetchTargetState` 可用于启动兜底 | 2 |
-| `service/HYPE-watch/test/domain.test.mjs` | 新增持久化 + 跨帧守卫单测 | 1+3 |
-| `service/sodex-watch/test/domain.test.mjs` | 同上 | 1+3 |
+| `service/tool/lastPositionsStore.mjs` | **新建**：持久化读写工具函数 + accountId 持久化 | 1 |
+| `service/sodex-watch/process/watcher.mjs` | 读/写 lastPositions + accountId 持久化 + 启动 REST 比对 + 跨帧守卫 | 1+2+3 |
+| `service/HYPE-watch/process/watcher.mjs` | 读/写 lastPositions + 启动 REST 比对 + 跨帧守卫 | 1+2+3 |
+| `service/sodex-watch/process/parse.mjs` | 新增 `parseRestPositions`（REST 仓位 → WS 兼容格式） | 2 |
+| `service/HYPE-watch/api/index.mjs` | 已有 `fetchClearinghouseState`，无需改动 | 2 |
+| `service/HYPE-watch/test/lastPositionsStore.test.mjs` | 新增持久化 + accountId 单测 | 1 |
+| `service/sodex-watch/test/domain.test.mjs` | 已有，无需改动 | — |
 
 ### 不变
 

@@ -18,6 +18,31 @@ export function parseWsPosition(p) {
   };
 }
 
+// REST 仓位 → WS 兼容格式（Layer 2 REST 兜底）。
+// 输入：GET /api/v1/perps/positions data 数组，只取 size!=0 的当前持仓。
+export function parseRestPositions(rows, symbolMetaFn) {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((r) => r && Number(r.size) !== 0)
+    .map((r) => {
+      const symbolId = Number(r.symbol_id);
+      const meta = typeof symbolMetaFn === "function" ? symbolMetaFn(symbolId) : null;
+      const symbol = meta?.baseCoin ? `${meta.baseCoin}-USD` : `#${symbolId}`;
+      const posSide = Number(r.position_side) === 2 ? "LONG" : "SHORT";
+      return {
+        symbol: String(symbol),
+        posSide,
+        size: String(r.size ?? "0"),
+        entry: String(r.avg_entry_price ?? ""),
+        unrealizedPnl: String(r.unrealized_pnl ?? "0"),
+        realizedPnl: "0",
+        leverage: Number(r.leverage ?? 0),
+        liqPrice: String(r.liquidation_price ?? ""),
+        marginMode: String(r.margin_mode ?? ""),
+      };
+    });
+}
+
 // 离场单（reduceOnly，R:true）归一化。WS data.O 字段：i 单号 / s 币 / S BUY|SELL /
 // p 价 / q 量 / z 已成交 / ps LONG|SHORT|BOTH / o 类型 / X 状态。开仓单(R:false)不取。
 export function parseReduceOnlyOrders(orders) {

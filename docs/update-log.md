@@ -10,18 +10,37 @@
 
 ### 变更
 
-- **`tool/lastPositionsStore.mjs`（新建）**：仓位快照持久化工具—写盘（推送成功后）、读盘（启动恢复）、多地址隔离、文件损坏降级。
+- **`tool/lastPositionsStore.mjs`（新建）**：仓位快照 + accountId 持久化工具（读写/多地址隔离/损坏降级）。
 - **`HYPE-watch/process/watcher.mjs`（三层防御）**：
   - Layer 1：推送成功后 `saveLastPositions` 写盘。
   - Layer 2：首帧调 `fetchClearinghouseState` REST 交叉验证，纠正 HL WS 重连快照不完整。
-  - Layer 3：跨帧 CLOSE 补丁加 `prevPositions` 守卫，延迟 fill 不再重复推送。
-- **`sodex-watch/process/watcher.mjs`**：对称实现 Layer 1+3；Layer 2 从磁盘恢复基线。
+  - Layer 3：跨帧 CLOSE 补丁加 `prevPositions` 守卫。
+- **`sodex-watch/process/watcher.mjs`（三层防御）**：
+  - Layer 1：推送成功后 `saveLastPositions` 写盘。
+  - Layer 2：持久化 `accountId`（WS 拿到后写盘，重启从磁盘恢复）；首帧调 `fetchPositionHistory` REST 获取当前仓位交叉验证，无需等 WS 连接。
+  - Layer 3：跨帧 CLOSE 补丁加 `prevPositions` 守卫。
+- **`sodex-watch/process/parse.mjs`**：新增 `parseRestPositions`（REST 仓位 → WS 兼容格式）。
 - **`HYPE-watch/main.mjs` / `sodex-watch/main.mjs`**：传入 `stateDir` 参数。
 - **`HYPE-watch/test/lastPositionsStore.test.mjs`**：5 个单测。
 
 ### 边界
 
 持久化文件缺失/损坏 → 降级空数组。REST 失败 → 降级到持久化数据 + 告警。WS 运行中丢帧 → Layer 3 兜底。
+
+---
+
+## HYPE-watch WS 心跳优化 + 断连诊断 — 2026-07-04
+
+HYPE-watch WS 断连频繁（356 次/周），优化 ping 间隔并加断连原因诊断。
+
+### 变更
+
+- **`HYPE-watch/process/watcher.mjs`**：ping 间隔 15s→30s（对齐 GoldRush 推荐，HL 超时 60s）；`onclose` 日志加 `reason` 字段，用于诊断断连根因。
+
+### 效果
+
+- 每小时 ping 从 240 次降至 120 次，减少心跳开销。
+- 断连日志含 `reason`，一周后可分析根因（code=1000 reason="" → HL 连接时长限制；reason="Going Away" → 服务端重启）。
 
 ---
 
