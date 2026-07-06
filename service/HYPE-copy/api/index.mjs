@@ -167,12 +167,17 @@ export async function fetchTargetState(env, sodexAddr) {
 }
 
 // ---------- fetchHypePrices：allMids 原样 coin→midPx 字符串（不换算/不舍入）----------
+// xyz index perps 有独立 allMids，需并行查询并合并
 export async function fetchHypePrices(env) {
   try {
-    const mids = await infoPost(env, { type: "allMids" });
+    const [midsNative, midsXyz] = await Promise.all([
+      infoPost(env, { type: "allMids" }),
+      infoPost(env, { type: "allMids", dex: "xyz" }),
+    ]);
     hypeLimiter.reset();
     const out = {};
-    for (const [coin, px] of Object.entries(mids ?? {})) out[coin] = String(px);
+    for (const [coin, px] of Object.entries(midsNative ?? {})) out[coin] = String(px);
+    for (const [coin, px] of Object.entries(midsXyz ?? {})) out[coin] = String(px);
     return out;
   } catch (err) {
     handleThrottle(err, hypeLimiter, HYPE_THROTTLE_STATUSES);
@@ -198,10 +203,16 @@ export async function buildHypeAssetIndex(env, { force = false } = {}) {
   const fresh = assetIndexCache.size > 0 && Date.now() - assetIndexCachedAt < META_REFRESH_MS;
   if (fresh && !force) return assetIndexCache;
   try {
-    const metaJson = await infoPost(env, { type: "meta" });
+    // xyz index perps 有独立 meta universe，需并行查询并合并（native + xyz 无 coin 名冲突）
+    const [metaNative, metaXyz] = await Promise.all([
+      infoPost(env, { type: "meta" }),
+      infoPost(env, { type: "meta", dex: "xyz" }),
+    ]);
     hypeLimiter.reset();
-    const map = parseHypeMeta(metaJson);
-    if (map.size) { assetIndexCache = map; assetIndexCachedAt = Date.now(); log(`asset index 缓存已更新：${map.size} 个 perps`); }
+    const map = parseHypeMeta(metaNative);
+    const xyzMap = parseHypeMeta(metaXyz);
+    for (const [coin, entry] of xyzMap) map.set(coin, entry);
+    if (map.size) { assetIndexCache = map; assetIndexCachedAt = Date.now(); log(`asset index 缓存已更新：${map.size} 个 perps (native + xyz)`); }
     else log("meta universe 为空，沿用旧缓存");
     return assetIndexCache;
   } catch (err) {

@@ -28,6 +28,7 @@ HYPE-watch 的 `clearinghouseState` / `frontendOpenOrders` 未传 `dex` 参数�
 - WS 测试：native + xyz 双频道独立推送，`msg.data.dex` 可靠区分来源
 - `userFills` 验证：不需要 `dex`，始终返回所有 dex 的成交
 - VPS 日志对 2566 地址始终显示「无持仓」→ 根因确认为 `dex` 参数缺失，非仓位不存在
+- **`service/HYPE-copy/api/index.mjs`**：`fetchHypePrices` / `buildHypeAssetIndex` 同步支持 xyz——并行查 native + xyz 的 `allMids` / `meta` 并合并结果，避免 xyz 币种在下单时因缺元数据被跳过。
 
 ---
 
