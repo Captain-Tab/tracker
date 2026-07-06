@@ -55,7 +55,8 @@ async function main() {
   saveSeen(seenPath, configAddrs, seen);
   log(`START WATCH 门控：新增 ${newAddrs.size} / 已知 ${configAddrs.length - newAddrs.size}（删 ${seenPath} 可强制全部重推）`);
   await refreshMeta(env).catch((e) => log(`meta 拉取失败（不阻断）：${e.message}`));
-  setInterval(() => refreshMeta(env).catch(() => {}), META_REFRESH_MS);
+  await refreshMeta(env, "xyz").catch((e) => log(`xyz meta 拉取失败（不阻断）：${e.message}`));
+  setInterval(() => { refreshMeta(env).catch(() => {}); refreshMeta(env, "xyz").catch(() => {}); }, META_REFRESH_MS);
 
   const runners = cfg.watches.map((w) => new AccountWatcher(env, w.address, {
     ...flags,

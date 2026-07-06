@@ -23,7 +23,10 @@ import { loadLastPositions, saveLastPositions } from "../../tool/lastPositionsSt
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const CHANNELS = ["clearinghouseState", "openOrders", "userFills", "orderUpdates"];
+// native perps 四个频道；xyz index perps 额外订阅 clearinghouseState + openOrders + orderUpdates
+// userFills 不区分 dex——已验证该频道忽略 dex 参数，始终推送所有 dex 的成交
+const NATIVE_CHANNELS = ["clearinghouseState", "openOrders", "userFills", "orderUpdates"];
+const XYZ_CHANNELS = ["clearinghouseState", "openOrders", "orderUpdates"];
 const PING_INTERVAL_MS = 30_000;
 const PONG_TIMEOUT_MS = 10_000;
 const RECONNECT_BASE_MS = 1_000;
@@ -81,10 +84,13 @@ export class AccountWatcher {
     this.firstPendingAt = 0;
     this.closing = false;
     this.fetching = false;
-    this.positions = [];      // 来自 WS clearinghouseState（归一模型）
-    this.marginSummary = null; // { accountValue, totalMarginUsed, totalNtlPos }
+    // 按 dex 分储 WS 仓位——native 与 xyz 各自 clearinghouseState 独立推送，不可相互覆盖
+    this.nativePositions = [];
+    this.xyzPositions = [];
+    this.marginSummary = null; // { accountValue, totalMarginUsed, totalNtlPos }（合并 native + xyz）
     this.withdrawable = null;
-    this.wsOrders = [];       // 来自 WS openOrders（仅指纹用）
+    this.nativeWsOrders = [];  // WS openOrders（native）
+    this.xyzWsOrders = [];     // WS openOrders（xyz）
     this.lastPositions = [];
     this.prevExitOrders = new Map(); // oid → 离场单（离场单变化 diff 基线）
     this.seenCloseOids = new Set();
@@ -104,6 +110,10 @@ export class AccountWatcher {
     this.pendingStructural = false;
   }
 
+  // 合并 native + xyz 仓位/订单——下游消费方无感知
+  get positions() { return [...this.nativePositions, ...this.xyzPositions]; }
+  get wsOrders() { return [...this.nativeWsOrders, ...this.xyzWsOrders]; }
+
   makeDisplayId() { return formatDisplayId(this.address, this.label); }
 
   start() { watcherRegistry.add(this); this.connect(); }
@@ -114,8 +124,9 @@ export class AccountWatcher {
     this.ws = ws;
     ws.onopen = () => {
       this.reconnectAttempt = 0;
-      log("OPEN，订阅账户频道");
-      for (const channel of CHANNELS) this.send({ method: "subscribe", subscription: { type: channel, user: this.address } });
+      log("OPEN，订阅账户频道（native + xyz）");
+      for (const channel of NATIVE_CHANNELS) this.send({ method: "subscribe", subscription: { type: channel, user: this.address } });
+      for (const channel of XYZ_CHANNELS) this.send({ method: "subscribe", subscription: { type: channel, user: this.address, dex: "xyz" } });
       this.startPing();
       this.scheduleDaily();
     };
@@ -160,16 +171,28 @@ export class AccountWatcher {
     if (ch === "subscriptionResponse") { return; }
     if (ch === "error") { log(`订阅错误：${JSON.stringify(msg.data).slice(0, 120)}`); return; }
 
+    const dex = msg.data?.dex ?? ""; // "" = native, "xyz" = xyz index perps
+
     if (ch === "clearinghouseState") {
       const cs = msg.data?.clearinghouseState ?? msg.data ?? {};
-      this.positions = parsePositions(cs.assetPositions, szDecimalsOf);
+      const positions = parsePositions(cs.assetPositions, szDecimalsOf);
+      if (dex === "xyz") {
+        this.xyzPositions = positions;
+      } else {
+        this.nativePositions = positions;
+      }
       this.marginSummary = cs.marginSummary ?? null;
       this.withdrawable = cs.withdrawable != null ? Number(cs.withdrawable) : null;
       this.recomputeStateFp();
       return;
     }
     if (ch === "openOrders") {
-      this.wsOrders = Array.isArray(msg.data?.orders) ? msg.data.orders : [];
+      const orders = Array.isArray(msg.data?.orders) ? msg.data.orders : [];
+      if (dex === "xyz") {
+        this.xyzWsOrders = orders;
+      } else {
+        this.nativeWsOrders = orders;
+      }
       this.recomputeStateFp();
       return;
     }
@@ -226,11 +249,15 @@ export class AccountWatcher {
       let exitOrders = null;
       let closeRecords = null;
       try {
-        const [frontOrders, fills] = await Promise.all([
+        const [frontOrdersNative, frontOrdersXyz, fills] = await Promise.all([
           fetchFrontendOpenOrders(this.env, this.address),
+          fetchFrontendOpenOrders(this.env, this.address, "xyz"),
           fetchUserFills(this.env, this.address),
         ]);
-        exitOrders = parseExitOrders(frontOrders);
+        exitOrders = [
+          ...parseExitOrders(frontOrdersNative),
+          ...parseExitOrders(frontOrdersXyz),
+        ];
         closeRecords = parseCloseRecords(fills);
         resetSharedBackoff();
       } catch (err) {
@@ -268,15 +295,22 @@ export class AccountWatcher {
 
       // Layer 2: 首帧用 REST clearinghouseState 交叉验证（08-position-persistence §2.2）
       // 纠正 HL WS 重连时可能返回的不完整快照 + 检测 downtime 仓位变化
+      // 同时查询 native 和 xyz 两个 dex，分别覆盖对应持仓
       if (isBaseline && this.stateDir) {
         const persisted = loadLastPositions(this.stateDir, this.address);
         if (persisted.length > 0) {
           try {
-            const cs = await fetchClearinghouseState(this.env, this.address);
-            const restPositions = parsePositions(cs?.assetPositions, szDecimalsOf);
-            log(`[REST 兜底] 持久化 ${persisted.length} 个仓位，REST 返回 ${restPositions.length} 个仓位`);
+            const [csNative, csXyz] = await Promise.all([
+              fetchClearinghouseState(this.env, this.address),
+              fetchClearinghouseState(this.env, this.address, "xyz"),
+            ]);
+            const nativePositions = parsePositions(csNative?.assetPositions, szDecimalsOf);
+            const xyzPositions = parsePositions(csXyz?.assetPositions, szDecimalsOf);
+            const restPositions = [...nativePositions, ...xyzPositions];
+            log(`[REST 兜底] 持久化 ${persisted.length} 个仓位，REST 返回 native=${nativePositions.length} xyz=${xyzPositions.length}（合计 ${restPositions.length}）`);
             // 以 REST 权威数据为准，用持久化数据作为 diff 基线检测 downtime 变化
-            this.positions = restPositions;
+            this.nativePositions = nativePositions;
+            this.xyzPositions = xyzPositions;
             this.lastPositions = persisted; // 关键：保留持久化基线，用于 diff 产生 CLOSED/OPENED
           } catch (e) {
             log(`[REST 兜底] clearinghouseState REST 失败(${e.message})，降级到持久化数据`);
@@ -361,8 +395,8 @@ export class AccountWatcher {
     if (!closedSummaries.length && newOids.size) {
       const prevCoins = new Set(prevPositions.map((p) => p.coin));
       const affected = [...new Set(histRecords.filter((r) => newOids.has(r.oid)).map((r) => r.coin))];
-      if (affected.some((c) => prevCoins.includes(c))) {
-        closedSummaries = affected.filter((c) => prevCoins.includes(c)).map((coin) => {
+      if (affected.some((c) => prevCoins.has(c))) {
+        closedSummaries = affected.filter((c) => prevCoins.has(c)).map((coin) => {
           const r = histRecords.find((x) => x.coin === coin && newOids.has(x.oid));
           return { coin, dir: String(r?.dir ?? "").includes("Long") ? "LONG" : "SHORT" };
         });

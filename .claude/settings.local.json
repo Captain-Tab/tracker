@@ -191,7 +191,11 @@
       "Bash(TZ=Asia/Shanghai date -v-7d '+%Y-%m-%d')",
       "Bash(sed -n '/sodex-watch.*WS 断连/,/```/p' /Users/tabcaptain/Documents/code/tracker/service/running-log/log/weekly-2026-07-04.md)",
       "Bash(sed -n '/sodex-watch.*重启/,/^$/p' /Users/tabcaptain/Documents/code/tracker/service/running-log/log/weekly-2026-07-04.md)",
-      "Bash(echo \"---EXIT: $?\")"
+      "Bash(echo \"---EXIT: $?\")",
+      "Bash(pm2 list *)",
+      "Bash(python3 *)",
+      "WebFetch(domain:hyperx.trade)",
+      "Bash(jobs -l)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",

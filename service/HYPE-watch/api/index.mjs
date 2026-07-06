@@ -63,8 +63,18 @@ export async function infoPost(env, body) {
 }
 
 // 账户级读取（只读，零鉴权，按 address）
-export const fetchClearinghouseState = (env, address) => infoPost(env, { type: "clearinghouseState", user: address });
-export const fetchFrontendOpenOrders = (env, address) => infoPost(env, { type: "frontendOpenOrders", user: address });
+// dex 参数区分 native perps (dex="") 和 HIP-3 index perps (dex="xyz")
+// userFills 不需要 dex——已验证该端点忽略 dex 参数，始终返回所有 dex 的成交
+export const fetchClearinghouseState = (env, address, dex = "") => {
+  const body = { type: "clearinghouseState", user: address };
+  if (dex) body.dex = dex;
+  return infoPost(env, body);
+};
+export const fetchFrontendOpenOrders = (env, address, dex = "") => {
+  const body = { type: "frontendOpenOrders", user: address };
+  if (dex) body.dex = dex;
+  return infoPost(env, body);
+};
 export const fetchUserFills = (env, address) => infoPost(env, { type: "userFills", user: address });
 
 // ---------- 模块级共享限流（多地址聚合 QPS 受控，一处 429 全员退避）----------
@@ -118,13 +128,20 @@ export async function sendTelegram(token, chatId, text) {
 let szDecimalsByCoin = new Map();
 const DEFAULT_SZ_DECIMALS = 4;
 
-export async function refreshMeta(env) {
-  const json = await infoPost(env, { type: "meta" });
+export async function refreshMeta(env, dex) {
+  const body = { type: "meta" };
+  if (dex) body.dex = dex;
+  const json = await infoPost(env, body);
   const universe = Array.isArray(json?.universe) ? json.universe : [];
-  const next = new Map();
-  for (const u of universe) next.set(String(u.name), Number(u.szDecimals));
-  if (next.size) { szDecimalsByCoin = next; log(`meta 缓存已更新：${next.size} 个 perps`); }
-  else log("meta universe 为空，沿用旧缓存");
+  // 使用 Map.set 逐条合并，避免不同 dex 的 meta 调用互相覆盖
+  const prefix = dex ? `${dex}:` : "";
+  for (const u of universe) {
+    // xyz meta 返回的 name 已含 "xyz:" 前缀（如 "xyz:AAPL"）
+    const name = String(u.name).startsWith(prefix) ? String(u.name) : prefix + String(u.name);
+    szDecimalsByCoin.set(name, Number(u.szDecimals));
+  }
+  if (universe.length) { szDecimalsByCoin = new Map(szDecimalsByCoin); log(`meta 缓存更新：${universe.length} 个 perps (dex=${dex || "native"})`); }
+  else log(`meta universe 为空 (dex=${dex || "native"})，沿用旧缓存`);
 }
 
 // HYPE perps 价格精度规则：MAX_DECIMALS(6) - szDecimals

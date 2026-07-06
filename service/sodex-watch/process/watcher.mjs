@@ -378,8 +378,8 @@ export class AccountWatcher {
     if (!closedSummaries.length && newPosIds.size) {
       const prevCoins = new Set(prevPositions.map((p) => p.coin));
       const affected = [...new Set(histRecords.filter((r) => newPosIds.has(r.positionId)).map((r) => symbolMeta(r.symbolId).baseCoin).filter(Boolean))];
-      if (affected.some((c) => prevCoins.includes(c))) {
-        closedSummaries = affected.filter((c) => prevCoins.includes(c)).map((coin) => {
+      if (affected.some((c) => prevCoins.has(c))) {
+        closedSummaries = affected.filter((c) => prevCoins.has(c)).map((coin) => {
           const r = histRecords.find((x) => symbolMeta(x.symbolId).baseCoin === coin && newPosIds.has(x.positionId));
           return { coin, dir: RECORD_SIDE_DIR[Number(r?.positionSide ?? 0)] ?? "" };
         });

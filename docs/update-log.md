@@ -4,6 +4,33 @@
 
 ---
 
+## HYPE-watch xyz index perps 仓位支持 + 配置整理 — 2026-07-06
+
+HYPE-watch 的 `clearinghouseState` / `frontendOpenOrders` 未传 `dex` 参数，导致 xyz index perps 仓位完全不可见（Hyperliquid 的 HIP-3 perps 使用独立清算系统）。同时整理了 watch config 中不活跃地址。
+
+### 变更
+
+- **`service/HYPE-watch/api/index.mjs`**：`fetchClearinghouseState` / `fetchFrontendOpenOrders` 新增可选 `dex` 参数；`refreshMeta` 支持 `dex` 并用 `Map.set` 逐条合并，避免不同 dex 互相覆盖。
+- **`service/HYPE-watch/main.mjs`**：启动时同时刷新 native + xyz meta 缓存，周期刷新覆盖两个 dex。
+- **`service/HYPE-watch/process/watcher.mjs`**：仓位/订单按 dex 分储（`nativePositions` / `xyzPositions`），通过 getter 合并保持下游兼容；WS 订阅 native 4 频道 + xyz 3 频道；`handleMessage` 按 `msg.data.dex` 分发；REST 拉取及基线交叉验证并行查两个 dex。
+- **`service/HYPE-watch/config.json`**：移出 ③多币种活跃 / ⑤净额69万 / ①BTC+ETH → candidate；新增 ada赚+btc做空赚 / 胜率高 / 多仓高手。
+- **`service/HYPE-watch/watch-candidates.json`**：更新/新增 8 条候选项，含不活跃、仓位多、待观察等分类原因。
+- **`service/sodex-watch/watch-candidates.json`**：新增 `0xcca2...` 待观察。
+
+### Bug 修复
+
+- **`service/HYPE-watch/process/watcher.mjs:398-399`**：`prevCoins.includes()` → `prevCoins.has()`（Set 不支持 `includes`，运行时会抛 TypeError，VPS 日志已捕获）。
+- **`service/sodex-watch/process/watcher.mjs:381-382`**：同步修复相同 bug。
+
+### 验证
+
+- API 测试：不加 `dex`→0 仓位；加 `dex:"xyz"`→11 个 xyz 空单，与 hyperx.trade 一致
+- WS 测试：native + xyz 双频道独立推送，`msg.data.dex` 可靠区分来源
+- `userFills` 验证：不需要 `dex`，始终返回所有 dex 的成交
+- VPS 日志对 2566 地址始终显示「无持仓」→ 根因确认为 `dex` 参数缺失，非仓位不存在
+
+---
+
 ## HYPE-copy dry-run 部署 + provision CLI 改进 + 快捷部署脚本 — 2026-07-04
 
 Part A（v3 dry-run）首次 VPS 部署与联网观察，搭配 provision 脚本交互改进。
