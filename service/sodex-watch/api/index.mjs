@@ -158,6 +158,19 @@ export async function resolveAccountIdViaChain(env, address) {
   return resp.data.primaryAccountId ?? null;
 }
 
+// ---------- 当前持仓（account state REST，替代 WS 断连时的数据源）----------
+export async function fetchAccountState(env, address) {
+  const json = await httpGetJson(`${env.gateway}/api/v1/perps/accounts/${address}/state`);
+  return { positions: parseAccountStatePositions(json?.data), raw: json };
+}
+
+// 解析 account state 响应中的 P 数组（当前持仓），字段与 WS accountState 一致
+export function parseAccountStatePositions(data) {
+  const positions = data?.P ?? [];
+  if (!Array.isArray(positions)) return [];
+  return positions.filter((p) => p && Number(p.sz) !== 0);
+}
+
 // ---------- 平仓历史（perps/positions 权威 realized_pnl / 资金费 / 均价）----------
 export async function fetchPositionHistory(env, accountId) {
   const json = await httpGetJson(`${env.data}/api/v1/perps/positions?account_id=${encodeURIComponent(accountId)}`);

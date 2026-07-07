@@ -4,6 +4,31 @@
 
 ---
 
+## sodex-watch 每日镜像独立化 + WS 稳定性优化 — 2026-07-07
+
+sodex-watch WS 频繁断连（code=1001/1006，含 WARP 代理故障）导致 `baselineLogged` 重置，每日镜像被劫持为 START WATCH，TG 不推送。同时 REST 兜底使用了平仓历史接口（`/api/v1/perps/positions`），无法获取当前持仓。
+
+### 变更
+
+- **`service/sodex-watch/process/dailySnapshot.mjs`**：position 映射补全 `symbol/unrealizedPnl/leverage/liqPrice/marginMode/coin/dir` 字段，对齐 WS `parseWsPosition` 格式；新增 `reportSkipReason` 空仓跳过逻辑。
+- **`service/sodex-watch/process/watcher.mjs`**：`scheduleDaily` 改为调用 `dailySnapshot(ctx)`；移除 `forceReport`/`tgReason` 字段及相关引用；简化 `kind`/`isOverview`、G5/G6 补拉 guard。
+- **`service/sodex-watch/api/index.mjs`**：新增 `fetchAccountState`（`/api/v1/perps/accounts/<address>/state`），替换平仓历史接口作为 REST 兜底数据源。
+
+### Bug 修复
+
+- **`service/HYPE-watch/process/watcher.mjs:134`**、**`service/sodex-watch/process/watcher.mjs:122`**：`onclose` 重置 `baselineLogged = false`。WS 断连重连后触发 Layer 2 REST 交叉验证，消除碎片化假 OPEN 事件。
+- **`service/sodex-watch/process/watcher.mjs:269`**：REST 兜底条件拆分——REST 返回空时不再覆盖 WS 仓位（原接口为平仓历史，正常不返回当前持仓），仅用持久化做 diff 基线。
+- **`service/sodex-watch/process/watcher.mjs:115`**：`onopen` 重连计数器改为 30s 稳定后才清零，避免 sodex 服务器「连上即踢」的退避重置循环。
+- **`service/sodex-watch/process/watcher.mjs`**：移除 `parseRestPositions` 死导入。
+
+### 验证
+
+- VPS 强制触发 `dailySnapshot` 成功，TG 收到 SNAPSHOT
+- `fetchAccountState` 端点返回真实当前持仓（非平仓历史）
+- 服务部署后无 ERROR，5 地址正常运行
+
+---
+
 ## HYPE-watch xyz index perps 仓位支持 + 配置整理 — 2026-07-06
 
 HYPE-watch 的 `clearinghouseState` / `frontendOpenOrders` 未传 `dex` 参数，导致 xyz index perps 仓位完全不可见（Hyperliquid 的 HIP-3 perps 使用独立清算系统）。同时整理了 watch config 中不活跃地址。
@@ -20,8 +45,6 @@ HYPE-watch 的 `clearinghouseState` / `frontendOpenOrders` 未传 `dex` 参数�
 ### Bug 修复
 
 - **`service/HYPE-watch/process/watcher.mjs:398-399`**：`prevCoins.includes()` → `prevCoins.has()`（Set 不支持 `includes`，运行时会抛 TypeError，VPS 日志已捕获）。
-- **`service/HYPE-watch/process/watcher.mjs:134`**、**`service/sodex-watch/process/watcher.mjs:122`**：`onclose` 重置 `baselineLogged = false`。WS 断连重连后触发 Layer 2 REST 交叉验证一次性全量仓位，消除碎片化假 OPEN 事件。
-- **`service/sodex-watch/process/watcher.mjs:269`**：REST 兜底条件拆分——REST 返回空时不再覆盖 WS 仓位（`/api/v1/perps/positions` 为平仓历史接口，正常不返回当前持仓），仅用持久化做 diff 基线。
 - **`service/sodex-watch/process/watcher.mjs:381-382`**：同步修复相同 bug。
 
 ### 验证

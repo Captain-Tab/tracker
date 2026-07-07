@@ -4,7 +4,7 @@ import { fmtTime, fmtNum, pickAt, formatDisplayId } from "../../tool/format.mjs"
 import { reportSkipReason } from "../../tool/reportGate.mjs";
 import {
   parseWsPosition, parseReduceOnlyOrders, canonicalReduceOnlyOrders, canonicalPositionsFp,
-  positionKeysFp, diffPositions, diffReduceOnly, baseCoin, positionDirection, parseRestPositions,
+  positionKeysFp, diffPositions, diffReduceOnly, baseCoin, positionDirection,
 } from "./parse.mjs";
 import {
   classifyBanner, buildEventBanner, buildExitEventBanner, renderPositions, renderPositionHistory,
@@ -12,7 +12,7 @@ import {
   derivePositionView, exitOrderLine,
 } from "./render.mjs";
 import {
-  log, parseJsonSafe, fetchPositionHistory, sendTelegram, resolveAccountIdViaChain,
+  log, parseJsonSafe, fetchPositionHistory, fetchAccountState, sendTelegram, resolveAccountIdViaChain,
   enterSharedRateLimit, nextSharedBackoffMs, resetSharedBackoff, watcherRegistry,
   sharedRateLimitUntil, THROTTLE_STATUSES, SEEN_IDS_CAP, symbolMeta, symbolMetaBySymbol,
 } from "../api/index.mjs";
@@ -20,6 +20,7 @@ import { installWsProxy } from "../../lib/WARP/index.mjs";
 import { writeSignal } from "../../lib/copy-signal/index.mjs";
 import { loadLastPositions, saveLastPositions, loadAccountId, saveAccountId } from "../../tool/lastPositionsStore.mjs";
 import { msUntilNextShanghai } from "./snapshot.mjs";
+import { dailySnapshot } from "./dailySnapshot.mjs";
 
 const CHANNELS = ["accountState", "accountUpdate", "accountOrderUpdate", "accountTrade"];
 
@@ -64,13 +65,12 @@ export class AccountWatcher {
     this.label = flags.label ?? null;
     this.at = pickAt(flags.at, undefined); // 非法 --at 回退默认 20:00
     this.isNew = flags.isNew !== false; // START 门控：缺省 true（单地址 CLI 不门控）
-    this.forceReport = false;
     this.dailyTimer = null;
-    this.tgReason = "event";
     this.retryScheduled = false;
     this.ws = null;
     this.requestId = 0;
     this.reconnectAttempt = 0;
+    this.stableTimer = null;  // 连接稳定 30s 后才重置重连计数器，避免被踢循环
     this.pingTimer = null;
     this.pongTimer = null;
     this.debounceTimer = null;
@@ -112,14 +112,15 @@ export class AccountWatcher {
     const ws = new WebSocket(url);
     this.ws = ws;
     ws.onopen = () => {
-      this.reconnectAttempt = 0;
+      // 连接稳定 30s 后才清零重连计数器，避免「连上即被踢」的退避重置循环
+      this.stableTimer = setTimeout(() => { this.reconnectAttempt = 0; this.stableTimer = null; }, 30_000);
       log("OPEN，订阅账户频道");
       for (const channel of CHANNELS) this.send({ op: "subscribe", id: ++this.requestId, params: { channel, user: this.address } });
       this.startPing();
       this.scheduleDaily();
     };
     ws.onmessage = (ev) => this.handleMessage(ev.data);
-    ws.onclose = (ev) => { this.clearTimers(); if (this.closing) return; this.baselineLogged = false; log(`CLOSE code=${ev.code}，准备重连`); this.scheduleReconnect(); };
+    ws.onclose = (ev) => { this.clearTimers(); if (this.stableTimer) { clearTimeout(this.stableTimer); this.stableTimer = null; } if (this.closing) return; this.baselineLogged = false; log(`CLOSE code=${ev.code}，准备重连`); this.scheduleReconnect(); };
     ws.onerror = (ev) => log("WS ERROR:", ev?.message || ev?.type || ev);
   }
 
@@ -146,7 +147,15 @@ export class AccountWatcher {
 
   scheduleDaily() {
     const ms = msUntilNextShanghai(this.at);
-    this.dailyTimer = setTimeout(() => { this.forceReport = true; this.lastOutFp = null; this.tgReason = "daily"; this.scheduleFetch(true); this.scheduleDaily(); }, ms);
+    this.dailyTimer = setTimeout(async () => {
+      const result = await dailySnapshot({
+        env: this.env, address: this.address, accountId: this.accountId,
+        tgToken: this.tgToken, tgChat: this.tgChat,
+        stateDir: this.stateDir, label: this.label, historyLimit: this.historyLimit,
+      });
+      if (result.accountId) this.accountId = result.accountId;
+      this.scheduleDaily();
+    }, ms);
     log(`下次每日快照：${this.at} 上海时间（约 ${Math.round(ms / 60000)} 分钟后）`);
   }
 
@@ -236,7 +245,7 @@ export class AccountWatcher {
           log(`触发限流(${err.status})，${Math.round(waitMs / 1000)}s 后全员恢复`);
         }
       }
-      // 拉取失败（限流/硬错误）：不渲染空数据，保留 lastOutFp / forceReport 待下次成功（不误报）
+      // 拉取失败（限流/硬错误）：不渲染空数据，保留 lastOutFp 待下次成功（不误报）
       if (result === null) return;
 
       const records = result.records ?? [];
@@ -244,8 +253,7 @@ export class AccountWatcher {
       // G1：出参去重须含 reduceOnly + 平仓 position_id 集，否则纯挂单变化(仓位/平仓均无变)被去重 → 即时提醒失效
       const closedIdsFp = records.map((r) => r.positionId).sort().join(",");
       const outFp = canonicalPositionsFp(this.positions) + "|" + canonicalReduceOnlyOrders(this.ordersRaw) + "|" + closedIdsFp;
-      const force = this.forceReport; this.forceReport = false;
-      if (!force && outFp === this.lastOutFp) return;
+      if (outFp === this.lastOutFp) return;
 
       const events = diffPositions(this.lastPositions, this.positions);
 
@@ -257,45 +265,35 @@ export class AccountWatcher {
       this.baselineLogged = true;
 
       // Layer 2: 首帧从磁盘恢复 lastPositions + REST 兜底（08-position-persistence §2.2）
+      // 使用 /api/v1/perps/accounts/<address>/state 获取当前持仓（非平仓历史接口）
       if (isBaseline && this.stateDir) {
         const persisted = loadLastPositions(this.stateDir, this.address);
-        // 尝试 REST 交叉验证（需要 accountId）
-        if (this.accountId) {
-          try {
-            const result = await fetchPositionHistory(this.env, this.accountId);
-            const restRows = result?.raw?.data;
-            if (Array.isArray(restRows)) {
-              const restPositions = parseRestPositions(restRows, symbolMeta);
-              if (restPositions.length > 0) {
-                // REST 返回当前持仓 → 以 REST 为准（权威交叉验证）
-                const restCurr = restPositions.map((p) => ({
-                  coin: baseCoin(p.symbol),
-                  dir: positionDirection(p),
-                  size: Number(p.size),
-                  entry: p.entry,
-                }));
-                log(`[REST 兜底] 持久化 ${persisted.length} 个仓位，REST 返回 ${restCurr.length} 个仓位`);
-                this.positions = restCurr;
-                this.lastPositions = persisted;
-              } else if (persisted.length > 0) {
-                // REST 无当前持仓（该端点为平仓历史，正常不返回持仓中仓位）→ 保留 WS 仓位，持久化做基线
-                log(`[REST 兜底] REST 无当前持仓，保留 WS 仓位，持久化基线=${persisted.length}`);
-                this.lastPositions = persisted;
-              }
-            }
-          } catch (e) {
-            log(`[REST 兜底] fetchPositionHistory 失败(${e.message})，降级`);
-            if (persisted.length > 0) this.lastPositions = persisted;
+        try {
+          const result = await fetchAccountState(this.env, this.address);
+          const restPositions = result?.positions ?? [];
+          if (restPositions.length > 0) {
+            const restCurr = restPositions.map((p) => ({
+              coin: baseCoin(String(p.s ?? "")),
+              dir: Number(p.sz) > 0 ? "LONG" : "SHORT",
+              size: Math.abs(Number(p.sz)),
+              entry: Number(p.ep),
+            }));
+            log(`[REST 兜底] 持久化 ${persisted.length} 个仓位，REST(account state) 返回 ${restCurr.length} 个仓位`);
+            this.positions = restCurr;
+            this.lastPositions = persisted;
+          } else if (persisted.length > 0) {
+            log(`[REST 兜底] REST 无当前持仓，保留 WS 仓位，持久化基线=${persisted.length}`);
+            this.lastPositions = persisted;
           }
-        } else if (persisted.length > 0) {
-          log(`[持久化恢复] 从磁盘加载 ${persisted.length} 个仓位基线（无 accountId，跳过 REST）`);
-          this.lastPositions = persisted;
+        } catch (e) {
+          log(`[REST 兜底] fetchAccountState 失败(${e.message})，降级`);
+          if (persisted.length > 0) this.lastPositions = persisted;
         }
       }
 
       // G5/G6：检测到 CLOSED 仓位事件但平仓历史尚无对应新 position_id → positions 索引延迟，2s 补拉
       const hasClosed = events.some((e) => e.startsWith("CLOSED"));
-      if (!force && !isBaseline && hasClosed && newPosIds.size === 0) {
+      if (!isBaseline && hasClosed && newPosIds.size === 0) {
         if (!this.retryScheduled) { this.retryScheduled = true; this.lastOutFp = null; setTimeout(() => { this.retryScheduled = false; this.scheduleFetch(true); }, 2000); }
         return;
       }
@@ -315,9 +313,9 @@ export class AccountWatcher {
       const exitChanges = isBaseline ? [] : this.computeExitChanges(reduceOnly, events);
       this.prevReduceOnly = new Map(reduceOnly.map((o) => [o.orderId, o]));
 
-      // banner 类型：首帧→START WATCH；每日 force→SNAPSHOT；否则按仓位 diff 动词化（可能为 null，如纯离场单/抖动帧）
-      const isOverview = isBaseline || this.tgReason === "daily";
-      const kind = isBaseline ? "START" : this.tgReason === "daily" ? "SNAPSHOT" : classifyBanner(events, newPosIds).kind;
+      // banner 类型：首帧→START；否则按仓位 diff 动词化
+      const isOverview = isBaseline;
+      const kind = isBaseline ? "START" : classifyBanner(events, newPosIds).kind;
       const clock = fmtTime();
       const displayId = this.makeDisplayId();
 
@@ -354,7 +352,6 @@ export class AccountWatcher {
       if (this.stateDir && this.lastPositions.length > 0) {
         saveLastPositions(this.stateDir, this.address, this.lastPositions);
       }
-      this.tgReason = "event";
     } finally { this.fetching = false; }
   }
 
