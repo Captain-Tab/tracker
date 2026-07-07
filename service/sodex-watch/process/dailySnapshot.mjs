@@ -5,7 +5,7 @@ import { reportSkipReason } from "../../tool/reportGate.mjs";
 import { baseCoin } from "./parse.mjs";
 import { buildTgMessage } from "./render.mjs";
 import {
-  log, fetchPositionHistory, fetchAccountState, sendTelegram, resolveAccountIdViaChain,
+  log, fetchPositionHistory, fetchAccountState, sendTelegram, resolveAccountIdViaChain, ensureSymbolsLoaded,
 } from "../api/index.mjs";
 import { saveLastPositions } from "../../tool/lastPositionsStore.mjs";
 
@@ -25,6 +25,10 @@ import { saveLastPositions } from "../../tool/lastPositionsStore.mjs";
  */
 export async function dailySnapshot(ctx, retry = 0) {
   try {
+    // 兜底：独立调用或进程刚启动时符号缓存可能为空（refreshSymbols 失败且尚未重试），
+    // 缓存空 → 平仓历史 renderPositionHistory 无法从数字 symbolId 解析币名 → 显示 #xx
+    await ensureSymbolsLoaded(ctx.env);
+
     let accountId = ctx.accountId;
     if (!accountId) {
       accountId = await resolveAccountIdViaChain(ctx.env, ctx.address);

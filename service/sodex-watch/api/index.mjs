@@ -152,6 +152,11 @@ export function symbolMetaBySymbol(symbol) {
 }
 
 // ---------- accountId 解析 ----------
+// 兜底：独立调用模式下符号缓存可能未初始化，确保非空（已有数据跳过不重复拉取）
+export async function ensureSymbolsLoaded(env) {
+  if (symbolsById.size === 0) await refreshSymbols(env);
+}
+
 export async function resolveAccountIdViaChain(env, address) {
   const resp = await httpGetJson(`${env.chain}/chain/address/${address}/accounts`).catch(() => null);
   if (resp?.code !== 0 || !resp?.data) return null;

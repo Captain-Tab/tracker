@@ -4,12 +4,23 @@
 
 ---
 
-## sodex-watch 每日镜像独立化 + WS 稳定性优化 — 2026-07-07
+## 2026-07-07
+- **fix(sodex-watch)**: `dailySnapshot` 添加符号缓存垫片，防止缓存空时平仓历史显示 #xx
+  - `api/index.mjs` — 新增 `ensureSymbolsLoaded(env)`，`symbolsById` 为空时补刷
+  - `dailySnapshot.mjs` — 构建 TG 前调用 `ensureSymbolsLoaded`
+  - 根因：平仓历史渲染(`renderPositionHistory`)通过数字 `symbolId` 查 `symbolMeta()`，缓存未命中无法推导币名（仓位渲染通过 `symbolMetaBySymbol` 有 `baseCoin()` 回退，但数字 ID 无法提取币名）
+  - 触发条件：独立调用 `dailySnapshot` 或进程启动时 `refreshSymbols` 失败
 
-sodex-watch WS 频繁断连（code=1001/1006，含 WARP 代理故障）导致 `baselineLogged` 重置，每日镜像被劫持为 START WATCH，TG 不推送。同时 REST 兜底使用了平仓历史接口（`/api/v1/perps/positions`），无法获取当前持仓。
+---
+
+## HYPE-watch 每日镜像独立化 + sodex-watch 每日镜像独立化 + WS 稳定性优化 — 2026-07-07
+
+sodex-watch / HYPE-watch 每日镜像均通过 `scheduleDaily → scheduleFetch → fetchAndReport` 路径与 WS 事件耦合。WS 断连导致 `baselineLogged=false` 时镜像被劫持为 START WATCH，TG 不推送。两个服务分别抽离独立的 `dailySnapshot.mjs` 模块。
 
 ### 变更
 
+- **`service/HYPE-watch/process/dailySnapshot.mjs`（新建）**：独立 REST 快照模块，`fetchClearinghouseState`(native+xyz) + `fetchUserFills` 拿仓位和平仓历史，复用 `parsePositions`/`parseCloseRecords`/`buildTgMessage`。
+- **`service/HYPE-watch/process/watcher.mjs`**：`scheduleDaily` 改为调用 `dailySnapshot(ctx)`；移除 `forceReport`/`tgReason` 字段；`kind` 简化为 `isBaseline ? "START" : classifyBanner(...)`；`isOverview` 简化为 `isBaseline`。
 - **`service/sodex-watch/process/dailySnapshot.mjs`**：position 映射补全 `symbol/unrealizedPnl/leverage/liqPrice/marginMode/coin/dir` 字段，对齐 WS `parseWsPosition` 格式；新增 `reportSkipReason` 空仓跳过逻辑。
 - **`service/sodex-watch/process/watcher.mjs`**：`scheduleDaily` 改为调用 `dailySnapshot(ctx)`；移除 `forceReport`/`tgReason` 字段及相关引用；简化 `kind`/`isOverview`、G5/G6 补拉 guard。
 - **`service/sodex-watch/api/index.mjs`**：新增 `fetchAccountState`（`/api/v1/perps/accounts/<address>/state`），替换平仓历史接口作为 REST 兜底数据源。
@@ -23,9 +34,11 @@ sodex-watch WS 频繁断连（code=1001/1006，含 WARP 代理故障）导致 `b
 
 ### 验证
 
-- VPS 强制触发 `dailySnapshot` 成功，TG 收到 SNAPSHOT
+- VPS 强制触发 `dailySnapshot` 成功，sodex-watch 5 地址 / HYPE-watch 6 地址 TG 均收到 SNAPSHOT
 - `fetchAccountState` 端点返回真实当前持仓（非平仓历史）
-- 服务部署后无 ERROR，5 地址正常运行
+- HYPE `parsePositions`/`parseCloseRecords` 复用正确，native+xyz 仓位合并无遗漏
+- 强平价 Cross 模式为 null（API 行为），显示 `-`；Isolated 有值正常
+- 服务部署后无 ERROR，sodex-watch 5 地址 / HYPE-watch 6 地址正常运行
 
 ---
 

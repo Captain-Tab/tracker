@@ -22,6 +22,7 @@ import { writeSignal } from "../../lib/copy-signal/index.mjs";
 import { loadLastPositions, saveLastPositions } from "../../tool/lastPositionsStore.mjs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { dailySnapshot } from "./dailySnapshot.mjs";
 
 // native perps 四个频道；xyz index perps 额外订阅 clearinghouseState + openOrders + orderUpdates
 // userFills 不区分 dex——已验证该频道忽略 dex 参数，始终推送所有 dex 的成交
@@ -72,9 +73,7 @@ export class AccountWatcher {
     this.label = flags.label ?? null;
     this.at = pickAt(flags.at, undefined);
     this.isNew = flags.isNew !== false; // START 门控：缺省 true（单地址 CLI 不门控）
-    this.forceReport = false;
     this.dailyTimer = null;
-    this.tgReason = "event";
     this.ws = null;
     this.requestId = 0;
     this.reconnectAttempt = 0;
@@ -158,7 +157,14 @@ export class AccountWatcher {
 
   scheduleDaily() {
     const ms = msUntilNextShanghai(this.at);
-    this.dailyTimer = setTimeout(() => { this.forceReport = true; this.lastOutFp = null; this.tgReason = "daily"; this.scheduleFetch(true); this.scheduleDaily(); }, ms);
+    this.dailyTimer = setTimeout(async () => {
+      await dailySnapshot({
+        env: this.env, address: this.address,
+        tgToken: this.tgToken, tgChat: this.tgChat,
+        stateDir: this.stateDir, label: this.label, historyLimit: this.historyLimit,
+      });
+      this.scheduleDaily();
+    }, ms);
     log(`下次每日镜像：${this.at} 上海时间（约 ${Math.round(ms / 60000)} 分钟后）`);
   }
 
@@ -274,8 +280,7 @@ export class AccountWatcher {
       const exitFp = exitOrders.map((o) => `${o.oid}:${o.price}:${o.size}`).sort().join(",");
       const closedFp = closeRecords.map((r) => r.oid).sort().join(",");
       const outFp = canonicalPositionsFp(this.positions) + "|" + exitFp + "|" + closedFp;
-      const force = this.forceReport; this.forceReport = false;
-      if (!force && outFp === this.lastOutFp) return;
+      if (outFp === this.lastOutFp) return;
       this.lastOutFp = outFp;
 
       const events = diffPositions(this.lastPositions, this.positions);
@@ -327,10 +332,9 @@ export class AccountWatcher {
       const exitChanges = isBaseline ? [] : this.computeExitChanges(exitOrders, events);
       this.prevExitOrders = new Map(exitOrders.map((o) => [o.oid, o]));
 
-      // banner 类型：首帧→START；每日 force→SNAPSHOT；否则按仓位 diff 动词化（跨帧平仓凭新 oid 补 CLOSE，纯离场单/抖动为 null）
-      const isOverview = isBaseline || this.tgReason === "daily";
-      const kind = isBaseline ? "START" : this.tgReason === "daily" ? "SNAPSHOT"
-        : (classifyBanner(events).kind ?? (newOids.size ? "CLOSE" : null));
+      // banner 类型：首帧→START；否则按仓位 diff 动词化（跨帧平仓凭新 oid 补 CLOSE，纯离场单/抖动为 null）
+      const isOverview = isBaseline;
+      const kind = isBaseline ? "START" : (classifyBanner(events).kind ?? (newOids.size ? "CLOSE" : null));
       const clock = fmtTime();
       const displayId = this.makeDisplayId();
 
@@ -366,7 +370,6 @@ export class AccountWatcher {
       if (this.stateDir && this.lastPositions.length > 0) {
         saveLastPositions(this.stateDir, this.address, this.lastPositions);
       }
-      this.tgReason = "event";
     } finally { this.fetching = false; }
   }
 
