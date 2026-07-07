@@ -119,7 +119,7 @@ export class AccountWatcher {
       this.scheduleDaily();
     };
     ws.onmessage = (ev) => this.handleMessage(ev.data);
-    ws.onclose = (ev) => { this.clearTimers(); if (this.closing) return; log(`CLOSE code=${ev.code}，准备重连`); this.scheduleReconnect(); };
+    ws.onclose = (ev) => { this.clearTimers(); if (this.closing) return; this.baselineLogged = false; log(`CLOSE code=${ev.code}，准备重连`); this.scheduleReconnect(); };
     ws.onerror = (ev) => log("WS ERROR:", ev?.message || ev?.type || ev);
   }
 
@@ -266,8 +266,8 @@ export class AccountWatcher {
             const restRows = result?.raw?.data;
             if (Array.isArray(restRows)) {
               const restPositions = parseRestPositions(restRows, symbolMeta);
-              if (restPositions.length > 0 || persisted.length > 0) {
-                // 转换 REST 格式 → diffPositions 兼容格式
+              if (restPositions.length > 0) {
+                // REST 返回当前持仓 → 以 REST 为准（权威交叉验证）
                 const restCurr = restPositions.map((p) => ({
                   coin: baseCoin(p.symbol),
                   dir: positionDirection(p),
@@ -276,7 +276,11 @@ export class AccountWatcher {
                 }));
                 log(`[REST 兜底] 持久化 ${persisted.length} 个仓位，REST 返回 ${restCurr.length} 个仓位`);
                 this.positions = restCurr;
-                this.lastPositions = persisted; // 保留持久化基线用于 diff
+                this.lastPositions = persisted;
+              } else if (persisted.length > 0) {
+                // REST 无当前持仓（该端点为平仓历史，正常不返回持仓中仓位）→ 保留 WS 仓位，持久化做基线
+                log(`[REST 兜底] REST 无当前持仓，保留 WS 仓位，持久化基线=${persisted.length}`);
+                this.lastPositions = persisted;
               }
             }
           } catch (e) {

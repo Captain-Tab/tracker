@@ -20,6 +20,8 @@ HYPE-watch 的 `clearinghouseState` / `frontendOpenOrders` 未传 `dex` 参数�
 ### Bug 修复
 
 - **`service/HYPE-watch/process/watcher.mjs:398-399`**：`prevCoins.includes()` → `prevCoins.has()`（Set 不支持 `includes`，运行时会抛 TypeError，VPS 日志已捕获）。
+- **`service/HYPE-watch/process/watcher.mjs:134`**、**`service/sodex-watch/process/watcher.mjs:122`**：`onclose` 重置 `baselineLogged = false`。WS 断连重连后触发 Layer 2 REST 交叉验证一次性全量仓位，消除碎片化假 OPEN 事件。
+- **`service/sodex-watch/process/watcher.mjs:269`**：REST 兜底条件拆分——REST 返回空时不再覆盖 WS 仓位（`/api/v1/perps/positions` 为平仓历史接口，正常不返回当前持仓），仅用持久化做 diff 基线。
 - **`service/sodex-watch/process/watcher.mjs:381-382`**：同步修复相同 bug。
 
 ### 验证

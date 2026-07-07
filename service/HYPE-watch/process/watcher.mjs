@@ -131,7 +131,7 @@ export class AccountWatcher {
       this.scheduleDaily();
     };
     ws.onmessage = (ev) => this.handleMessage(ev.data);
-    ws.onclose = (ev) => { this.clearTimers(); if (this.closing) return; log(`CLOSE code=${ev.code} reason=${ev.reason}，准备重连`); this.scheduleReconnect(); };
+    ws.onclose = (ev) => { this.clearTimers(); if (this.closing) return; this.baselineLogged = false; log(`CLOSE code=${ev.code} reason=${ev.reason}，准备重连`); this.scheduleReconnect(); };
     ws.onerror = (ev) => log("WS ERROR:", ev?.message || ev?.type || ev);
   }
 
