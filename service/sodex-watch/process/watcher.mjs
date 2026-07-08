@@ -373,17 +373,19 @@ export class AccountWatcher {
     }
 
     // 2) 平仓（CLOSED）→ 合并一条：摘要 + 剩余仓位全景 + 每平仓币 1 条历史
-    let closedSummaries = events.filter((e) => e.startsWith("CLOSED")).map((e) => { const [, dir, coin] = e.split(" "); return { coin, dir }; });
-    // 跨帧：仓位 diff 未抓到 CLOSED 但有新平仓记录 → 凭记录补摘要。
-    // Layer 3 守卫（08-position-persistence §2.3）：仅当受影响的 coin 在 prevPositions 中存在时才补 CLOSE。
-    if (!closedSummaries.length && newPosIds.size) {
-      const prevCoins = new Set(prevPositions.map((p) => p.coin));
-      const affected = [...new Set(histRecords.filter((r) => newPosIds.has(r.positionId)).map((r) => symbolMeta(r.symbolId).baseCoin).filter(Boolean))];
-      if (affected.some((c) => prevCoins.has(c))) {
-        closedSummaries = affected.filter((c) => prevCoins.has(c)).map((coin) => {
-          const r = histRecords.find((x) => symbolMeta(x.symbolId).baseCoin === coin && newPosIds.has(x.positionId));
-          return { coin, dir: RECORD_SIDE_DIR[Number(r?.positionSide ?? 0)] ?? "" };
-        });
+    // 摘要币名统一从 histRecords + symbolMeta 取，与平仓历史渲染同源，不依赖 lastPositions 格式
+    const closedSummaries = [];
+    if (newPosIds.size) {
+      const seen = new Set();
+      for (const r of histRecords) {
+        if (!newPosIds.has(r.positionId)) continue;
+        const coin = symbolMeta(r.symbolId).baseCoin || `#${r.symbolId}`;
+        const dir = RECORD_SIDE_DIR[Number(r.positionSide ?? 0)] ?? "";
+        if (!dir) continue;
+        const dedupKey = `${coin}:${dir}`;
+        if (seen.has(dedupKey)) continue;
+        seen.add(dedupKey);
+        closedSummaries.push({ coin, dir });
       }
     }
     if (closedSummaries.length) {

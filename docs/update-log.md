@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-08
+- **fix(sodex-watch)**: CLOSE 摘要币名统一从 `histRecords` + `symbolMeta` 取，消除 `undefined`
+  - `watcher.mjs` — `closedSummaries` 构造从 events 字符串 split 改为 `histRecords` 遍历 + `symbolMeta(r.symbolId).baseCoin`
+  - 根因：旧主线从 `events` 字符串解析 coin（依赖 `diffPositions` → `lastPositions` → `baseCoin(p.symbol)`），旧备线依赖 `prevPositions.map(p => p.coin)`（WS 格式无 `coin` 字段），两条线都因持久化/REST 兜底格式缺字段而失效
+  - 新方案：只用 `histRecords`（REST API）+ `symbolMeta`（符号缓存），与平仓历史渲染完全同源
+
+---
+
 ## 2026-07-07
 - **fix(sodex-watch)**: `dailySnapshot` 添加符号缓存垫片，防止缓存空时平仓历史显示 #xx
   - `api/index.mjs` — 新增 `ensureSymbolsLoaded(env)`，`symbolsById` 为空时补刷
