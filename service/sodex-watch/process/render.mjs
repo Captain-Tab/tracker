@@ -106,6 +106,8 @@ function exitBannerHead(displayId, action, clock) {
 // 无仓位 diff 且无新平仓记录 → 返回 { kind: null }（离场单/纯抖动由消息生成流程分流，不再兜底 CHANGE）。
 export function classifyBanner(events, newClosedIds) {
   const verbs = events.map((e) => e.split(" ")[0]);
+  // OPENED+CLOSED 同时存在 → 混合事件（如平仓+反手），不偏向任一方
+  if (verbs.includes("OPENED") && verbs.includes("CLOSED")) return { kind: "CHANGE" };
   if (verbs.includes("OPENED")) return { kind: "OPEN" };
   if (verbs.includes("CLOSED")) return { kind: "CLOSE" };
   if (verbs.includes("INCREASED")) return { kind: "INCREASE" };
@@ -211,7 +213,7 @@ export function buildExitOrderMessage(displayId, action, clock, position, entrie
   if (position) {
     pushPositionCard(lines, position, { exitLines });
   } else {
-    lines.push(`\n📊 仓位：无持仓`);
+    lines.push(`\n📊 仓位已平仓`);
     for (const line of exitLines) lines.push(`  ${line}`);
   }
   return lines.join("\n");

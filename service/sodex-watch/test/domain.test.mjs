@@ -209,8 +209,9 @@ test("diffReduceOnly: 单消失 → CANCEL", () => {
   assert.equal(modified.length, 0);
 });
 
-test("classifyBanner: 动词优先级 OPEN > CLOSE > INCREASE > REDUCE", () => {
-  assert.equal(classifyBanner(["OPENED LONG BTC 1 @ 100", "CLOSED SHORT ETH"]).kind, "OPEN");
+test("classifyBanner: OPEN+CLOSE 同时 → CHANGE，否则 OPEN > CLOSE > INCREASE > REDUCE", () => {
+  // OPEN+CLOSE 同时存在 → CHANGE（混合事件，归平仓+反手，不偏向任一方）
+  assert.equal(classifyBanner(["OPENED LONG BTC 1 @ 100", "CLOSED SHORT ETH"]).kind, "CHANGE");
   assert.equal(classifyBanner(["CLOSED LONG BTC"]).kind, "CLOSE");
   assert.equal(classifyBanner(["INCREASED LONG BTC 1→2"]).kind, "INCREASE");
   assert.equal(classifyBanner(["DECREASED LONG BTC 2→1"]).kind, "REDUCE");

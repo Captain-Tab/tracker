@@ -308,7 +308,7 @@ export class AccountWatcher {
       this.pendingStructural = false;
 
       // 离场单变化提醒；首帧只建立基线，不提醒
-      const exitChanges = isBaseline ? [] : this.computeExitChanges(reduceOnly, events);
+      const exitChanges = isBaseline ? [] : this.computeExitChanges(reduceOnly, events, records, newPosIds);
       this.prevReduceOnly = new Map(reduceOnly.map((o) => [o.orderId, o]));
 
       // banner 类型：首帧→START；否则按仓位 diff 动词化
@@ -402,11 +402,12 @@ export class AccountWatcher {
   }
 
   // 离场单 PLACE/MODIFY/CANCEL → 提醒条目。FILL 不双报：单消失且同窗口该 coin 仓位减/平 → 判成交，归平仓事件不报撤销。
-  computeExitChanges(reduceOnly, events) {
+  computeExitChanges(reduceOnly, events, records, newPosIds) {
     const { placed, modified, canceled } = diffReduceOnly(this.prevReduceOnly, reduceOnly);
-    const reducedCoins = new Set(
-      events.filter((e) => e.startsWith("DECREASED") || e.startsWith("CLOSED")).map((e) => e.split(" ")[2]),
-    );
+    // 平仓币种双源：events 中 DECREASED/CLOSED + newPosIds 从平仓历史反查（REST 兜底导致 events 漏 CLOSED 时补全）
+    const eventCoins = events.filter((e) => e.startsWith("DECREASED") || e.startsWith("CLOSED")).map((e) => e.split(" ")[2]);
+    const historyCoins = newPosIds?.size ? [...newPosIds].map((id) => records.find((r) => r.positionId === id)).filter(Boolean).map((r) => symbolMeta(r.symbolId).baseCoin) : [];
+    const reducedCoins = new Set([...eventCoins, ...historyCoins]);
     const out = [];
     for (const o of placed) out.push(this.exitChangeEntry("place", o));
     for (const o of modified) out.push(this.exitChangeEntry("modify", o));

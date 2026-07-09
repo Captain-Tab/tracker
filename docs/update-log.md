@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-07-09 — fix(sodex-watch): 修复 banner 分类错误与离场单 "无持仓" 文案
+
+**背景**：REST 兜底（Layer 2）使用 `/accounts/{address}/state` 仅返活跃仓位，覆盖 `lastPositions` 后导致 `diffPositions` 漏报 CLOSED 事件。连锁引发：cancel 离场单过滤失效 → "无持仓" 误报；`classifyBanner` OPENED 优先 → console/TG 结论矛盾。
+
+**修复**（`service/sodex-watch/process/`）：
+- `watcher.mjs:405` — `computeExitChanges` 签名加 `records, newPosIds`，`reducedCoins` 从 events + newPosIds 双源提取，REST 漏报时由平仓历史反查补全
+- `render.mjs:107` — `classifyBanner` 加 OPENED+CLOSED 同时 → CHANGE 分支
+- `render.mjs:216` — `buildExitOrderMessage` 无活跃仓位文案 "无持仓" → "仓位已平仓"
+- `const/bannerLabels.mjs` — 新增 `CHANGE` label
+- `sodex-watch/test/domain.test.mjs:212` — 更新 `classifyBanner` 测试断言
+
+---
+
 ## 2026-07-09
 - **fix(sodex-watch)**: REST 兜底 `restCurr` 复用 `parseWsPosition` 产出 WS 兼容格式，消除误报 OPEN 事件
   - `watcher.mjs:275-280` — 内联映射 `{coin, dir, Math.abs(size)}` 替换为 `parseWsPosition(p)`
