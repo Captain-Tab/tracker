@@ -272,12 +272,10 @@ export class AccountWatcher {
           const result = await fetchAccountState(this.env, this.address);
           const restPositions = result?.positions ?? [];
           if (restPositions.length > 0) {
-            const restCurr = restPositions.map((p) => ({
-              coin: baseCoin(String(p.s ?? "")),
-              dir: Number(p.sz) > 0 ? "LONG" : "SHORT",
-              size: Math.abs(Number(p.sz)),
-              entry: Number(p.ep),
-            }));
+            // REST P 数组字段 {s, ps, sz, ep, ...} 与 parseWsPosition 别名回退兼容，
+            // 直接复用 parseWsPosition 产出 WS 兼容格式（symbol/posSide/size），
+            // 避免内联映射缺 symbol/posSide 导致 diffPositions key 坍缩为 "undefined:LONG"
+            const restCurr = restPositions.map(p => parseWsPosition(p));
             log(`[REST 兜底] 持久化 ${persisted.length} 个仓位，REST(account state) 返回 ${restCurr.length} 个仓位`);
             this.positions = restCurr;
             this.lastPositions = persisted;

@@ -4,6 +4,15 @@
 
 ---
 
+## 2026-07-09
+- **fix(sodex-watch)**: REST 兜底 `restCurr` 复用 `parseWsPosition` 产出 WS 兼容格式，消除误报 OPEN 事件
+  - `watcher.mjs:275-280` — 内联映射 `{coin, dir, Math.abs(size)}` 替换为 `parseWsPosition(p)`
+  - 根因：内联映射缺少 `symbol`/`posSide` 字段，导致 `diffPositions` 中 `baseCoin(undefined)` = `"undefined"` + `positionDirection(Math.abs(size))` 永远返回 `"LONG"`，所有仓位 key 坍缩为 `"undefined:LONG"`。WS 重连后 REST 兜底污染 `lastPositions`，`stateFp` 指纹锁死阻止自我修复，下次仓位变化时触发误报 🟢 OPEN
+  - 验证：VPS 真实 REST 数据 `{s, ps, sz, ep}` 字段命中 `parseWsPosition` 别名回退（`p.s ?? p.symbol` / `p.ps ?? p.positionSide`），输出完整 WS 兼容格式
+  - 已知遗留：`saveLastPositions` 正常路径写盘 `coin:"undefined"`（WS 格式无 `coin`/`dir` 字段）— 另案处理
+
+---
+
 ## 2026-07-08
 - **fix(sodex-watch)**: CLOSE 摘要币名统一从 `histRecords` + `symbolMeta` 取，消除 `undefined`
   - `watcher.mjs` — `closedSummaries` 构造从 events 字符串 split 改为 `histRecords` 遍历 + `symbolMeta(r.symbolId).baseCoin`
