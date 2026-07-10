@@ -94,7 +94,7 @@ export class SnapshotMode {
       const hasOpenPositions = snap.positions.some((p) => Number(p.size) !== 0);
       if (!hasOpenPositions) { log("镜像快照：当前无持仓，跳过 Telegram 推送"); return; }
       const tgText = buildTgMessage(displayId, "SNAPSHOT", clock, snap.positions, reduceOnly, records, newPosIds, this.historyLimit);
-      sendTelegram(this.tgToken, this.tgChat, tgText);
+      await sendTelegram(this.tgToken, this.tgChat, tgText);
     } catch (e) { log(`快照失败：${e.message}`); }
     finally { this.running = false; }
   }

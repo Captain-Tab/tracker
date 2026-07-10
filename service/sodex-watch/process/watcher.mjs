@@ -340,11 +340,10 @@ export class AccountWatcher {
         const hasOpenPositions = this.positions.some((p) => Number(p.size) !== 0);
         const skipReason = reportSkipReason({ kind, hasOpenPositions, isNew: this.isNew });
         if (skipReason) log(skipReason);
-        else sendTelegram(this.tgToken, this.tgChat, tgText);
+        else await sendTelegram(this.tgToken, this.tgChat, tgText);
       } else {
-        for (const text of this.buildEventMessages({ displayId, clock, events, prevPositions, newPosIds, histRecords, exitChanges, reduceOnly })) {
-          sendTelegram(this.tgToken, this.tgChat, text);
-        }
+        const tgMessages = this.buildEventMessages({ displayId, clock, events, prevPositions, newPosIds, histRecords, exitChanges, reduceOnly });
+        await Promise.all(tgMessages.map((text) => sendTelegram(this.tgToken, this.tgChat, text)));
       }
       // Layer 1: 推送成功后持久化 lastPositions（08-position-persistence §2.1）
       if (this.stateDir && this.lastPositions.length > 0) {

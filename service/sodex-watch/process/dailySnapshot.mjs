@@ -67,7 +67,7 @@ export async function dailySnapshot(ctx, retry = 0) {
         displayId, "SNAPSHOT", fmtTime(),
         positions, [], closeRecords, new Set(), ctx.historyLimit ?? 2,
       );
-      sendTelegram(ctx.tgToken, ctx.tgChat, tgText);
+      await sendTelegram(ctx.tgToken, ctx.tgChat, tgText);
     }
 
     if (ctx.stateDir && positions.length > 0) {

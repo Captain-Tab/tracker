@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-07-11 — fix(watch): TG 推送加响应检查 + await + 本地消息日志
+
+**背景**：7/6 HYPE-watch 检测到 0x610b 开仓 + 加仓事件，console 正常输出，但 TG 未收到消息。排查发现 `sendTelegram` 存在两个静默失败点：fetch 返回值被丢弃（TG API `ok:false` 被忽略）、调用方 fire-and-forget（Promise 悬空）。
+
+**修复**（`service/{HYPE,sodex}-watch/`）：
+
+- `api/index.mjs` — `sendTelegram` 读 `res.json()` 并检查 `body.ok`，失败时 log TG 错误码和描述；新增本地消息日志写入 `log/tg-${date}.jsonl`（message_id + ok + 文本预览），写入失败不影响主流程
+- `process/watcher.mjs` — 全景消息 `sendTelegram` 加 `await`；事件驱动多条改为 `await Promise.all(messages.map(...))` 并发发送，确保 Promise 完成才继续
+
+**影响**：此后 TG 推送失败可在 `journalctl` 看到具体错误码，`log/tg-*.jsonl` 提供审计轨迹。不解决 TG 拒绝消息的根因（需等下次复现从日志获取 error_code）。
+
+---
+
 ## 2026-07-09 — fix(sodex-watch): 修复 banner 分类错误与离场单 "无持仓" 文案
 
 **背景**：REST 兜底（Layer 2）使用 `/accounts/{address}/state` 仅返活跃仓位，覆盖 `lastPositions` 后导致 `diffPositions` 漏报 CLOSED 事件。连锁引发：cancel 离场单过滤失效 → "无持仓" 误报；`classifyBanner` OPENED 优先 → console/TG 结论矛盾。

@@ -196,7 +196,8 @@
       "Bash(python3 *)",
       "WebFetch(domain:hyperx.trade)",
       "Bash(jobs -l)",
-      "Bash(make *)"
+      "Bash(make *)",
+      "Bash(awk ' *)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",

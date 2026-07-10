@@ -1,8 +1,14 @@
 // IO 层（接口收口）：REST 请求 + 共享限流 + Telegram + 符号缓存 + 平仓历史 + accountId 解析。
 // 纯 REST，不含 WS（WS polyfill 在 process/watcher.mjs，避免 query 被迫依赖 ws）。
 // 共享可变状态（sharedRateLimitUntil / watcherRegistry / 符号缓存）经 ES module live binding 供 watcher 读写。
+import { appendFile, mkdir } from "node:fs/promises";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { baseCoin, toPositionHistoryRecords } from "../process/parse.mjs";
 import { installFetchProxy } from "../../lib/WARP/index.mjs";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const TG_LOG_DIR = join(__dirname, "..", "log");
 
 // fetch 走代理（WARP，统一封装在 lib/WARP；仅 HTTP_PROXY 存在时生效）
 await installFetchProxy();
@@ -105,11 +111,30 @@ export async function sendTelegram(token, chatId, text) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TG_TIMEOUT_MS);
     try {
-      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true }),
         signal: controller.signal,
       });
+      const body = await res.json();
+      if (body.ok) {
+        log(`TG 推送成功 msg_id=${body.result?.message_id}`);
+      } else {
+        log(`TG API 返回错误：${body.description ?? JSON.stringify(body)} (code=${body.error_code}, status=${res.status})`);
+      }
+      // 写入本地消息日志（审计轨迹）
+      try {
+        const date = new Date().toISOString().slice(0, 10);
+        await mkdir(TG_LOG_DIR, { recursive: true });
+        await appendFile(join(TG_LOG_DIR, `tg-${date}.jsonl`), JSON.stringify({
+          ts: new Date().toISOString(),
+          chat_id: chatId,
+          message_id: body.result?.message_id ?? null,
+          ok: body.ok,
+          error: body.ok ? undefined : (body.description ?? null),
+          text_preview: String(text).slice(0, 200),
+        }) + "\n", "utf8");
+      } catch {} // 日志写入失败不影响主流程
     } finally { clearTimeout(timer); }
   } catch (e) { log(`TG 推送失败：${e.message}`); }
 }
