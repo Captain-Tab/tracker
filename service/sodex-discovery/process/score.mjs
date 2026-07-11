@@ -42,7 +42,8 @@ export function score(profiles, config) {
   });
 
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, config.topK); // 上限截断，不放宽、不凑数
+  // ranked=topK 上限截断（不放宽/不凑数）；scored=全量带分（pre-topK），供 ⑥ observing
+  return { ranked: scored.slice(0, config.topK), scored };
 }
 
 export const __internals = { normalize };

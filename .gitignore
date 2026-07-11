@@ -12,7 +12,8 @@ service/sodex-watch/.seen-addresses.json
 service/HYPE-watch/.seen-addresses.json
 
 # 地址状态文件（parked 归档=discovery 排除用；observing 观察暂存=discovery ⑥ 结算用）
-service/sodex-watch/watch-candidates.json
+service/sodex-watch/watch-parked.json
+service/sodex-watch/watch-observing.json
 service/HYPE-watch/watch-parked.json
 service/HYPE-watch/watch-observing.json
 

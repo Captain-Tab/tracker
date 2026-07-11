@@ -15,6 +15,7 @@ import { filter } from "./process/filter.mjs";
 import { evaluate } from "./process/evaluate.mjs";
 import { score } from "./process/score.mjs";
 import { output } from "./process/output.mjs";
+import { observing } from "./process/observing.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -142,14 +143,14 @@ async function main() {
 
   const rawConfig = loadConfig(configPath);
   const { excludeAddresses, tgToken: watchTgToken } = loadWatchConfig(watchConfigPath);
-  // 合并历史候选记录（曾加入 watch 后移除的地址，不再推荐）
-  const candidatesPath = join(__dirname, "..", "sodex-watch", "watch-candidates.json");
-  const historyCandidates = candidateAddresses(loadCandidates(candidatesPath));
-  const excludeSet = new Set([...excludeAddresses, ...historyCandidates]);
+  // 合并 parked 归档地址（人工判定不监听，进排除集不再推荐；observing 观察态不在此加载=不排除）
+  const parkedPath = join(__dirname, "..", "sodex-watch", "watch-parked.json");
+  const parkedAddresses = candidateAddresses(loadCandidates(parkedPath));
+  const excludeSet = new Set([...excludeAddresses, ...parkedAddresses]);
   const config = buildEffectiveConfig(rawConfig, flags, watchTgToken);
 
   log(`🔭 跟单候选发现启动｜preset=${config.riskPreset} windows=${config.sampling.windows.join(",")} pages=${config.sampling.pages} topK=${config.topK}${dryRun ? " [dry-run]" : ""}`);
-  log(`   排除集：${excludeSet.size} 个地址（当前监听 ${excludeAddresses.size} + 历史候选 ${historyCandidates.size}）`);
+  log(`   排除集：${excludeSet.size} 个地址（当前监听 ${excludeAddresses.size} + parked ${parkedAddresses.size}）`);
 
   // ① 采集
   const { candidates, excluded } = await collect(config, excludeSet);
@@ -163,8 +164,8 @@ async function main() {
   const { profiles, eliminated: evalElim } = await evaluate(survivors, config);
   log(`③ 评估：合格 ${profiles.length} 个（淘汰 ${evalElim.length} 个）`);
 
-  // ④ 打分
-  const ranked = score(profiles, config);
+  // ④ 打分；scored=全量带分，供 ⑥ observing
+  const { ranked, scored } = score(profiles, config);
   log(`④ 打分：推荐 ${ranked.length} 个（topK=${config.topK}，不足不凑数）`);
 
   // ⑤ 输出
@@ -193,6 +194,10 @@ async function main() {
     log(`         ${mdPath}`);
     log(noPush ? `         TG 跳过推送（--no-push）` : `         TG 已推送至 ${config.output.tgChat ?? "(未配置 tgChat)"}`);
   }
+
+  // ⑥ observing：⑤ 落盘后维护观察态（连续 2 周达标 → 🟢 推荐升 watch）；异常不中断 ①-⑤
+  const obsRes = await observing(scored, evalElim, { ...ctx, excludeSet });
+  if (obsRes) log(`⑥ 观察态：🟢 结算 ${obsRes.promoted} · 🟡 新观察 ${obsRes.watching} · 🔴 移出 ${obsRes.removed}`);
 }
 
 main().catch((e) => {

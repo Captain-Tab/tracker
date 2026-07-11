@@ -50,7 +50,7 @@ function windowsStr(hitWindows) {
 }
 
 // ---------- Telegram ----------
-async function sendTelegram(token, chatId, text) {
+export async function sendTelegram(token, chatId, text) {
   if (!token || !chatId) return;
   try {
     const controller = new AbortController();
@@ -173,10 +173,11 @@ function buildMarkdown(ranked, summary, eliminated, generatedAt, config) {
   return lines.join("\n");
 }
 
-// 序列化画像（hitWindows Set→Array，Infinity→null 由 JSON.stringify 处理）
+// 序列化画像（hitWindows Set→Array，Infinity→null 由 JSON.stringify 处理；剔除 topTrades 防日志膨胀，仅内存供 ⑥）
 function serializeProfile(p) {
+  const { topTrades, ...rest } = p;
   return {
-    ...p,
+    ...rest,
     hitWindows: Array.from(p.hitWindows),
     profitFactor: Number.isFinite(p.profitFactor) ? p.profitFactor : null,
     recoveryFactor: Number.isFinite(p.recoveryFactor) ? p.recoveryFactor : null,
@@ -205,9 +206,10 @@ export async function output(ranked, ctx, config) {
     return { mdPath: null, jsonPath: null, md };
   }
 
-  mkdirSync(logDir, { recursive: true });
-  const mdPath = join(logDir, mdFileName);
-  const jsonPath = join(logDir, jsonFileName);
+  const discoveryDir = join(logDir, "discovery");
+  mkdirSync(discoveryDir, { recursive: true });
+  const mdPath = join(discoveryDir, mdFileName);
+  const jsonPath = join(discoveryDir, jsonFileName);
 
   const jsonPayload = {
     generatedAt: generatedAt.toISOString(),

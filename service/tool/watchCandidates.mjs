@@ -14,7 +14,8 @@ export function loadCandidates(path) {
       const entry = typeof v === "string"
         ? { date: v, reason: "" }       // 兼容旧格式：纯日期字符串
         : { date: v?.date ?? "", reason: v?.reason ?? "" };
-      if (entry.date) map.set(String(addr).toLowerCase(), entry);
+      // date 可选：人工记录常缺 date，无条件入集（原 if(entry.date) 会静默丢弃无 date 条目）
+      map.set(String(addr).toLowerCase(), entry);
     }
     return map;
   } catch {

@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-07-11 — feat(sodex-discovery): 新增 ⑥ observing 观察态中间层
+
+**背景**：HYPE 侧已落地 observing 观察态（discovery→watch 之间「先观察两周再推荐」的稀缺资源守门）。sodex 是同构管线，本次同款复制，处理 sodex 特有口径差异（accountId+positions 逐笔真账本、symbol_id 币名解析）。
+
+**改动**（`service/sodex-discovery/`）：
+
+- `process/observing.mjs`（新增）— ⑥ 阶段：维护 `sodex-watch/watch-observing.json`，本周 `scored`（∉watch ∉parked）连续 2 周达标 → 🟢 结算推荐升 watch，断 streak → 🔴 移出（绝不 park；已进排除集者静默清出），新入 → 🟡；按 **walletAddress 归一 + 存 accountId**（🔴 按 accountId 反查 evalElim 精确原因）；自带 JSON 读写（schema `{since,weeksSeen[],recommended,lastScore,accountId,reason}`）；近期精彩用 topTrades 经 `refreshSymbols` 解析币名；观察态 TG（B 版 🟢→🔴→🟡，三段全空静默）；落盘 `log/observing/`；dry-run 打印 stdout；异常 try/catch 不中断 ①-⑤
+- `process/score.mjs` — 返回 `Array` → `{ranked, scored}`（scored 供 ⑥）
+- `process/evaluate.mjs` — 从在手 positions 抽 top-2 盈利平仓挂 `profile.topTrades`（metrics.mjs 零改）
+- `process/output.mjs` — 导出 `sendTelegram`；`serializeProfile` 剔 `topTrades`；写盘 `log/` → `log/discovery/`
+- `main.mjs` — ⑤ 后调 `observing(scored, evalElim, {...ctx, excludeSet})`；候选路径 `watch-candidates.json` → `watch-parked.json`
+- `service/tool/watchCandidates.mjs` — 修 date bug（`:17` 去 `if(entry.date)` 硬要求，date 可选）：sodex 两条人工记录（缺 date）此前根本没进 excludeSet，修后生效；HYPE 无影响（条目均有 date）；`watchCandidates.test.mjs` 回归 10/10
+- 文件：`sodex-watch/watch-candidates.json` → `watch-parked.json`（「无需关注」留），新建 `watch-observing.json`（「待观察」迁入种子）；`log/` 分 `discovery/`+`observing/`；`.gitignore` 同步
+
+**影响**：sodex discovery 由五阶段变六阶段，无人值守每周（周一 9 点）自动维护观察态并推 🟢 升 watch 推荐。excludeSet 逻辑不变（watches∪parked，observing 不排除以持续观察）。实测：确定性 6 场景 + 真实 3 周日志回放（收集到 1 个跨周持续候选 acct 7239）+ 近期精彩币名解析全部通过。设计见 `docs/discovery/sodex.md §3.3`。
+
+---
+
 ## 2026-07-11 — feat(HYPE-discovery): 新增 ⑥ observing 观察态中间层
 
 **背景**：HYPE discovery 每周产出一批过硬门槛地址，但 watch（实时监听）是稀缺资源（每地址一条 WS 长连，VPS 舒适 5-10）。单周上榜可能昙花，直接纳入 watch 有资源与质量风险。缺一个「先观察两周确认持续性、再推荐升 watch」的中间态。

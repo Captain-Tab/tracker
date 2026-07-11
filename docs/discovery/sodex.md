@@ -63,45 +63,64 @@
 
 ---
 
-## 三、系统流程（五阶段 + 文件架构）
+## 三、系统流程（六阶段 + 文件架构）
 
-### 3.1 五阶段
+### 3.1 六阶段
 
 ```
-12.6万账户 ─①采集─> ~150候选 ─②筛选─> ~30 ─③评估─> 十几个 ─④打分─> top10 ─⑤输出─> log/ 结果文件 + TG（不写 watch.config）
+12.6万账户 ─①采集─> ~150候选 ─②筛选─> ~30 ─③评估─> 十几个 ─④打分─> top10 ─⑤输出─> log/discovery/ + TG
+                                                                        └─⑥观察态─> log/observing/ + 维护 watch-observing.json + 观察态 TG
 ```
 
-| 阶段 | 文件 | 接口 | 请求量 | 输入→输出 | 性质 |
-| --- | --- | --- | --- | --- | --- |
-| **① 采集** Collect | `collect.mjs` | `/leaderboard` | ~4 | 12.6万 → ~150 | 漏斗拉候选，4 路并集去重，**剔除 watch.config 已监听地址** |
-| **② 筛选** Filter | `filter.mjs` | `/overview` | ~150 | ~150 → ~30 | 轻量粗筛，绝对额门槛砍 90%（省钱关键） |
-| **③ 评估** Evaluate | `evaluate.mjs` | `/positions?limit`（v2 弃 chart，逐笔真账本） | ~40 | ~30 → 十几个 | 深度画像 + 硬门槛一票否决 |
-| **④ 打分** Score | `score.mjs` | 无（纯算） | 0 | 十几个 → top10 | 5 维归一×权重→排序取 topK |
-| **⑤ 输出** Output | `output.mjs` | 无 | 0 | top10 → 名单 | 生成 log/ 结果文件(json+md) + 推 TG（**不写 watch.config**） |
+| 阶段 | 文件 | 接口 | 输入→输出 | 性质 |
+| --- | --- | --- | --- | --- |
+| **① 采集** Collect | `collect.mjs` | `/leaderboard` | 12.6万 → ~150 | 漏斗拉候选，4 路并集去重，**剔除已监听/parked 地址** |
+| **② 筛选** Filter | `filter.mjs` | `/overview` | ~150 → ~30 | 轻量粗筛，绝对额门槛砍 90%（省钱关键） |
+| **③ 评估** Evaluate | `evaluate.mjs` | `/positions?limit`（逐笔真账本） | ~30 → 十几个 | 深度画像 + 硬门槛一票否决 + 抽 topTrades（供 ⑥ 近期精彩） |
+| **④ 打分** Score | `score.mjs` | 无（纯算） | 十几个 → top10 | 5 维归一×权重→排序取 topK；额外返回全量 `scored`（pre-topK 带分）供 ⑥ |
+| **⑤ 输出** Output | `output.mjs` | 无 | top10 → 名单 | log/discovery/ 结果文件(json+md) + 推 TG（**不写 watch.config**） |
+| **⑥ 观察态** Observing | `observing.mjs` | `/symbols`（有🟢时解析币名） | scored → 观察态 | ⑤ 后同进程；维护 `watch-observing.json`：连续 2 周达标 → 🟢 结算推荐升 watch，断 streak → 🔴 移出，新入 → 🟡；只写 observing，异常不中断 ①-⑤ |
 
-**合计 ~215 个请求，只覆盖榜单前 100 名**（由 `pages` 控制：`pages=4` → 前 200 名、~400 请求）。绝不全量。
+**采集只覆盖榜单前 100 名**（由 `pages` 控制）。绝不全量。
 
 ### 3.2 文件架构
 
 ```
 service/sodex-discovery/
-  main.mjs              # 入口：CLI、读 config、读 watch.config 得 excludeAddresses、编排五阶段
+  main.mjs              # 入口：CLI、读 config、读 watch.config + watch-parked 得 excludeSet、编排六阶段
   api/
-    index.mjs          # 所有 HTTP 接口 + WS 声明（JSDoc：path/请求参数/返回字段）+ httpGetJson/限流
+    index.mjs          # 所有 HTTP 接口 + WS 声明 + refreshSymbols(symbol_id→币名) + httpGetJson/限流
   process/
     collect.mjs        # ① 采集
     filter.mjs         # ② 筛选
-    evaluate.mjs       # ③ 评估（画像 + 硬门槛）
-    score.mjs          # ④ 打分
-    output.mjs         # ⑤ 输出（log/ 结果文件 json+md + TG 推送；不写 watch.config）
+    evaluate.mjs       # ③ 评估（画像 + 硬门槛 + topTrades）
+    score.mjs          # ④ 打分（返回 {ranked, scored}）
+    output.mjs         # ⑤ 输出（log/discovery/ json+md + TG；不写 watch.config；导出 sendTelegram 供 ⑥）
+    observing.mjs      # ⑥ 观察态（三态维护 + 观察态 TG + 近期精彩解析 + log/observing 落盘；自带 JSON 读写）
   config.json          # 配置（gitignore，含 tgChat）
-  log/                 # 输出目录（gitignore，每次跑生成带时间戳文件）
-    discovery-YYYY-MM-DD-HHmm.json   # 完整画像 + 分数（机读）
-    discovery-YYYY-MM-DD-HHmm.md     # 人读详情（TG 推送源，比 TG 更全）
+  log/
+    discovery/         # ⑤ 结果文件（discovery-<stamp>.{json,md}）
+    observing/         # ⑥ 观察态快照 + 决策（observing-<stamp>.{json,md}）
 ```
 
-- 入口与五阶段解耦，每阶段是纯函数 `(input, config) → output`，便于单测和 `--dry-run` 在任一阶段截断。
-- discovery **自带轻量限流**（并发≤4 + 每请求小间隔；429/409 优先 `Retry-After`，否则指数退避 2→60s + jitter）+ 大整数安全解析 + HTTP 超时 10s。**不 import watch 的限流单例**（独立模块、隔离）。
+- 入口与各阶段解耦，每阶段纯函数，`--dry-run` 可在任一阶段截断（⑥ dry-run 打印观察态消息到 stdout）。
+- discovery **自带轻量限流** + 大整数安全解析 + HTTP 超时 10s。**不 import watch 的限流单例**（独立模块、隔离）。
+
+### 3.3 观察态三态（discovery → watch 的衔接）
+
+发现的地址进 watch（实时监听、稀缺 WS 槽 5-10）前先经观察态验证持续性，三态各一文件：
+
+| 态 | 文件 | 进 excludeSet | 写者 | 语义 |
+| --- | --- | --- | --- | --- |
+| **watch** | `sodex-watch/config.json` `watches[]` | 是 | 人工 | 正在实时监听 |
+| **parked** | `sodex-watch/watch-parked.json` | 是 | 人工 | 判定不监听的归档，可人工捞回；**park 永远人工** |
+| **observing** | `sodex-watch/watch-observing.json` | 否 | ⑥ 自动 | 观察暂存，连续 2 周达标即 🟢 推荐升 watch |
+
+- **⑥ 逻辑**：本周 `scored`（∉watch ∉parked）→ 已在 observing 则追加当周 ISO 周（去重）、满 2 周且未推过 → 🟢 结算推荐；不在则新入 🟡 观察第 1 周。observing 里本周未达标者 → 🔴 断 streak 移出（**绝不自动 park**）；若已被人工移入 watch/parked（进排除集）则静默清出、不报 🔴。
+- **条目 schema**：`{ since, weeksSeen[], recommended, lastScore, accountId, reason }`（按 **walletAddress 小写**归一；`accountId` 用于 🔴 移出时反查 evalElim 精确原因，因 evalElim 按 accountId keyed）。自带 JSON 读写，不经 watch-parked 的 `{date,reason}` schema。
+- **近期精彩**：③ 评估抽 top-2 盈利平仓（`symbol_id/realized_pnl`），⑥ 有 🟢 时经 `refreshSymbols` 把 `symbol_id` 解析成币名（如 2→ETH）展示。
+- **观察态 TG**（B 版，顺序 🟢→🔴→🟡）：🟢 全展含 ≤2 近期精彩，🔴/🟡 各 ≤5 超出计数，三段全空静默不推。
+- **人工闭环**：看 TG 🟢 推荐 → 手动搬进 `config.watches[]`；不要的手动移 `watch-parked.json`。⑥ 只写 observing。
 
 ---
 
@@ -223,12 +242,14 @@ service/sodex-discovery/
 | 门槛后稀缺 | 前 100 名经严格门槛后金字塔尖也就十几个，取 top 10 即精华 |
 | 可调 | `topK` 可配置，想激进跟更多调高 |
 
-### 6.2 结果文件（`service/sodex-discovery/log/`）
+### 6.2 结果文件（`service/sodex-discovery/log/discovery/`）
 
 每次运行生成两个带时间戳文件：
 
-- **`discovery-YYYY-MM-DD-HHmm.json`**（机读）：全候选池 + topK 的完整画像、分数、命中/淘汰原因。供回溯和阈值校准。
-- **`discovery-YYYY-MM-DD-HHmm.md`**（人读 / TG 源）：比 TG 更全，每推荐含 盈亏比/胜率/Sharpe/合约盈利/成交量/最大回撤/平均持仓/笔数/命中窗 + 末尾「淘汰摘要」。
+- **`discovery-YYYY-MM-DD-HHmm.json`**（机读）：全候选池 + topK 的完整画像、分数、命中/淘汰原因（逐笔 topTrades 剔除，仅内存供 ⑥）。供回溯和阈值校准。
+- **`discovery-YYYY-MM-DD-HHmm.md`**（人读 / TG 源）：比 TG 更全，每推荐含 盈亏比/胜率/合约盈利/成交量/最大回撤/平均持仓/笔数/命中窗 + 末尾「淘汰摘要」。
+
+> ⑥ 观察态另在 `log/observing/` 生成 `observing-<stamp>.{json,md}`（状态快照 + 本轮 🟢/🔴/🟡 决策），见 §3.3。
 
 ### 6.3 推送 Telegram（不写 watch.config）
 

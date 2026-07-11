@@ -57,6 +57,13 @@ export async function evaluate(survivors, config) {
     const perpsPnl = pm.netProfit;
     const volume = Number(s.overview.volume_usd ?? 0);
 
+    // 近期精彩：top-2 盈利平仓（供 ⑥ observing 展示；symbol_id 由 ⑥ 用 refreshSymbols 解析币名）
+    const topTrades = (Array.isArray(positions) ? positions : [])
+      .filter((p) => Number(p.size) === 0 && Number(p.realized_pnl) > 0)
+      .sort((a, b) => Number(b.realized_pnl) - Number(a.realized_pnl))
+      .slice(0, 2)
+      .map((p) => ({ symbol_id: Number(p.symbol_id ?? 0), realized_pnl: Number(p.realized_pnl), updated_at: Number(p.updated_at ?? 0) }));
+
     const profile = {
       accountId: s.accountId,
       walletAddress: s.walletAddress,
@@ -80,6 +87,7 @@ export async function evaluate(survivors, config) {
       avgHoldMin: pm.avgHoldMin,
       medMargin: pm.medMargin,
       maxMargin: pm.maxMargin,
+      topTrades,
     };
 
     const fail = (reason) => eliminated.push({ accountId: s.accountId, stage: "evaluate", reason });

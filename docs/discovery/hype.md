@@ -61,21 +61,23 @@ leaderboard 走非官方 stats 域名（GET 全量流式）；info 系列走官�
 
 ---
 
-## 三、系统流程（五阶段 + 文件架构）
+## 三、系统流程（六阶段 + 文件架构）
 
-### 3.1 五阶段
+### 3.1 六阶段
 
 ```
-~3.9万账户 ─①采集─> 千级 ─②筛选─> ≤300(poolMax) ─③深评─> 十几个 ─④打分─> topK ─⑤输出─> log/ 结果文件 + TG（不写 watch.config）
+~3.9万账户 ─①采集─> 千级 ─②筛选─> ≤300(poolMax) ─③深评─> 十几个 ─④打分─> topK ─⑤输出─> log/discovery/ + TG
+                                                                              └─⑥观察态─> log/observing/ + 维护 watch-observing.json + 观察态 TG
 ```
 
 | 阶段 | 文件 | 接口 | 输入→输出 | 性质 |
 | --- | --- | --- | --- | --- |
-| **① 采集** Collect | `collect.mjs` | `/leaderboard` | ~3.9万 → 千级 | **流式逐行**展平 + 排除已监听/历史候选 + **内联门槛**，只留通过者（39k 不落地，内存峰值几十 MB） |
+| **① 采集** Collect | `collect.mjs` | `/leaderboard` | ~3.9万 → 千级 | **流式逐行**展平 + 排除已监听/parked + **内联门槛**，只留通过者（39k 不落地，内存峰值几十 MB） |
 | **② 筛选** Filter | `filter.mjs` | 无（采集内联） | — | `passesThreshold` 门槛判定（流式调用），pnl/vlm/efficiency 绝对额砍噪声 |
 | **③ 深评** Evaluate | `evaluate.mjs` | `/userFills` + `/userFunding` | ≤300 → 十几个 | 拉 userFills → **聚合 fill 成交易** → 交易级 PF/胜率/RF/频率/名义/单笔利润 + 硬门槛一票否决 + funding 真实 PnL 修正 |
-| **④ 打分** Score | `score.mjs` | 无（纯算） | 十几个 → topK | 4 维归一×权重→排序取 topK（capped 降权） |
-| **⑤ 输出** Output | `output.mjs` | 无 | topK → 名单 | log/ 结果文件(json+md) + TG（**不写 watch.config**） |
+| **④ 打分** Score | `score.mjs` | 无（纯算） | 十几个 → topK | 4 维归一×权重→排序取 topK（capped 降权）；额外返回全量 `scored`（pre-topK 带分）供 ⑥ |
+| **⑤ 输出** Output | `output.mjs` | 无 | topK → 名单 | log/discovery/ 结果文件(json+md) + TG（**不写 watch.config**） |
+| **⑥ 观察态** Observing | `observing.mjs` | 无 | scored → 观察态 | ⑤ 后同进程；维护 `watch-observing.json`：连续 2 周达标 → 🟢 结算推荐升 watch，断 streak → 🔴 移出，新入 → 🟡；只写 observing，异常不中断 ①-⑤ |
 
 > **poolMax 硬上限**：leaderboard 按 pnl 降序，门槛后幸存者可能上千，深评每候选 1 次 userFills（2000 fill 聚合）内存吃紧（实测 817 幸存时 VPS 575MB+swap 接近 OOM）。故 `poolMax=300` 截断到前 300 进深评（对标 sodex poolMax），耗时 ~3-5 分钟、内存 ~200-300MB。截断数显式记日志，不静默。
 
@@ -83,22 +85,40 @@ leaderboard 走非官方 stats 域名（GET 全量流式）；info 系列走官�
 
 ```
 service/HYPE-discovery/
-  main.mjs              # 入口：CLI、读 config、读 HYPE-watch/config + watch-candidates 得 excludeSet、编排五阶段
+  main.mjs              # 入口：CLI、读 config、读 HYPE-watch/config + watch-parked 得 excludeSet、编排六阶段
   api/
     index.mjs          # leaderboard 流式扫描器 + info 接口封装 + 限流 gate（并发≤4 + 间隔 120ms + 429/503 退避）
   process/
     collect.mjs        # ① 采集（流式 + 内联门槛）
     filter.mjs         # ② 门槛判定（passesThreshold / gateOf）
     evaluate.mjs       # ③ 深评（aggregateTrades + deriveTradeMetrics + 硬门槛 + funding 修正）
-    score.mjs          # ④ 打分
-    output.mjs         # ⑤ 输出（json+md + TG；不写 watch.config）
+    score.mjs          # ④ 打分（返回 {ranked, truncated, scored}）
+    output.mjs         # ⑤ 输出（json+md + TG；不写 watch.config；导出 sendTelegram 供 ⑥）
+    observing.mjs      # ⑥ 观察态（三态维护 + 观察态 TG + log/observing 落盘；自带 JSON 读写）
   config.json          # 配置（含 tgToken/tgChat）
-  log/                 # 输出目录（每次跑生成带时间戳文件）
+  log/
+    discovery/         # ⑤ 结果文件（discovery-<stamp>.{json,md}，每次跑生成）
+    observing/         # ⑥ 观察态快照 + 决策（observing-<stamp>.{json,md}，每次跑生成）
 ```
 
-- 每阶段是纯函数 `(input, config) → output`，`--dry-run` 只 stdout 不落盘、`--no-push` 落盘不推、`--limit=N` 扫够 N 行即停（测试）。
+- 每阶段是纯函数 `(input, config) → output`，`--dry-run` 只 stdout 不落盘（⑥ 打印观察态消息到 stdout）、`--no-push` 落盘不推、`--limit=N` 扫够 N 行即停（测试）。
 - **自带限流**（info 接口并发≤4 + 间隔 120ms；429/503 指数退避 2→60s + jitter，最多 6 次）+ HTTP 超时（info 10s / leaderboard 40s）。fetch 走 WARP 代理全局注入。
-- 排除集 = `HYPE-watch/config.json` 已监听地址 **∪** `HYPE-watch/watch-candidates.json` 历史候选（曾加入后移除的不再推荐）。leaderboard 拉取失败 → 跳过本轮，不崩。
+- 排除集 = `HYPE-watch/config.json` 已监听地址 **∪** `HYPE-watch/watch-parked.json` parked 归档（人工判定不监听的不再推荐）。observing 不进排除集，故仍被采集、可持续观察。leaderboard 拉取失败 → 跳过本轮，不崩。
+
+### 3.3 观察态三态（discovery → watch 的衔接）
+
+发现的地址进 watch（实时监听、稀缺 WS 槽 5-10）前先经观察态验证持续性，三态各一文件：
+
+| 态 | 文件 | 进 excludeSet | 写者 | 语义 |
+| --- | --- | --- | --- | --- |
+| **watch** | `HYPE-watch/config.json` `watches[]` | 是 | 人工 | 正在实时监听 |
+| **parked** | `HYPE-watch/watch-parked.json` | 是 | 人工 | 判定不监听的归档，可人工捞回；**park 永远人工** |
+| **observing** | `HYPE-watch/watch-observing.json` | 否 | ⑥ 自动 | 观察暂存，连续 2 周达标即 🟢 推荐升 watch |
+
+- **⑥ 逻辑**：本周 `scored`（∉watch ∉parked）→ 已在 observing 则追加当周 ISO 周（去重）、满 2 周且未推过 → 🟢 结算推荐；不在则新入 🟡 观察第 1 周。observing 里本周未达标者 → 🔴 断 streak 移出（**绝不自动 park**，原因取 ③ 淘汰记录或兜底「掉出榜单」）；若该址已被人工移入 watch/parked（进排除集）则静默清出、不报 🔴（是升级/归档非掉出）。
+- **观察态 TG**（B 版，顺序 🟢→🔴→🟡）：🟢 全展含 ≤2 近期精彩交易，🔴/🟡 各 ≤5 超出计数，三段全空静默不推。
+- **人工闭环**：看 TG 🟢 推荐 → 手动把地址搬进 `config.watches[]`；不要的手动移 `watch-parked.json`。⑥ 只写 observing，watch/parked 全人工。
+- `watch-observing.json` 条目：`{ since, weeksSeen[], recommended, lastScore, reason }`（ISO 周 id，地址小写归一；自带 JSON 读写，不经 watch-parked 的 `{date,reason}` schema）。
 
 ---
 
@@ -200,18 +220,21 @@ service/HYPE-discovery/
 
 ### 6.1 推荐多少：`topK = 20`（上限，非目标）
 
-合格者（过完所有硬门槛）不足时输出就少于 topK，**不放宽门槛、不凑数**。采集已排除已监听 + 历史候选，结果全是新发现。
+合格者（过完所有硬门槛）不足时输出就少于 topK，**不放宽门槛、不凑数**。采集已排除已监听 + parked，结果全是新发现。
 
-### 6.2 结果文件（`service/HYPE-discovery/log/`）
+### 6.2 结果文件（`service/HYPE-discovery/log/discovery/`）
 
 每次运行生成两个带时间戳文件（`discovery-YYYY-MM-DD-HHmm.{json,md}`）：
 
-- **json**（机读）：`generatedAt` + window + gate + summary + 全 topK 完整画像。
+- **json**（机读）：`generatedAt` + window + gate + summary + 全 topK 完整画像（逐笔 trades 剔除，仅内存供 ⑥ 用）。
 - **md**（人读 / TG 附件源）：每推荐含 盈亏比/胜率/恢复比/笔交易每天 · 净额/交易数/fill 数/中位单笔/活跃天数 · **真实 PnL（净额 + 资金费）** · 下注名义中位/最大 · window 榜 pnl/vlm/roi（标注充提污染仅参考）· 账户净值。
+
+> ⑥ 观察态另在 `log/observing/` 生成 `observing-<stamp>.{json,md}`（状态快照 + 本轮 🟢/🔴/🟡 决策），见 §3.3。
 
 ### 6.3 推送 Telegram（不写 watch.config）
 
 - TG 摘要（手机友好排版）：头部 3 行（标题 / 日期+窗口 / 扫描→过门槛→推荐·排除N在监听）+ **前 5 名详展卡片**（地址 + 盈亏比/胜率/频率 + 净额/中位单笔/笔数）+ 「📄 完整报告见附件」，再 `sendDocument` 上传 .md 全文。
+- ⑤ 主消息之后，⑥ 另推一条**观察态消息**（🟢 结算升 watch / 🔴 移出 / 🟡 观察中，见 §3.3），三段全空则静默。
 - **0 通过不算失败**：合格者为 0 时照常生成结果文件，TG 推「📭 本轮无合格候选」（非静默，确认脚本活着）。
 - **不写 watch.config**：是否纳入监听由人工看结果后手动编辑 `service/HYPE-watch/config.json`，再启动 watcher 接手实时跟单。
 
