@@ -17,6 +17,7 @@ import { gateOf } from "./process/filter.mjs";
 import { evaluate } from "./process/evaluate.mjs";
 import { score } from "./process/score.mjs";
 import { output } from "./process/output.mjs";
+import { observing } from "./process/observing.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -70,13 +71,13 @@ async function main() {
     poolMax: flags.poolMax !== undefined ? Number(flags.poolMax) : (raw.poolMax ?? 300), // 候选池硬上限，对标 sodex poolMax
   };
   const excludeAddresses = (raw.excludeWatched !== false) ? loadWatchConfig(watchConfigPath) : new Set();
-  // 合并历史候选记录（曾加入 watch 后移除的地址，不再推荐）
-  const candidatesPath = join(__dirname, "..", "HYPE-watch", "watch-candidates.json");
-  const historyCandidates = candidateAddresses(loadCandidates(candidatesPath));
-  const excludeSet = new Set([...excludeAddresses, ...historyCandidates]);
+  // 合并 parked 归档地址（人工判定不监听，进排除集不再推荐；observing 观察态不在此加载=不排除）
+  const parkedPath = join(__dirname, "..", "HYPE-watch", "watch-parked.json");
+  const parkedAddresses = candidateAddresses(loadCandidates(parkedPath));
+  const excludeSet = new Set([...excludeAddresses, ...parkedAddresses]);
 
   log(`🔭 HYPE 跟单候选发现启动｜窗口=${window} topK=${config.topK}${dryRun ? " [dry-run]" : ""}`);
-  log(`   排除集：${excludeSet.size} 个地址（当前监听 ${excludeAddresses.size} + 历史候选 ${historyCandidates.size}）`);
+  log(`   排除集：${excludeSet.size} 个地址（当前监听 ${excludeAddresses.size} + parked ${parkedAddresses.size}）`);
 
   const gate = gateOf(config);
   const limit = flags.limit !== undefined ? Number(flags.limit) : 0; // --limit：扫够 N 行即停（测试）
@@ -100,8 +101,8 @@ async function main() {
   const { profiles, eliminated: evalEliminated } = await evaluate(survivors, config);
   log(`③ 深评：合格 ${profiles.length} 个（淘汰 ${evalEliminated.length}；HFT/盈亏比/回撤门槛）`);
 
-  // ④ 打分取 topK（不静默截断：truncated 显式记日志）
-  const { ranked, truncated } = score(profiles, config);
+  // ④ 打分取 topK（不静默截断：truncated 显式记日志）；scored=全量带分，供 ⑥ observing
+  const { ranked, truncated, scored } = score(profiles, config);
   if (truncated > 0) log(`   topK=${config.topK} 截断：另有 ${truncated} 个合格者未列入（按评分取前 ${config.topK}）`);
 
   // ⑤ 输出
@@ -114,6 +115,10 @@ async function main() {
   const { mdPath, jsonPath } = await output(ranked, ctx);
   if (dryRun) log(`④ 输出：dry-run 仅打印 md`);
   else { log(`④ 输出：${jsonPath}`); log(`         ${mdPath}`); log(noPush ? `         TG 跳过（--no-push）` : `         TG → ${ctx.tgChat ?? "(未配置)"}`); }
+
+  // ⑥ observing：⑤ 落盘后维护观察态（连续 2 周达标 → 🟢 推荐升 watch）；异常不中断 ①-⑤
+  const obsRes = await observing(scored, evalEliminated, { ...ctx, excludeSet });
+  if (obsRes) log(`⑥ 观察态：🟢 结算 ${obsRes.promoted} · 🟡 新观察 ${obsRes.watching} · 🔴 移出 ${obsRes.removed}`);
 }
 
 main().catch((e) => { console.error(`运行失败：${e.message}`); process.exit(1); });

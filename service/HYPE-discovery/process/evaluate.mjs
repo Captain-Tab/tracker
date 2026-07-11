@@ -38,7 +38,7 @@ export function aggregateTrades(fills) {
     const signed = f.side === "B" ? sz : -sz; // B=buy(+) / A=sell(-)
     const startPos = Number(f.startPosition);
     const endPos = startPos + signed;
-    if (!open[coin]) open[coin] = { pnl: 0, notional: 0, fills: 0, openMs: Number(f.time) };
+    if (!open[coin]) open[coin] = { coin, pnl: 0, notional: 0, fills: 0, openMs: Number(f.time) };
     const cur = open[coin];
     cur.pnl += Number(f.closedPnl ?? 0) - Number(f.fee ?? 0); // 净额：已实现盈亏减手续费（fee 为正成本）
     cur.notional += Math.abs(sz * px);
@@ -85,6 +85,7 @@ function deriveTradeMetrics(fills) {
   return {
     nFills, capped, nTrades, tradesPerDay, winRate, profitFactor, netProfit, maxDD, recoveryFactor,
     maxWin, maxLoss, medNotional, maxNotional, medTradePnl, activeDays: Math.round(spanDays),
+    trades, // 逐笔交易（含 coin/pnl/closeMs），供 ⑥ observing 取「近期精彩」；output 序列化前剔除
   };
 }
 

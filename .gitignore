@@ -11,9 +11,10 @@ service/HYPE-watch/config.json
 service/sodex-watch/.seen-addresses.json
 service/HYPE-watch/.seen-addresses.json
 
-# 候选地址历史记录（曾加入 watch 的地址，discovery 排除用）
+# 地址状态文件（parked 归档=discovery 排除用；observing 观察暂存=discovery ⑥ 结算用）
 service/sodex-watch/watch-candidates.json
-service/HYPE-watch/watch-candidates.json
+service/HYPE-watch/watch-parked.json
+service/HYPE-watch/watch-observing.json
 
 # 发现系统：config 含 TG 凭据、log/ 含被观察地址，仅本地存在
 service/sodex-discovery/config.json

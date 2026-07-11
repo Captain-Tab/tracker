@@ -33,7 +33,7 @@ function beijingDate(date) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
-async function sendTelegram(token, chatId, text) {
+export async function sendTelegram(token, chatId, text) {
   if (!token || !chatId) return;
   try {
     const controller = new AbortController();
@@ -140,10 +140,13 @@ export async function output(ranked, ctx) {
     return { mdPath: null, jsonPath: null };
   }
 
-  mkdirSync(logDir, { recursive: true });
-  const mdPath = join(logDir, mdFileName);
-  const jsonPath = join(logDir, `discovery-${stamp}.json`);
-  writeFileSync(jsonPath, JSON.stringify({ generatedAt: generatedAt.toISOString(), window, gate, summary, recommended: ranked }, null, 2), "utf8");
+  const discoveryDir = join(logDir, "discovery");
+  mkdirSync(discoveryDir, { recursive: true });
+  const mdPath = join(discoveryDir, mdFileName);
+  const jsonPath = join(discoveryDir, `discovery-${stamp}.json`);
+  // 剔除 trades（逐笔明细仅内存供 ⑥ 用），防 json 日志膨胀
+  const recommendedForJson = ranked.map(({ trades, ...rest }) => rest);
+  writeFileSync(jsonPath, JSON.stringify({ generatedAt: generatedAt.toISOString(), window, gate, summary, recommended: recommendedForJson }, null, 2), "utf8");
   writeFileSync(mdPath, md, "utf8");
 
   if (!noPush) {

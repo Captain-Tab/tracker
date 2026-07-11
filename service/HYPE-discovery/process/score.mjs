@@ -24,7 +24,7 @@ function normalize(profile) {
  * 打分排序，降序取 topK。
  * @param {Array} profiles - evaluate 产出的合格画像
  * @param {object} config - effectiveConfig（用 weights / topK）
- * @returns {{ranked:Array, truncated:number}} - 与原 rankTopK 返回形态一致，便于 main 兼容
+ * @returns {{ranked:Array, truncated:number, scored:Array}} - ranked=topK；scored=全量带分（pre-topK），供 ⑥ observing 用
  */
 export function score(profiles, config) {
   const weights = config.weights ?? DEFAULT_WEIGHTS;
@@ -43,7 +43,7 @@ export function score(profiles, config) {
   });
 
   scored.sort((a, b) => b.score - a.score);
-  return { ranked: scored.slice(0, topK), truncated: Math.max(0, scored.length - topK) };
+  return { ranked: scored.slice(0, topK), truncated: Math.max(0, scored.length - topK), scored };
 }
 
 export const __internals = { normalize };

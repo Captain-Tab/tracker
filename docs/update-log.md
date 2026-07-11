@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-07-11 — feat(HYPE-discovery): 新增 ⑥ observing 观察态中间层
+
+**背景**：HYPE discovery 每周产出一批过硬门槛地址，但 watch（实时监听）是稀缺资源（每地址一条 WS 长连，VPS 舒适 5-10）。单周上榜可能昙花，直接纳入 watch 有资源与质量风险。缺一个「先观察两周确认持续性、再推荐升 watch」的中间态。
+
+**改动**（`service/HYPE-discovery/`）：
+
+- `process/observing.mjs`（新增）— ⑥ 阶段：维护 `HYPE-watch/watch-observing.json`，本周 `scored`（∉watch ∉parked）连续 2 周达标 → 🟢 结算推荐升 watch，断 streak → 🔴 移出（绝不自动 park；已被人工移入 watch/parked 者静默清出不误报 🔴），新入 → 🟡 观察第 1 周；自带 JSON 读写（条目 `{since,weeksSeen[],recommended,lastScore,reason}`，ISO 周去重）；观察态 TG（B 版 🟢→🔴→🟡，🟢 含 ≤2 近期精彩、🔴 含精确淘汰原因，三段全空静默）；落盘 `log/observing/observing-*.{json,md}`；异常 try/catch 不中断 ①-⑤；dry-run 打印消息到 stdout
+- `process/score.mjs` — 额外返回全量 `scored`（pre-topK 带分）供 ⑥
+- `process/evaluate.mjs` — `aggregateTrades` trade 加 `coin`，`deriveTradeMetrics` 返回 `trades`（供「近期精彩」）
+- `process/output.mjs` — 导出 `sendTelegram` 供 ⑥ 复用；json 序列化剔除 `trades` 防膨胀；写盘路径 `log/` → `log/discovery/`
+- `main.mjs` — ⑤ 后调 `observing(scored, evalEliminated, {...ctx, excludeSet})`；排除集文件 `watch-candidates.json` → `watch-parked.json`
+- 文件：`HYPE-watch/watch-candidates.json` → `watch-parked.json`（纯 parked 语义）；新建 `watch-observing.json`；`log/` 分 `discovery/`+`observing/` 子目录；`.gitignore` 同步
+
+**影响**：discovery 由五阶段变六阶段，无人值守每周自动维护观察态并推 🟢 升 watch 推荐；人工只需看 TG 决定是否搬入 watch。excludeSet 逻辑不变（仍 watches∪parked，observing 不排除以持续观察）。仅 HYPE；sodex 同款复制另案。设计见 `docs/discovery/hype.md §3.3`。
+
+---
+
 ## 2026-07-11 — fix(watch): TG 推送加响应检查 + await + 本地消息日志
 
 **背景**：7/6 HYPE-watch 检测到 0x610b 开仓 + 加仓事件，console 正常输出，但 TG 未收到消息。排查发现 `sendTelegram` 存在两个静默失败点：fetch 返回值被丢弃（TG API `ok:false` 被忽略）、调用方 fire-and-forget（Promise 悬空）。
