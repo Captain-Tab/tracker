@@ -18,6 +18,7 @@ import { evaluate } from "./process/evaluate.mjs";
 import { score } from "./process/score.mjs";
 import { output } from "./process/output.mjs";
 import { observing } from "./process/observing.mjs";
+import { shadow } from "./process/shadow.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -119,6 +120,13 @@ async function main() {
   // ⑥ observing：⑤ 落盘后维护观察态（连续 2 周达标 → 🟢 推荐升 watch）；异常不中断 ①-⑤
   const obsRes = await observing(scored, evalEliminated, { ...ctx, excludeSet });
   if (obsRes) log(`⑥ 观察态：🟢 结算 ${obsRes.promoted} · 🟡 新观察 ${obsRes.watching} · 🔴 移出 ${obsRes.removed}`);
+
+  // ⑦ shadow：预测台账（记账 + 回填推荐后真实盈亏）；旁路层，异常绝不中断 ①-⑥
+  try {
+    await shadow(scored, ranked, obsRes?.promotedAddresses ?? [], ctx);
+  } catch (e) {
+    console.error(`⑦ 影子跟踪失败（不影响 ①-⑥）：${e.message}`);
+  }
 }
 
 main().catch((e) => { console.error(`运行失败：${e.message}`); process.exit(1); });

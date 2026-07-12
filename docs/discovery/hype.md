@@ -61,13 +61,14 @@ leaderboard 走非官方 stats 域名（GET 全量流式）；info 系列走官�
 
 ---
 
-## 三、系统流程（六阶段 + 文件架构）
+## 三、系统流程（七阶段 + 文件架构）
 
-### 3.1 六阶段
+### 3.1 七阶段
 
 ```
 ~3.9万账户 ─①采集─> 千级 ─②筛选─> ≤300(poolMax) ─③深评─> 十几个 ─④打分─> topK ─⑤输出─> log/discovery/ + TG
-                                                                              └─⑥观察态─> log/observing/ + 维护 watch-observing.json + 观察态 TG
+                                                                              ├─⑥观察态─> log/observing/ + 维护 watch-observing.json + 观察态 TG
+                                                                              └─⑦影子跟踪─> log/ledger.json（预测台账，闭环反馈阶段1）
 ```
 
 | 阶段 | 文件 | 接口 | 输入→输出 | 性质 |
@@ -78,6 +79,7 @@ leaderboard 走非官方 stats 域名（GET 全量流式）；info 系列走官�
 | **④ 打分** Score | `score.mjs` | 无（纯算） | 十几个 → topK | 4 维归一×权重→排序取 topK（capped 降权）；额外返回全量 `scored`（pre-topK 带分）供 ⑥ |
 | **⑤ 输出** Output | `output.mjs` | 无 | topK → 名单 | log/discovery/ 结果文件(json+md) + TG（**不写 watch.config**） |
 | **⑥ 观察态** Observing | `observing.mjs` | 无 | scored → 观察态 | ⑤ 后同进程；维护 `watch-observing.json`：连续 2 周达标 → 🟢 结算推荐升 watch，断 streak → 🔴 移出，新入 → 🟡；只写 observing，异常不中断 ①-⑤ |
+| **⑦ 影子跟踪** Shadow | `shadow.mjs` | `/userFills` | scored/ranked/observing🟢 → 台账 | ⑥ 后同进程；维护 `log/ledger.json` 预测台账：(A) 写预测(recommended+observing🟢) + (A') 写对照(scored 排名外 N 个) + (B) 回填推荐后真实盈亏（2w/4w 窗口，满 4 周冻结）；纯采集不校准，不推 TG、不落 md，try/catch 异常不中断 ①-⑥。详见 [feedback-loop.md](./feedback-loop.md) |
 
 > **poolMax 硬上限**：leaderboard 按 pnl 降序，门槛后幸存者可能上千，深评每候选 1 次 userFills（2000 fill 聚合）内存吃紧（实测 817 幸存时 VPS 575MB+swap 接近 OOM）。故 `poolMax=300` 截断到前 300 进深评（对标 sodex poolMax），耗时 ~3-5 分钟、内存 ~200-300MB。截断数显式记日志，不静默。
 
@@ -85,7 +87,7 @@ leaderboard 走非官方 stats 域名（GET 全量流式）；info 系列走官�
 
 ```
 service/HYPE-discovery/
-  main.mjs              # 入口：CLI、读 config、读 HYPE-watch/config + watch-parked 得 excludeSet、编排六阶段
+  main.mjs              # 入口：CLI、读 config、读 HYPE-watch/config + watch-parked 得 excludeSet、编排七阶段
   api/
     index.mjs          # leaderboard 流式扫描器 + info 接口封装 + 限流 gate（并发≤4 + 间隔 120ms + 429/503 退避）
   process/
@@ -95,10 +97,12 @@ service/HYPE-discovery/
     score.mjs          # ④ 打分（返回 {ranked, truncated, scored}）
     output.mjs         # ⑤ 输出（json+md + TG；不写 watch.config；导出 sendTelegram 供 ⑥）
     observing.mjs      # ⑥ 观察态（三态维护 + 观察态 TG + log/observing 落盘；自带 JSON 读写）
+    shadow.mjs         # ⑦ 影子跟踪（预测台账记账 + 回填；复用 aggregateTrades/fetchUserFills/isoWeekId；自带 ledger JSON 读写）
   config.json          # 配置（含 tgToken/tgChat）
   log/
     discovery/         # ⑤ 结果文件（discovery-<stamp>.{json,md}，每次跑生成）
     observing/         # ⑥ 观察态快照 + 决策（observing-<stamp>.{json,md}，每次跑生成）
+    ledger.json        # ⑦ 预测台账（week|address 唯一键，逐周回填 outcome；gitignore VPS 本地）
 ```
 
 - 每阶段是纯函数 `(input, config) → output`，`--dry-run` 只 stdout 不落盘（⑥ 打印观察态消息到 stdout）、`--no-push` 落盘不推、`--limit=N` 扫够 N 行即停（测试）。

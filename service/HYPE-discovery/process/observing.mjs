@@ -180,7 +180,7 @@ export async function observing(scored, evalEliminated, ctx) {
     // dry-run：打印消息到 stdout，不写文件、不发 TG
     if (dryRun) {
       console.log("\n[⑥ observing dry-run]\n" + (msg ?? "（三段全空，静默不推）") + "\n");
-      return { promoted: promoted.length, watching: watching.length, removed: removed.length };
+      return { promoted: promoted.length, watching: watching.length, removed: removed.length, promotedAddresses: promoted.map((p) => p.address) };
     }
 
     // 落盘：状态快照 + 决策（每轮都写，供审计）；md = TG 消息完整版
@@ -195,7 +195,7 @@ export async function observing(scored, evalEliminated, ctx) {
     // TG：仅非空且非 noPush 时推送
     if (!noPush && msg) await sendTelegram(tgToken, tgChat, msg);
 
-    return { promoted: promoted.length, watching: watching.length, removed: removed.length };
+    return { promoted: promoted.length, watching: watching.length, removed: removed.length, promotedAddresses: promoted.map((p) => p.address) };
   } catch (e) {
     console.error(`⑥ observing 失败（不影响 ①-⑤）：${e.message}`);
     return null;

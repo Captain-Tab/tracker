@@ -30,5 +30,9 @@ service/app/config.json
 service/HYPE-copy/targets.json
 service/HYPE-copy/log/
 
+# watch TG 推送审计日志（tg-*.jsonl）
+service/sodex-watch/log/
+service/HYPE-watch/log/
+
 # 系统
 .DS_Store

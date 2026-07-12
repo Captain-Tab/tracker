@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-07-12 — feat(HYPE-discovery): 新增 ⑦ shadow 影子跟踪（闭环反馈阶段1）
+
+**背景**：HYPE discovery+observing 是**开环**——每周独立预测候选，却从不复盘上一批预测准不准。缺的不是数据量，是「给预测贴事后结果标签并回读」。本次加旁路数据层让系统从下周起记账，攒够带标签数据后（阶段2）才能校准。设计见 `docs/discovery/feedback-loop.md`。
+
+**改动**（`service/HYPE-discovery/`）：
+
+- `process/shadow.mjs`（新增）— ⑦ 阶段：维护 `log/ledger.json` 预测台账。(A) 写预测（recommended 标 discovery / observing🟢 标 observing，后者回查 `scored` 补全 recoveryFactor）+ (A') 写对照（`scored.slice(ranked.length, ranked.length+N)` 标 control，N=recommended 数，破幸存者偏差）+ (B) 回填（未成熟且满 2 周行重拉 `fetchUserFills`→过滤推荐后 fills→`aggregateTrades` 聚合→写 pnlSince/tradesSince/maxDrawdownSince 到 2w/4w 桶，满 4 周 matured 冻结停跟）；复用 `evaluate.aggregateTrades` + `api.fetchUserFills` + `observing.__internals.isoWeekId`；自带 ledger JSON 读写（读失败容错 `{}`）；maxDrawdown 落账取负值；休眠(0笔)/销户(fetch 抛错) 均容错记 0 不误判负样本；纯采集不推 TG、不落 md；dry-run 不写台账
+- `process/observing.mjs` — 仅加返回值：两个 return（dry-run + 正常）各加 `promotedAddresses`（=`promoted.map(p=>p.address)`），逻辑不变
+- `main.mjs` — ⑥ 后 try/catch 调 `shadow(scored, ranked, obsRes?.promotedAddresses ?? [], ctx)`，异常仅 console.error 不中断 ①-⑥
+
+**影响**：HYPE discovery 由六阶段变七阶段，每周随 discovery 自动记账（网络增量 ~80-100 次 userFills，与 evaluate 同量级）。**触发**：`HYPE-discovery.timer`（`app/index.mjs` 生成 `OnCalendar=Mon *-*-* 10:00:00 Asia/Shanghai`）每周一 10:00 跑 `main.mjs`（无 `--dry-run`），①-⑥ 后执行 ⑦。**日志**：数据台账 `log/ledger.json`（load-modify-save，已 gitignore，VPS 本地）；运行日志一行 `⑦ 影子跟踪：记账X·回填Y·成熟Z` 进 systemd journal，`journalctl -u HYPE-discovery.service` 可查。首轮 ledger 不存在时 `loadLedger` 容错建空，仅预测侧落账（回填=成熟=0，符合头 4 周只采集）。台账 schema 即阶段2 calibrate 接口契约（见 feedback-loop.md 附录A.6）。**影子只能证伪不能证真**（账户赚≠跟得上，滑点/跟单率看不见），定位是排除坏的。实测：确定性多周模拟（去重/对照采样/逐周回填/满4周冻结/休眠+销户容错/dry-run 全通过）+ 真实数据回填探针（2 个真实推荐地址，链路端到端贯通，含 2000 fill cap 触顶案例）。sodex 侧同款另案。
+
+---
+
 ## 2026-07-11 — feat(sodex-discovery): 新增 ⑥ observing 观察态中间层
 
 **背景**：HYPE 侧已落地 observing 观察态（discovery→watch 之间「先观察两周再推荐」的稀缺资源守门）。sodex 是同构管线，本次同款复制，处理 sodex 特有口径差异（accountId+positions 逐笔真账本、symbol_id 币名解析）。
