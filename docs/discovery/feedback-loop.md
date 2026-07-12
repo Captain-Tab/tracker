@@ -2,7 +2,7 @@
 
 > discovery + observing 之上的**旁路反馈层**方案文档。定位：把系统从「只会预测、从不复盘」的**开环**，改造成「每周知道上次准不准、并据此校正」的**闭环**。
 >
-> 状态：**阶段 1 已落地（HYPE）**，阶段 2/3 规划中（阶段划分见 §七）。不改动现有 discovery 逻辑（observing 仅加返回值 `promotedAddresses`），只加一个侧挂数据层。sodex / HYPE 各一套，schema 统一；sodex 侧 shadow 另案。
+> 状态：**阶段 1 已落地（HYPE + sodex 双平台）**，阶段 2/3 规划中（阶段划分见 §七）。不改动现有 discovery 逻辑（observing 仅加返回值 `promotedAddresses`），只加一个侧挂数据层。sodex / HYPE 各一套 `shadow.mjs`，台账 schema 统一（阶段 2 calibrate 跨平台复用）。
 
 ---
 
@@ -257,7 +257,7 @@ discovery **不预测收入金额**，它预测**质量评分**（这个人值�
 
 | 阶段 | 内容 | 前提 |
 | --- | --- | --- |
-| **阶段 1 ✅（HYPE 已落地）** | `shadow.mjs`（⑦）+ `ledger.json` + 对照组采样。纯采集，不校准 | 已实现：HYPE-discovery ⑦ 每周随 discovery 记账；sodex 侧另案 |
+| **阶段 1 ✅（HYPE + sodex 已落地）** | `shadow.mjs`（⑦）+ `ledger.json` + 对照组采样。纯采集，不校准 | 已实现：HYPE + sodex discovery ⑦ 每周随 discovery 记账。口径差异：HYPE 用 `userFills`+`aggregateTrades`（成交聚合），sodex 用 `fetchPositions`+`filter(size===0)`（逐笔已平仓位）；台账 schema 统一 |
 | **阶段 2** | `calibrate.mjs` 出首份校准报告，人工调 config | 阶段 1 攒够 4 周成熟样本后 |
 | **阶段 3（可选）** | 自动调参 / 执行真值接入（真实跟单的滑点/跟单率） | 阶段 2 验证校准逻辑靠谱后 |
 

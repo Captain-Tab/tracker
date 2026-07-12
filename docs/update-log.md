@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-07-12 — feat(sodex-discovery): 新增 ⑦ shadow 影子跟踪（闭环反馈阶段1）
+
+**背景**：sodex-discovery 与 HYPE 同构，同样开环——每周独立预测却从不复盘上一批准不准。继 HYPE ⑦ shadow 后，sodex 侧同款落地，台账 schema 统一（阶段2 calibrate 跨平台复用）。设计见 `docs/discovery/feedback-loop.md`。
+
+**改动**（`service/sodex-discovery/`）：
+
+- `process/shadow.mjs`（新增）— ⑦ 阶段：维护 `log/ledger.json` 预测台账。(A) 写预测（recommended 标 discovery / observing🟢 标 observing）+ (A') 写对照（`scored.slice(ranked.length, ranked.length+N)` 标 control）+ (B) 回填（未成熟且满 2 周行重拉 `fetchPositions(accountId, ctx.positionsLimit)`→`filter(size===0 && updated_at>recommendedAt)`→`Σrealized_pnl`，写 2w/4w 桶，满 4 周 matured 冻结）；复用 `api.fetchPositions` + `observing.__internals.isoWeekId`；自带 ledger JSON 读写（读失败容错 `{}`）；maxDrawdown 按 `updated_at` 升序累计取负
+- **sodex 口径差异**（区别于 HYPE 的 `userFills`+`aggregateTrades`）：positions 本身即逐笔已平仓真账本，无需聚合；**台账行双键 `address`(walletAddress 小写) + `accountId`**（回填调 `fetchPositions` 用 accountId）；三腿建行统一 `mkRow` 工厂读 `walletAddress`（非 `.address`），observing🟢 腿回查 scored 补 recoveryFactor+accountId
+- `process/observing.mjs` — 仅加返回值：两个 return（dry-run + 正常）各加 `promotedAddresses`（=`promoted.map(p=>p.address)`），逻辑不变
+- `main.mjs` — ⑥ 后 try/catch 调 `shadow(scored, ranked, obsRes?.promotedAddresses ?? [], ctx)`，ctx 注入 `positionsLimit: config.positionsLimit`，异常仅 console.error 不中断 ①-⑥
+
+**影响**：sodex discovery 由六阶段变七阶段，每周随 discovery（周一）自动记账。ledger.json 落 `log/` 目录（已 gitignore，VPS 本地）。**影子只能证伪不能证真**（账户赚≠跟得上），定位排除坏的。实测：确定性多周模拟（去重/对照采样/双键落账/observing🟢回查补全/逐周回填/满4周冻结/休眠+销户容错/dry-run 全通过）+ 真实数据回填探针（2 个真实推荐账户，`fetchPositions`→`filter`→`Σrealized_pnl` 链路端到端贯通）。HYPE 侧同款已落地（commit 3a63b11）。
+
+---
+
 ## 2026-07-12 — feat(HYPE-discovery): 新增 ⑦ shadow 影子跟踪（闭环反馈阶段1）
 
 **背景**：HYPE discovery+observing 是**开环**——每周独立预测候选，却从不复盘上一批预测准不准。缺的不是数据量，是「给预测贴事后结果标签并回读」。本次加旁路数据层让系统从下周起记账，攒够带标签数据后（阶段2）才能校准。设计见 `docs/discovery/feedback-loop.md`。

@@ -63,13 +63,14 @@
 
 ---
 
-## 三、系统流程（六阶段 + 文件架构）
+## 三、系统流程（七阶段 + 文件架构）
 
-### 3.1 六阶段
+### 3.1 七阶段
 
 ```
 12.6万账户 ─①采集─> ~150候选 ─②筛选─> ~30 ─③评估─> 十几个 ─④打分─> top10 ─⑤输出─> log/discovery/ + TG
-                                                                        └─⑥观察态─> log/observing/ + 维护 watch-observing.json + 观察态 TG
+                                                                        ├─⑥观察态─> log/observing/ + 维护 watch-observing.json + 观察态 TG
+                                                                        └─⑦影子跟踪─> log/ledger.json（预测台账，闭环反馈阶段1）
 ```
 
 | 阶段 | 文件 | 接口 | 输入→输出 | 性质 |
@@ -80,6 +81,7 @@
 | **④ 打分** Score | `score.mjs` | 无（纯算） | 十几个 → top10 | 5 维归一×权重→排序取 topK；额外返回全量 `scored`（pre-topK 带分）供 ⑥ |
 | **⑤ 输出** Output | `output.mjs` | 无 | top10 → 名单 | log/discovery/ 结果文件(json+md) + 推 TG（**不写 watch.config**） |
 | **⑥ 观察态** Observing | `observing.mjs` | `/symbols`（有🟢时解析币名） | scored → 观察态 | ⑤ 后同进程；维护 `watch-observing.json`：连续 2 周达标 → 🟢 结算推荐升 watch，断 streak → 🔴 移出，新入 → 🟡；只写 observing，异常不中断 ①-⑤ |
+| **⑦ 影子跟踪** Shadow | `shadow.mjs` | `/positions?limit` | scored/ranked/observing🟢 → 台账 | ⑥ 后同进程；维护 `log/ledger.json` 预测台账：(A) 写预测(recommended+observing🟢) + (A') 写对照(scored 排名外 N 个) + (B) 回填推荐后真实盈亏（`fetchPositions`→`filter(size===0 && updated_at>recAt)`→`Σrealized_pnl`，2w/4w 窗口，满 4 周冻结）；台账行双键 walletAddress+accountId；纯采集不校准，不推 TG、不落 md，try/catch 异常不中断 ①-⑥。详见 [feedback-loop.md](./feedback-loop.md) |
 
 **采集只覆盖榜单前 100 名**（由 `pages` 控制）。绝不全量。
 
@@ -87,7 +89,7 @@
 
 ```
 service/sodex-discovery/
-  main.mjs              # 入口：CLI、读 config、读 watch.config + watch-parked 得 excludeSet、编排六阶段
+  main.mjs              # 入口：CLI、读 config、读 watch.config + watch-parked 得 excludeSet、编排七阶段
   api/
     index.mjs          # 所有 HTTP 接口 + WS 声明 + refreshSymbols(symbol_id→币名) + httpGetJson/限流
   process/
@@ -97,10 +99,12 @@ service/sodex-discovery/
     score.mjs          # ④ 打分（返回 {ranked, scored}）
     output.mjs         # ⑤ 输出（log/discovery/ json+md + TG；不写 watch.config；导出 sendTelegram 供 ⑥）
     observing.mjs      # ⑥ 观察态（三态维护 + 观察态 TG + 近期精彩解析 + log/observing 落盘；自带 JSON 读写）
+    shadow.mjs         # ⑦ 影子跟踪（预测台账记账 + 回填；复用 fetchPositions/isoWeekId；自带 ledger JSON 读写；双键 walletAddress+accountId）
   config.json          # 配置（gitignore，含 tgChat）
   log/
     discovery/         # ⑤ 结果文件（discovery-<stamp>.{json,md}）
     observing/         # ⑥ 观察态快照 + 决策（observing-<stamp>.{json,md}）
+    ledger.json        # ⑦ 预测台账（week|walletAddress 唯一键，逐周回填 outcome；gitignore VPS 本地）
 ```
 
 - 入口与各阶段解耦，每阶段纯函数，`--dry-run` 可在任一阶段截断（⑥ dry-run 打印观察态消息到 stdout）。
