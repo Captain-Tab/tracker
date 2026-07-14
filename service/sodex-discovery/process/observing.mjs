@@ -12,7 +12,14 @@ import { refreshSymbols } from "../api/index.mjs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PROMOTE_WEEKS = 2; // 连续 N 周达标即结算推荐升 watch
-const MAX_LIST = 5;      // 🔴/🟡 每段展示上限
+const MAX_LIST = 5;      // 🔴/🟡/⚠️ 每段展示上限
+const MAX_API_RETRIES = 2; // 连续 API 失败上限
+
+// 判断淘汰原因是否为 transient API 错误（应保留而非移出）
+function isTransientApiError(reason) {
+  if (!reason) return false;
+  return /HTTP\s*(429|409|503)|fetch\s*failed|abort/i.test(reason);
+}
 const HIGHLIGHT_MAX = 2; // 🟢 近期精彩笔数
 const MS_PER_DAY = 86_400_000;
 
@@ -83,10 +90,10 @@ function resolveHighlights(topTrades, symbolMap, now) {
     });
 }
 
-// 构造 TG「观察态」消息（顺序 🟢→🔴→🟡）。三段全空 → 返回 null（静默不推）
+// 构造 TG「观察态」消息（顺序 🟢→🔴→⚠️→🟡）。四段全空 → 返回 null（静默不推）
 export function buildObservingTgMessage(decisions, dayLabel) {
-  const { promoted, removed, watching } = decisions;
-  if (!promoted.length && !removed.length && !watching.length) return null;
+  const { promoted, removed, retained = [], watching } = decisions;
+  if (!promoted.length && !removed.length && !retained.length && !watching.length) return null;
   const L = [`🔬 sodex 观察态 · ${dayLabel}`];
 
   if (promoted.length) {
@@ -102,6 +109,12 @@ export function buildObservingTgMessage(decisions, dayLabel) {
     L.push(`🔴 本周移出（断 streak）`);
     removed.slice(0, MAX_LIST).forEach((r) => L.push(`  📡 ${shortAddr(r.address)} 上周评分${r.lastScore} · ${r.reason}`));
     if (removed.length > MAX_LIST) L.push(`  …另有 ${removed.length - MAX_LIST} 个移出`);
+  }
+  if (retained.length) {
+    L.push("");
+    L.push(`⚠️ 本周 API 错误暂留（下周重试）`);
+    retained.slice(0, MAX_LIST).forEach((r) => L.push(`  📡 ${shortAddr(r.address)} 上周评分${r.lastScore} · ${r.reason}`));
+    if (retained.length > MAX_LIST) L.push(`  …另有 ${retained.length - MAX_LIST} 个暂留`);
   }
   if (watching.length) {
     L.push("");
@@ -140,6 +153,7 @@ export async function observing(scored, evalElim, ctx) {
     const promoted = [];
     const watching = [];
     const removed = [];
+    const retained = []; // API transient 错误暂留（不断 streak）
 
     // 本周合格：续命 / 结算 / 新入
     for (const [addr, s] of qualified) {
@@ -148,6 +162,7 @@ export async function observing(scored, evalElim, ctx) {
         if (!Array.isArray(entry.weeksSeen)) entry.weeksSeen = [];
         if (!entry.weeksSeen.includes(weekId)) entry.weeksSeen.push(weekId); // ISO 周去重
         entry.lastScore = s.score;
+        entry.apiRetries = 0; // 本周正常通过 → 清零 API 失败计数
         if (!entry.accountId) entry.accountId = s.accountId; // seed/迁移条目补 accountId
         if (entry.weeksSeen.length >= PROMOTE_WEEKS && !entry.recommended) {
           entry.recommended = true;
@@ -163,6 +178,7 @@ export async function observing(scored, evalElim, ctx) {
     }
 
     // observing 里本周未出现：断 streak 移出（绝不 park）
+    // transient API 错误做 grace period——保留不断 streak，连续 N 次失败才真移除
     const elimReason = new Map((evalElim ?? []).map((e) => [String(e.accountId ?? ""), e.reason]));
     for (const addr of Object.keys(obs)) {
       if (qualified.has(addr)) continue;
@@ -172,10 +188,22 @@ export async function observing(scored, evalElim, ctx) {
         continue;
       }
       const entry = obs[addr];
+      // sodex 口径：elimReason 按 accountId 索引
+      let reason = elimReason.get(String(entry.accountId ?? "")) || "掉出榜单（pnl/量下滑）";
+      if (isTransientApiError(reason)) {
+        const retries = Number.isFinite(entry.apiRetries) && entry.apiRetries >= 0 ? entry.apiRetries : 0;
+        if (retries < MAX_API_RETRIES - 1) {
+          entry.apiRetries = retries + 1;
+          retained.push({ address: addr, lastScore: entry.lastScore ?? "-", reason: reason.replace(/^画像拉取失败:\s*/, ""), apiRetries: retries + 1 });
+          continue; // 保留，不断 streak
+        }
+        // 连续 MAX_API_RETRIES 次 API 失败 → 真移除
+        reason = `连续${MAX_API_RETRIES}次API拉取失败: ${reason.replace(/^画像拉取失败:\s*/, "")}`;
+      }
       removed.push({
         address: addr,
         lastScore: entry.lastScore ?? "-",
-        reason: elimReason.get(String(entry.accountId ?? "")) || "掉出榜单（pnl/量下滑）",
+        reason,
       });
       delete obs[addr];
     }
@@ -187,7 +215,7 @@ export async function observing(scored, evalElim, ctx) {
     }
     for (const p of promoted) p.highlights = resolveHighlights(p.topTrades, symbolMap, now);
 
-    const decisions = { promoted, removed, watching };
+    const decisions = { promoted, removed, retained, watching };
     const msg = buildObservingTgMessage(decisions, beijingDay(genDate));
 
     // dry-run：打印消息到 stdout，不写文件、不发 TG
@@ -214,4 +242,4 @@ export async function observing(scored, evalElim, ctx) {
   }
 }
 
-export const __internals = { isoWeekId, buildObservingTgMessage, resolveHighlights, compactUsd, loadObserving };
+export const __internals = { isoWeekId, buildObservingTgMessage, resolveHighlights, compactUsd, loadObserving, isTransientApiError };

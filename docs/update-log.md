@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-07-14 — fix(observing): 观察态 API transient 错误 grace period
+
+**背景**：⑥ observing 阶段对 transient API 错误（HTTP 429/503/409 / AbortError / fetch failed）零容忍。evaluate 拉取 `userFills` 遇到 transient 错误 → 淘汰 → observing 移出 — 但限流非地址质量问题。实例：`0x0058...907c` 因 HTTP 429 被移出（上周评分 63.1），手动重拉成功（2,000 fills）。
+
+**改动**（`service/{HYPE,sodex}-discovery/process/observing.mjs`）：
+
+- 新增 `isTransientApiError(reason)` — 匹配 `/HTTP\s*(429|409|503)|fetch\s*failed|abort/i`
+- 条目 schema 加 `apiRetries` 字段（`Number.isFinite` 安全读取，默认 0，本周正常通过 → 清零）
+- 移除逻辑加 guard：transient → `apiRetries++` → `<2` 保留（st reak 不断），`>=2` 真移除（连续 2 周失败）
+- TG 消息新增 ⚠️ 段（🔴→⚠️→🟡），空段不展示；`buildObservingTgMessage` 签名加 `retained`，early-return 加入 retained 判断
+- sodex 同构（`elimReason` 按 `accountId` 索引的口径差异不变）
+
+**影响**：<1.3% 概率的 transient 错误不断 streak；不改 evaluate 层（已有 6 次重试）。验证：两端 `node --check` 通过 + 全量 86/86 单测绿。
+
+---
+
 ## 2026-07-14 — fix(watch): 修复 WS 重连后真 OPEN 被吞 + 持久化格式错位（两端）
 
 **背景**：commit `d4c03e8` 引入 `baselineLogged = false`（onclose 重置）以消除 WS 重连后持久化格式错位导致的假 OPEN。但 `kind = isBaseline ? "START" : classifyBanner(...)` 把真 OPEN 也吞了——1256 地址在 WS 断连期间开仓 XAUt，重连后首帧被标为 START WATCH，TG 静默不推，用户只看到后续的 INCREASE。

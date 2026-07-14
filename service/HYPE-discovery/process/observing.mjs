@@ -56,6 +56,15 @@ function fmtPct(r) {
   return Number.isFinite(x) ? `${(x * 100).toFixed(0)}%` : "-";
 }
 
+const MAX_API_RETRIES = 2; // 连续 API 失败上限（第 MAX_API_RETRIES 次真移除）
+
+// 判断淘汰原因是否为 transient API 错误（应保留而非移出）。
+// 匹配 evaluate 层用尽重试后抛出的 error.message。
+function isTransientApiError(reason) {
+  if (!reason) return false;
+  return /HTTP\s*(429|409|503)|fetch\s*failed|abort/i.test(reason);
+}
+
 // observing 文件自带读写（不经 watchCandidates 的 {date,reason} schema，避免富字段被丢弃）
 function loadObserving(path) {
   try {
@@ -78,10 +87,10 @@ function topHighlights(trades, now) {
     .map((t) => `${t.coin} ${compactUsd(t.pnl, true)}（${Math.max(0, Math.round((now - t.closeMs) / MS_PER_DAY))}天前）`);
 }
 
-// 构造 TG「观察态」消息（顺序 🟢→🔴→🟡）。三段全空 → 返回 null（静默不推）
+// 构造 TG「观察态」消息（顺序 🟢→🔴→⚠️→🟡）。四段全空 → 返回 null（静默不推）
 export function buildObservingTgMessage(decisions, dayLabel) {
-  const { promoted, removed, watching } = decisions;
-  if (!promoted.length && !removed.length && !watching.length) return null;
+  const { promoted, removed, retained = [], watching } = decisions;
+  if (!promoted.length && !removed.length && !retained.length && !watching.length) return null;
   const L = [`🔬 HYPE 观察态 · ${dayLabel}`];
 
   if (promoted.length) {
@@ -97,6 +106,12 @@ export function buildObservingTgMessage(decisions, dayLabel) {
     L.push(`🔴 本周移出（断 streak）`);
     removed.slice(0, MAX_LIST).forEach((r) => L.push(`  📡 ${shortAddr(r.address)} 上周评分${r.lastScore} · ${r.reason}`));
     if (removed.length > MAX_LIST) L.push(`  …另有 ${removed.length - MAX_LIST} 个移出`);
+  }
+  if (retained && retained.length) {
+    L.push("");
+    L.push(`⚠️ 本周 API 错误暂留（下周重试）`);
+    retained.slice(0, MAX_LIST).forEach((r) => L.push(`  📡 ${shortAddr(r.address)} 上周评分${r.lastScore} · ${r.reason}`));
+    if (retained.length > MAX_LIST) L.push(`  …另有 ${retained.length - MAX_LIST} 个暂留`);
   }
   if (watching.length) {
     L.push("");
@@ -135,14 +150,14 @@ export async function observing(scored, evalEliminated, ctx) {
     const promoted = [];
     const watching = [];
     const removed = [];
-
-    // 本周合格：续命 / 结算 / 新入
+    const retained = []; // API transient 错误暂留（不断 streak）
     for (const [addr, s] of qualified) {
       const entry = obs[addr];
       if (entry) {
         if (!Array.isArray(entry.weeksSeen)) entry.weeksSeen = [];
         if (!entry.weeksSeen.includes(weekId)) entry.weeksSeen.push(weekId); // ISO 周去重
         entry.lastScore = s.score;
+        entry.apiRetries = 0; // 本周正常通过 → 清零 API 失败计数
         if (entry.weeksSeen.length >= PROMOTE_WEEKS && !entry.recommended) {
           entry.recommended = true;
           promoted.push({
@@ -157,6 +172,7 @@ export async function observing(scored, evalEliminated, ctx) {
     }
 
     // observing 里本周未出现：断 streak 移出（绝不 park）
+    // transient API 错误做 grace period——保留不断 streak，连续 N 次失败才真移除
     const elimReason = new Map((evalEliminated ?? []).map((e) => [String(e.address ?? "").toLowerCase(), e.reason]));
     for (const addr of Object.keys(obs)) {
       if (qualified.has(addr)) continue;
@@ -166,15 +182,22 @@ export async function observing(scored, evalEliminated, ctx) {
         continue;
       }
       const entry = obs[addr];
-      removed.push({
-        address: addr,
-        lastScore: entry.lastScore ?? "-",
-        reason: elimReason.get(addr) || "掉出榜单（pnl/量下滑）",
-      });
+      let reason = elimReason.get(addr) || "掉出榜单（pnl/量下滑）";
+      if (isTransientApiError(reason)) {
+        const retries = Number.isFinite(entry.apiRetries) && entry.apiRetries >= 0 ? entry.apiRetries : 0;
+        if (retries < MAX_API_RETRIES - 1) {
+          entry.apiRetries = retries + 1;
+          retained.push({ address: addr, lastScore: entry.lastScore ?? "-", reason: reason.replace(/^画像拉取失败:\s*/, ""), apiRetries: retries + 1 });
+          continue; // 保留，不断 streak
+        }
+        // 连续 MAX_API_RETRIES 次 API 失败 → 真移除
+        reason = `连续${MAX_API_RETRIES}次API拉取失败: ${reason.replace(/^画像拉取失败:\s*/, "")}`;
+      }
+      removed.push({ address: addr, lastScore: entry.lastScore ?? "-", reason });
       delete obs[addr];
     }
 
-    const decisions = { promoted, removed, watching };
+    const decisions = { promoted, removed, retained, watching };
     const msg = buildObservingTgMessage(decisions, beijingDay(genDate));
 
     // dry-run：打印消息到 stdout，不写文件、不发 TG
@@ -202,4 +225,4 @@ export async function observing(scored, evalEliminated, ctx) {
   }
 }
 
-export const __internals = { isoWeekId, buildObservingTgMessage, topHighlights, compactUsd, loadObserving };
+export const __internals = { isoWeekId, buildObservingTgMessage, topHighlights, compactUsd, loadObserving, isTransientApiError };
