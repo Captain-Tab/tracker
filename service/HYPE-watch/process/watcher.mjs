@@ -93,7 +93,7 @@ export class AccountWatcher {
     this.lastPositions = [];
     this.prevExitOrders = new Map(); // oid → 离场单（离场单变化 diff 基线）
     this.seenCloseOids = new Set();
-    this.baselineLogged = false;
+    this.hasEverReported = false;  // 只升不降：完成首次 fetchAndReport 后永久为 true
     this.stateFp = null;
     this.lastOutFp = null;
     // 跟单事件信号（可选，加法）：copy-signal-path 未配则全程 no-op，watch 行为 diff=0
@@ -130,7 +130,7 @@ export class AccountWatcher {
       this.scheduleDaily();
     };
     ws.onmessage = (ev) => this.handleMessage(ev.data);
-    ws.onclose = (ev) => { this.clearTimers(); if (this.closing) return; this.baselineLogged = false; log(`CLOSE code=${ev.code} reason=${ev.reason}，准备重连`); this.scheduleReconnect(); };
+    ws.onclose = (ev) => { this.clearTimers(); if (this.closing) return; log(`CLOSE code=${ev.code} reason=${ev.reason}，准备重连`); this.scheduleReconnect(); };
     ws.onerror = (ev) => log("WS ERROR:", ev?.message || ev?.type || ev);
   }
 
@@ -294,14 +294,14 @@ export class AccountWatcher {
 
       // 首帧基线全部不标；之后新出现的平仓 oid 标 ★
       const newOids = new Set();
-      for (const r of closeRecords) { if (!this.seenCloseOids.has(r.oid)) { this.seenCloseOids.add(r.oid); if (this.baselineLogged) newOids.add(r.oid); } }
+      for (const r of closeRecords) { if (!this.seenCloseOids.has(r.oid)) { this.seenCloseOids.add(r.oid); if (this.hasEverReported) newOids.add(r.oid); } }
       if (this.seenCloseOids.size > SEEN_IDS_CAP) this.seenCloseOids = new Set(closeRecords.map((r) => r.oid));
-      const isBaseline = !this.baselineLogged;
+      const hasNoBaseline = !this.hasEverReported;
 
       // Layer 2: 首帧用 REST clearinghouseState 交叉验证（08-position-persistence §2.2）
       // 纠正 HL WS 重连时可能返回的不完整快照 + 检测 downtime 仓位变化
       // 同时查询 native 和 xyz 两个 dex，分别覆盖对应持仓
-      if (isBaseline && this.stateDir) {
+      if (hasNoBaseline && this.stateDir) {
         const persisted = loadLastPositions(this.stateDir, this.address);
         if (persisted.length > 0) {
           try {
@@ -326,15 +326,16 @@ export class AccountWatcher {
           this.lastPositions = [];
         }
       }
-      this.baselineLogged = true;
+      // Layer 2 用 persisted 覆盖了 lastPositions 用于 diff，现恢复为当前真实仓位供 save 使用
+      this.lastPositions = this.positions;
 
       // 离场单变化提醒；首帧只建基线，不提醒
-      const exitChanges = isBaseline ? [] : this.computeExitChanges(exitOrders, events);
+      const exitChanges = hasNoBaseline ? [] : this.computeExitChanges(exitOrders, events);
       this.prevExitOrders = new Map(exitOrders.map((o) => [o.oid, o]));
 
-      // banner 类型：首帧→START；否则按仓位 diff 动词化（跨帧平仓凭新 oid 补 CLOSE，纯离场单/抖动为 null）
-      const isOverview = isBaseline;
-      const kind = isBaseline ? "START" : (classifyBanner(events).kind ?? (newOids.size ? "CLOSE" : null));
+      // banner 类型：无基线→START；否则按仓位 diff 动词化（跨帧平仓凭新 oid 补 CLOSE，纯离场单/抖动为 null）
+      const isOverview = hasNoBaseline;
+      const kind = hasNoBaseline ? "START" : (classifyBanner(events).kind ?? (newOids.size ? "CLOSE" : null));
       const clock = fmtTime();
       const displayId = this.makeDisplayId();
 
@@ -369,6 +370,7 @@ export class AccountWatcher {
       if (this.stateDir && this.lastPositions.length > 0) {
         saveLastPositions(this.stateDir, this.address, this.lastPositions);
       }
+      this.hasEverReported = true;
     } finally { this.fetching = false; }
   }
 

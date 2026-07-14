@@ -5,9 +5,11 @@ export const baseCoin = (symbol) => String(symbol).split(/[-/]/)[0];
 
 // ---------- WS 快照仓位 / 离场单解析 ----------
 export function parseWsPosition(p) {
+  const s = String(p.s ?? p.symbol ?? "?");
+  const ps = String(p.ps ?? p.positionSide ?? "");
   return {
-    symbol: String(p.s ?? p.symbol ?? "?"),
-    posSide: String(p.ps ?? p.positionSide ?? ""),
+    symbol: s,
+    posSide: ps,
     size: String(p.sz ?? p.size ?? "0"),
     entry: String(p.ep ?? p.avgEntryPrice ?? ""),
     unrealizedPnl: String(p.ur ?? p.unrealizedPnl ?? "0"),
@@ -15,6 +17,9 @@ export function parseWsPosition(p) {
     leverage: Number(p.l ?? p.leverage ?? 0),
     liqPrice: String(p.lp ?? p.liquidationPrice ?? ""),
     marginMode: String(p.m ?? p.marginMode ?? ""),
+    // coin/dir：供 saveLastPositions 持久化用（持久化 store 读写 coin/dir，与 diffPositions key 同源）
+    coin: baseCoin(s),
+    dir: positionDirection({ posSide: ps, size: String(p.sz ?? p.size ?? "0") }),
   };
 }
 

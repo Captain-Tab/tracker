@@ -9,18 +9,37 @@ function safeAddr(address) {
 }
 
 // 读取持久化的仓位快照。文件缺失/损坏/过期 → []（不阻断启动）。
+// 返回 {symbol, posSide, coin, dir, size}——sodex 用 symbol/posSide，HYPE 用 coin/dir。
+// 兼容新旧格式：
+//   新格式 {coin, dir, size} → 反推 symbol/posSide
+//   旧格式 {symbol, posSide, size} → 反推 coin/dir
+//   过渡期 {coin:"undefined"} → 过滤
 export function loadLastPositions(path, address) {
   const file = `${path}/lastPositions-${safeAddr(address)}.json`;
   try {
     const raw = readFileSync(file, "utf8");
     const data = JSON.parse(raw);
     if (!data || !Array.isArray(data.positions)) return [];
-    // positions 中只需保留 diffPositions 所需的 coin/dir/size 三个字段
-    return data.positions.map((p) => ({
-      coin: String(p.coin ?? ""),
-      dir: String(p.dir ?? ""),
-      size: Number(p.size ?? 0),
-    }));
+    return data.positions
+      .map((p) => {
+        const coin = String(p.coin ?? "");
+        const dir = String(p.dir ?? "");
+        // 新格式：coin/dir 有效
+        if (coin && coin !== "undefined" && dir && dir !== "undefined") {
+          return { symbol: coin + "-USD", posSide: dir, coin, dir, size: Number(p.size ?? 0) };
+        }
+        // 旧格式：从 symbol/posSide 推导（防御，存量文件不存在此格式）
+        const symbol = String(p.symbol ?? "");
+        const posSide = String(p.posSide ?? "");
+        if (symbol && symbol !== "?" && symbol !== "undefined") {
+          const derivedCoin = String(symbol).split(/[-/]/)[0];
+          const derivedDir = posSide || (Number(p.size) < 0 ? "SHORT" : "LONG");
+          return { symbol, posSide: derivedDir, coin: derivedCoin, dir: derivedDir, size: Number(p.size ?? 0) };
+        }
+        // 不可识别 → 过滤（过渡期自愈）
+        return null;
+      })
+      .filter(Boolean);
   } catch {
     return [];
   }

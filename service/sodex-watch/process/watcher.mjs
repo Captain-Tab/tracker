@@ -82,7 +82,7 @@ export class AccountWatcher {
     this.lastPositions = [];
     this.seenPositionIds = new Set();
     this.prevReduceOnly = new Map(); // orderId → 归一化单（G10 离场单 diff）
-    this.baselineLogged = false;
+    this.hasEverReported = false;  // 只升不降：完成首次 fetchAndReport 后永久为 true
     this.stateFp = null;
     this.lastOutFp = null;
     // 跟单事件信号（可选，加法）：copy-signal-path 未配则全程 no-op，watch 行为 diff=0
@@ -120,7 +120,7 @@ export class AccountWatcher {
       this.scheduleDaily();
     };
     ws.onmessage = (ev) => this.handleMessage(ev.data);
-    ws.onclose = (ev) => { this.clearTimers(); if (this.stableTimer) { clearTimeout(this.stableTimer); this.stableTimer = null; } if (this.closing) return; this.baselineLogged = false; log(`CLOSE code=${ev.code}，准备重连`); this.scheduleReconnect(); };
+    ws.onclose = (ev) => { this.clearTimers(); if (this.stableTimer) { clearTimeout(this.stableTimer); this.stableTimer = null; } if (this.closing) return; log(`CLOSE code=${ev.code}，准备重连`); this.scheduleReconnect(); };
     ws.onerror = (ev) => log("WS ERROR:", ev?.message || ev?.type || ev);
   }
 
@@ -259,14 +259,13 @@ export class AccountWatcher {
 
       // ★ 复用：首帧基线全部不标，之后新出现的已平仓位（新 position_id）标 ★
       const newPosIds = new Set();
-      for (const r of records) { if (!this.seenPositionIds.has(r.positionId)) { this.seenPositionIds.add(r.positionId); if (this.baselineLogged) newPosIds.add(r.positionId); } }
+      for (const r of records) { if (!this.seenPositionIds.has(r.positionId)) { this.seenPositionIds.add(r.positionId); if (this.hasEverReported) newPosIds.add(r.positionId); } }
       if (this.seenPositionIds.size > SEEN_IDS_CAP) this.seenPositionIds = new Set(records.map((r) => r.positionId));
-      const isBaseline = !this.baselineLogged;
-      this.baselineLogged = true;
+      const hasNoBaseline = !this.hasEverReported;
 
       // Layer 2: 首帧从磁盘恢复 lastPositions + REST 兜底（08-position-persistence §2.2）
       // 使用 /api/v1/perps/accounts/<address>/state 获取当前持仓（非平仓历史接口）
-      if (isBaseline && this.stateDir) {
+      if (hasNoBaseline && this.stateDir) {
         const persisted = loadLastPositions(this.stateDir, this.address);
         try {
           const result = await fetchAccountState(this.env, this.address);
@@ -291,7 +290,7 @@ export class AccountWatcher {
 
       // G5/G6：检测到 CLOSED 仓位事件但平仓历史尚无对应新 position_id → positions 索引延迟，2s 补拉
       const hasClosed = events.some((e) => e.startsWith("CLOSED"));
-      if (!isBaseline && hasClosed && newPosIds.size === 0) {
+      if (!hasNoBaseline && hasClosed && newPosIds.size === 0) {
         if (!this.retryScheduled) { this.retryScheduled = true; this.lastOutFp = null; setTimeout(() => { this.retryScheduled = false; this.scheduleFetch(true); }, 2000); }
         return;
       }
@@ -308,12 +307,12 @@ export class AccountWatcher {
       this.pendingStructural = false;
 
       // 离场单变化提醒；首帧只建立基线，不提醒
-      const exitChanges = isBaseline ? [] : this.computeExitChanges(reduceOnly, events, records, newPosIds);
+      const exitChanges = hasNoBaseline ? [] : this.computeExitChanges(reduceOnly, events, records, newPosIds);
       this.prevReduceOnly = new Map(reduceOnly.map((o) => [o.orderId, o]));
 
-      // banner 类型：首帧→START；否则按仓位 diff 动词化
-      const isOverview = isBaseline;
-      const kind = isBaseline ? "START" : classifyBanner(events, newPosIds).kind;
+      // banner 类型：无基线→START；否则按仓位 diff 动词化
+      const isOverview = hasNoBaseline;
+      const kind = hasNoBaseline ? "START" : classifyBanner(events, newPosIds).kind;
       const clock = fmtTime();
       const displayId = this.makeDisplayId();
 
@@ -349,6 +348,7 @@ export class AccountWatcher {
       if (this.stateDir && this.lastPositions.length > 0) {
         saveLastPositions(this.stateDir, this.address, this.lastPositions);
       }
+      this.hasEverReported = true;
     } finally { this.fetching = false; }
   }
 

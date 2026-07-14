@@ -216,7 +216,12 @@
       "Bash(scp \"root@107.172.90.184:/root/service/sodex-discovery/log/discovery/discovery-2026-07-12-0127.md\" /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/discovery/)",
       "Bash(scp \"root@107.172.90.184:/root/service/sodex-discovery/log/observing/observing-2026-07-12-0127.json\" /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/observing/)",
       "Bash(scp \"root@107.172.90.184:/root/service/sodex-discovery/log/observing/observing-2026-07-12-0127.md\" /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/observing/)",
-      "Bash(scp \"root@107.172.90.184:/root/service/HYPE-discovery/log/discovery/discovery-2026-07-12-0133.json\" /Users/tabcaptain/Documents/code/tracker/service/HYPE-discovery/log/discovery/)"
+      "Bash(scp \"root@107.172.90.184:/root/service/HYPE-discovery/log/discovery/discovery-2026-07-12-0133.json\" /Users/tabcaptain/Documents/code/tracker/service/HYPE-discovery/log/discovery/)",
+      "Bash(scp root@107.172.90.184:'/root/service/sodex-discovery/log/ledger.json' /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/)",
+      "Bash(scp /tmp/analyze_907c.py root@107.172.90.184:/tmp/analyze_907c.py)",
+      "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/sodex-watch/config.json root@107.172.90.184:/root/service/sodex-watch/config.json)",
+      "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/sodex-watch/watch-parked.json root@107.172.90.184:/root/service/sodex-watch/watch-parked.json)",
+      "Bash(read line *)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",

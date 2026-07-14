@@ -4,6 +4,23 @@
 
 ---
 
+## 2026-07-14 — fix(watch): 修复 WS 重连后真 OPEN 被吞 + 持久化格式错位（两端）
+
+**背景**：commit `d4c03e8` 引入 `baselineLogged = false`（onclose 重置）以消除 WS 重连后持久化格式错位导致的假 OPEN。但 `kind = isBaseline ? "START" : classifyBanner(...)` 把真 OPEN 也吞了——1256 地址在 WS 断连期间开仓 XAUt，重连后首帧被标为 START WATCH，TG 静默不推，用户只看到后续的 INCREASE。
+
+根因有两层：(1) `parseWsPosition`（sodex）不产出 `coin`/`dir`，`saveLastPositions` 写 `coin`/`dir` → 持久化为 `coin:"undefined"` → 加载后 `diffPositions` key 坍缩为 `"undefined:LONG"` → 与 WS 新帧 `"XAUt:LONG"` 永远不匹配 → 重连必产假 OPEN；(2) `baselineLogged` 一刀切覆盖，不分真假。
+
+**改动**：
+
+- `service/sodex-watch/process/parse.mjs` — `parseWsPosition` 加 `coin`/`dir` 别名（`baseCoin(s)` / `positionDirection({posSide, size})`），供持久化写入
+- `service/tool/lastPositionsStore.mjs` — `loadLastPositions` 返回 `{symbol, posSide, coin, dir, size}`（两端 `diffPositions` 各自取需）。兼容旧格式（`symbol`/`posSide` → 反推 `coin`/`dir`）。过渡期 `coin:"undefined"` 条目过滤（等效首次启动，1 周期后新格式写回自愈）
+- `service/sodex-watch/process/watcher.mjs` — 删除 `baselineLogged`，新增 `hasEverReported`（只升不降，构造函数 `false`，`fetchAndReport` 末尾设 `true`，`onclose` 不重置）。`isBaseline` → `hasNoBaseline = !hasEverReported`。首次启动仍静默建基线；WS 重连后 `hasEverReported` 保持 `true` → `classifyBanner` 正常 → 真 OPEN 不被吞；全平后重开同理
+- `service/HYPE-watch/process/watcher.mjs` — 同构 + Layer 2 覆盖修复（`this.lastPositions = persisted` 之后补 `this.lastPositions = this.positions`，防止重启首周期写回旧数据）
+
+**影响**：(1) 持久化格式永久修复：`diffPositions` key 正确，重连不产假 OPEN；(2) `baselineLogged` 删除：真 OPEN 不再被吞，无论 WS 重连、服务重启、全平后重开；(3) 过渡期一次自愈：旧文件 `coin:"undefined"` 被过滤 → 等效首次启动 → 1 周期后正确数据写回。HYPE 端不受格式错位影响（原生产出 `coin`/`dir`），仅受益于 `baselineLogged` 删除。验证：全量 86/86 单测绿 + 6+5 diffPositions 场景穷举通过 + 冒烟 4/4（读写往返/过滤/混合/兼容）。
+
+---
+
 ## 2026-07-12 — feat(sodex-discovery): 新增 ⑦ shadow 影子跟踪（闭环反馈阶段1）
 
 **背景**：sodex-discovery 与 HYPE 同构，同样开环——每周独立预测却从不复盘上一批准不准。继 HYPE ⑦ shadow 后，sodex 侧同款落地，台账 schema 统一（阶段2 calibrate 跨平台复用）。设计见 `docs/discovery/feedback-loop.md`。
