@@ -65,7 +65,7 @@ export async function dailySnapshot(ctx, retry = 0) {
     } else {
       const tgText = buildTgMessage(
         displayId, "SNAPSHOT", fmtTime(),
-        positions, [], closeRecords, new Set(), ctx.historyLimit ?? 2,
+        positions, [], closeRecords, new Set(), ctx.historyLimit ?? 1,
       );
       await sendTelegram(ctx.tgToken, ctx.tgChat, tgText);
     }

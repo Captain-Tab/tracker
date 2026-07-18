@@ -52,7 +52,7 @@ export class AccountWatcher {
     this.env = env;
     this.address = address;
     this.flags = flags;
-    this.historyLimit = Number(flags["history-limit"] ?? 2);
+    this.historyLimit = Number(flags["history-limit"] ?? 1);
     // 短档：开/平/反手/离场单等结构变化即时推（沿用原值）
     this.debounceMs = Number(flags["debounce-ms"] ?? 3000);
     this.maxWaitMs = Number(flags["max-wait-ms"] ?? 5000);
@@ -369,7 +369,7 @@ export class AccountWatcher {
       else if (verb === "DECREASED") msgs.push(buildPositionChangeMessage(displayId, "REDUCE", clock, pos, prevMap.get(`${coin}:${dir}`)));
     }
 
-    // 2) 平仓（CLOSED）→ 合并一条：摘要 + 剩余仓位全景 + 每平仓币 1 条历史
+    // 2) 平仓（CLOSED）→ 合并一条：摘要 + 剩余仓位单行摘要 + 每平仓币 1 条历史
     // 摘要币名统一从 histRecords + symbolMeta 取，与平仓历史渲染同源，不依赖 lastPositions 格式
     const closedSummaries = [];
     if (newPosIds.size) {
@@ -386,7 +386,7 @@ export class AccountWatcher {
       }
     }
     if (closedSummaries.length) {
-      msgs.push(buildCloseMessage(displayId, clock, closedSummaries, this.positions, reduceOnly, histRecords, newPosIds));
+      msgs.push(buildCloseMessage(displayId, clock, closedSummaries, this.positions, histRecords, newPosIds));
     }
 
     // 3) 离场单变化 → 按币分组，各一条（同币多动作回退 mixed）

@@ -132,13 +132,20 @@ export function buildPositionChangeMessage(displayId, kind, clock, position, pre
   return lines.join("\n");
 }
 
-// 平仓合并消息：顶部平仓摘要 + 剩余仓位全景（无则无持仓）+ 底部平仓历史（每币 1 条，⭐️、无“最近N条”）。
-export function buildCloseMessage(displayId, clock, closedSummaries, remaining, exitOrders, histRecords, newOids) {
+// 剩余仓位单行摘要：方向 emoji + 币种 + 杠杆 + 开仓→标记 + 浮盈（完整卡片由 START/每日镜像兜底）
+function remainingPositionLine(p) {
+  const v = derivePositionView(p);
+  const dirEmoji = v.dir === "LONG" ? "🟢" : "🔴";
+  return `  ${dirEmoji} ${v.coin} ${v.lev}x  ${fmtNum(v.entry, v.pricePrecision)} → ${fmtNum(v.mark, v.pricePrecision)}  ${fmtUsd(v.uPnl, true)}`;
+}
+
+// 平仓合并消息：顶部平仓摘要 + 剩余仓位单行摘要（无则无持仓）+ 底部平仓历史（每币 1 条，⭐️、无“最近N条”）。
+export function buildCloseMessage(displayId, clock, closedSummaries, remaining, histRecords, newOids) {
   const lines = [bannerHead(displayId, "CLOSE", clock), ""];
   for (const s of closedSummaries) lines.push(`平仓：${s.coin} ${s.dir}`);
   if (remaining.length) {
-    lines.push(`\n剩余仓位：`);
-    for (const p of remaining) pushPositionCard(lines, p, { exitOrders });
+    lines.push(`\n剩余仓位 (${remaining.length})`);
+    for (const p of remaining) lines.push(remainingPositionLine(p));
   } else {
     lines.push(`\n📊 仓位：无持仓`);
   }

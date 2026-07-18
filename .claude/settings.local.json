@@ -235,7 +235,9 @@
       "Bash(/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -dump)",
       "Bash(swdutil info *)",
       "Bash(/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -dump)",
-      "Bash(pip3 install *)"
+      "Bash(pip3 install *)",
+      "Bash(scp root@107.172.90.184:/root/service/sodex-discovery/log/ledger.json /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/ledger.json)",
+      "Bash(scp root@107.172.90.184:/root/service/HYPE-discovery/log/ledger.json /Users/tabcaptain/Documents/code/tracker/service/HYPE-discovery/log/ledger.json)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",

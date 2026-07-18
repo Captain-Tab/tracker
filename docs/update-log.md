@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-07-19 — feat(watch): 平仓消息剩余仓位摘要化 + 全景平仓历史默认 2→1（两端）
+
+**背景**：HYPE 大户普遍同时持有 5-10 个仓位，平仓合并消息中「剩余仓位」逐仓渲染完整卡片（每仓 10+ 行），平 1 仓拖出 40+ 行消息，平仓关键信息被淹没。剩余仓位的核心价值仅是「清仓离场还是调仓」判断，完整卡片另有 START WATCH / 每日镜像两个兜底入口。
+
+**改动**：
+
+- `service/{HYPE,sodex}-watch/process/render.mjs` — `buildCloseMessage` 剩余仓位从逐仓 `pushPositionCard` 改为每仓一行摘要（新增 `remainingPositionLine`：🟢/🔴 方向 emoji + 币种 + 杠杆 + 开仓价 → 标记价 + 浮盈），标题「剩余仓位 (N)」；清仓分支「📊 仓位：无持仓」保留；签名移除闲置参数（HYPE `exitOrders` / sodex `reduceOnly`），watcher.mjs 调用处同步。sodex 保留 `size !== 0` 过滤
+- `service/{HYPE,sodex}-watch/process/watcher.mjs` + `sodex-watch/process/snapshot.mjs` + `{HYPE,sodex}-watch/process/dailySnapshot.mjs` — 全景（START / SNAPSHOT）平仓历史默认条数 `?? 2` → `?? 1`（`--history-limit` flag 覆盖机制保留）
+
+**影响**：平仓消息（剩 3 仓场景）从 ~40 行降至 ~12 行；OPEN/INCREASE/REDUCE/离场单/START/SNAPSHOT 的仓位卡片渲染不变；平仓消息底部历史（每平仓币 1 条）不变。字段容错沿用 `fmtNum`/`fmtUsd`（entry/mark 缺失显示 "-"）。验证：`node --check` 7/7 + 全量 45/45 单测绿 + 冒烟 6 场景（多空混合/清仓/size=0 过滤/entry 缺失/limit 直通 1↔3）。
+
+---
+
 ## 2026-07-18 — fix(watch): 修复跨帧 fallback 误判部分成交为全平 CLOSE
 
 **背景**：HYPE-watch `buildEventMessages` 的跨帧 fallback 在 `events` 无 CLOSED 时，凭 `userFills` 中的新平仓记录补 CLOSE 摘要。但守卫条件只检查 `prevCoins.has(c)`（之前有此币），未检查当前仓位中是否还存在。当 partial fill（如 ETH 609→600，成交 9 张）的 `dir` 含 "Close" 时，fallback 错误触发 → 同帧发送 REDUCE + CLOSE 两条消息，CLOSE 消息中「平仓 ETH」与「剩余仓位 ETH 600」自相矛盾。实例：`0x11...e60a` 于 2026/07/18 01:06 同秒收到 msg 2596 REDUCE + msg 2597 CLOSE（TG 日志 `tg-2026-07-17.jsonl` 确认）。

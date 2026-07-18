@@ -21,7 +21,7 @@ export function msUntilNextShanghai(hhmm) {
 export class SnapshotMode {
   constructor(env, address, flags) {
     this.env = env; this.address = address; this.flags = flags;
-    this.historyLimit = Number(flags["history-limit"] ?? 2);
+    this.historyLimit = Number(flags["history-limit"] ?? 1);
     this.at = pickAt(flags.at, undefined); // 非法 --at 回退默认 20:00
     this.accountId = flags["account-id"] ?? null;
     this.tgToken = flags["tg-token"] ?? null;
