@@ -221,7 +221,21 @@
       "Bash(scp /tmp/analyze_907c.py root@107.172.90.184:/tmp/analyze_907c.py)",
       "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/sodex-watch/config.json root@107.172.90.184:/root/service/sodex-watch/config.json)",
       "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/sodex-watch/watch-parked.json root@107.172.90.184:/root/service/sodex-watch/watch-parked.json)",
-      "Bash(read line *)"
+      "Bash(read line *)",
+      "Bash(command -v fzf)",
+      "Read(//Applications/iTerm.app/Contents/Resources/**)",
+      "Read(//usr/local/bin/**)",
+      "Bash(mdfind -name iterm)",
+      "Bash(mdfind -name iTerm2)",
+      "Bash(/Applications/iTerm.app/Contents/MacOS/iTerm2 --help)",
+      "Bash(osascript *)",
+      "Bash(plutil -p /Applications/iTerm.app/Contents/Info.plist)",
+      "Bash(echo '#!/bin/bash *)",
+      "Bash(open -a iTerm /tmp/test.command)",
+      "Bash(/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -dump)",
+      "Bash(swdutil info *)",
+      "Bash(/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -dump)",
+      "Bash(pip3 install *)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",
