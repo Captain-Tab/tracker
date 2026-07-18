@@ -396,11 +396,14 @@ export class AccountWatcher {
     // 跨帧：仓位 diff 未抓到 CLOSED 但有新平仓记录 → 凭记录补摘要（dir 取自 fill 的 "Close Long/Short"）。
     // Layer 3 守卫（08-position-persistence §2.3）：仅当受影响的 coin 在 prevPositions 中存在时才补 CLOSE，
     // 若已不在 prevPositions 中，说明 CLOSE 已在上轮报告，延迟到达的 fill 不再重复推送。
+    // 同时检查 currPositions：若 coin 仍在当前仓位中 → 仅为部分成交（diff 已产 DECREASED），不应误判为全平。
     if (!closedSummaries.length && newOids.size) {
       const prevCoins = new Set(prevPositions.map((p) => p.coin));
+      const currCoins = new Set(this.positions.map((p) => p.coin));
       const affected = [...new Set(histRecords.filter((r) => newOids.has(r.oid)).map((r) => r.coin))];
-      if (affected.some((c) => prevCoins.has(c))) {
-        closedSummaries = affected.filter((c) => prevCoins.has(c)).map((coin) => {
+      const trulyGone = affected.filter((c) => prevCoins.has(c) && !currCoins.has(c));
+      if (trulyGone.length) {
+        closedSummaries = trulyGone.map((coin) => {
           const r = histRecords.find((x) => x.coin === coin && newOids.has(x.oid));
           return { coin, dir: String(r?.dir ?? "").includes("Long") ? "LONG" : "SHORT" };
         });

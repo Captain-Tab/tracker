@@ -4,7 +4,18 @@
 
 ---
 
-## 2026-07-14 — fix(observing): 观察态 API transient 错误 grace period
+## 2026-07-18 — fix(watch): 修复跨帧 fallback 误判部分成交为全平 CLOSE
+
+**背景**：HYPE-watch `buildEventMessages` 的跨帧 fallback 在 `events` 无 CLOSED 时，凭 `userFills` 中的新平仓记录补 CLOSE 摘要。但守卫条件只检查 `prevCoins.has(c)`（之前有此币），未检查当前仓位中是否还存在。当 partial fill（如 ETH 609→600，成交 9 张）的 `dir` 含 "Close" 时，fallback 错误触发 → 同帧发送 REDUCE + CLOSE 两条消息，CLOSE 消息中「平仓 ETH」与「剩余仓位 ETH 600」自相矛盾。实例：`0x11...e60a` 于 2026/07/18 01:06 同秒收到 msg 2596 REDUCE + msg 2597 CLOSE（TG 日志 `tg-2026-07-17.jsonl` 确认）。
+
+**改动**（`service/HYPE-watch/process/watcher.mjs`）：
+
+- 跨帧 fallback（`buildEventMessages`）新增 `currCoins` Set，`trulyGone = affected.filter((c) => prevCoins.has(c) && !currCoins.has(c))`，只补报真正从当前仓位消失的币
+- 注释同步更新
+
+**影响**：部分成交不再被误判为全平 CLOSE。全平仓位（真消失）仍正常补报。sodex-watch 不受影响（其 `closedSummaries` 直接从 `histRecords` 构建，无基于 events 的 fallback）。验证：15/15 单测绿 + `node --check` 通过。
+
+---
 
 **背景**：⑥ observing 阶段对 transient API 错误（HTTP 429/503/409 / AbortError / fetch failed）零容忍。evaluate 拉取 `userFills` 遇到 transient 错误 → 淘汰 → observing 移出 — 但限流非地址质量问题。实例：`0x0058...907c` 因 HTTP 429 被移出（上周评分 63.1），手动重拉成功（2,000 fills）。
 
