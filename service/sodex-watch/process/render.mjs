@@ -117,8 +117,6 @@ export function classifyBanner(events, newClosedIds) {
   return { kind: null };
 }
 
-const SEP = "━━━━━━━━━━"; // 隔断线缩为原宽 50%（8 段）
-
 // 追加一张仓位卡片到 lines。opts：
 //   star          仓位标题行前加 ⭐️（开仓定位）
 //   change        { verb, prevAbs, currAbs } 在方向行后插入 ⭐️ 增减持仓量级行
@@ -126,7 +124,6 @@ const SEP = "━━━━━━━━━━"; // 隔断线缩为原宽 50%（8 �
 //   exitLines     直接给定离场挂单行（已含 ⭐️/标签）；缺省则按 reduceOnly 生成普通行
 function pushPositionCard(lines, p, opts = {}) {
   const v = derivePositionView(p);
-  lines.push(`\n${SEP}`);
   lines.push(`${opts.star ? "⭐️ " : ""}📊 仓位：${v.coin} ${v.lev}x ${v.dir}`);
   lines.push(`方向  ${v.dirCN}`);
   if (opts.change) {
@@ -135,7 +132,6 @@ function pushPositionCard(lines, p, opts = {}) {
     const sign = delta >= 0 ? "+" : "-";
      lines.push(`⭐️ ${verb}  ${fmtNum(prevAbs, v.qtyPrecision)} → ${fmtNum(currAbs, v.qtyPrecision)} ${v.coin} (${sign}${fmtNum(Math.abs(delta), v.qtyPrecision)})`);
   }
-  lines.push(`持仓量  ${fmtNum(v.absSize, v.qtyPrecision)}`);
   lines.push(`仓位价值  ${v.value !== null ? fmtUsd(v.value) : "-"}`);
   lines.push(`开仓价  ${fmtNum(v.entry, v.pricePrecision)}`);
   lines.push(`标记价  ${v.mark !== null ? fmtNum(v.mark, v.pricePrecision) : "-"}`);
@@ -152,7 +148,6 @@ function pushPositionCard(lines, p, opts = {}) {
   }
   const exitLines = opts.exitLines ?? exitOrderLines(p, v, opts.reduceOnly ?? []);
   for (const line of exitLines) lines.push(`${line}`);
-  lines.push(`${SEP}`);
 }
 
 // 全景消息（START / SNAPSHOT）：banner 头 + 全部仓位卡片 + 平仓历史（最近 N 条）。行为不变。

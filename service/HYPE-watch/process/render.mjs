@@ -67,12 +67,9 @@ export function classifyBanner(events) {
   return { kind: null };
 }
 
-const SEP = "━━━━━━━━━━";
-
 // 追加一张仓位卡片。opts 同 sodex：star / change / marginChange / exitLines（缺省按 exitOrders 生成）。
 function pushPositionCard(lines, p, opts = {}) {
   const v = derivePositionView(p);
-  lines.push(`\n${SEP}`);
   lines.push(`${opts.star ? "⭐️ " : ""}📊 仓位：${v.coin} ${v.lev}x ${v.dir}`);
   lines.push(`方向  ${v.dirCN}`);
   if (opts.change) {
@@ -81,7 +78,6 @@ function pushPositionCard(lines, p, opts = {}) {
     const sign = delta >= 0 ? "+" : "-";
      lines.push(`⭐️ ${verb}  ${fmtNum(prevAbs, v.qtyPrecision)} → ${fmtNum(currAbs, v.qtyPrecision)} ${v.coin} (${sign}${fmtNum(Math.abs(delta), v.qtyPrecision)})`);
   }
-  lines.push(`持仓量  ${fmtNum(v.absSize, v.qtyPrecision)}`);
   lines.push(`仓位价值  ${v.value !== null ? fmtUsd(v.value) : "-"}`);
   lines.push(`开仓价  ${fmtNum(v.entry, v.pricePrecision)}`);
   lines.push(`标记价  ${v.mark !== null ? fmtNum(v.mark, v.pricePrecision) : "-"}`);
@@ -99,7 +95,6 @@ function pushPositionCard(lines, p, opts = {}) {
   }
   const exitLines = opts.exitLines ?? exitOrderLines(p, v, opts.exitOrders ?? []);
   for (const line of exitLines) lines.push(`${line}`);
-  lines.push(`${SEP}`);
 }
 
 // 全景消息（START / SNAPSHOT）：banner 头 + 全部仓位卡片 + 平仓历史（最近 N 条）。行为不变。

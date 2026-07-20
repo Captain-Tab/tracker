@@ -83,7 +83,6 @@ export function buildPositionCards(positions, skippedCoins) {
   if (!positions || positions.length === 0) return "🎯 目标 / 📊 跟单：（无可映射仓）";
   const skipSet = skippedCoins instanceof Set ? skippedCoins : new Set();
 
-  const SEP = "━━━━━━━━━━";
   const lines = [];
   for (const p of positions) {
     const absSize = absStr(p.size ?? "0");
@@ -101,11 +100,11 @@ export function buildPositionCards(positions, skippedCoins) {
     // 目标仓位卡片（信号源原始数据）
     const targetLines = [];
     targetLines.push(`🎯 目标仓位：${p.coin} ${levStr}${dirCN}`);
-    if (targetDisplay) targetLines.push(`  持仓量  ${targetDisplay} 张`);
-    if (entry) targetLines.push(`  开仓价  $${entry}`);
-    if (px) targetLines.push(`  标记价  $${fmtDisplayUsd(px)}`);
-    if (targetMargin) targetLines.push(`  保证金  $${targetMargin}`);
-    if (targetLines.length > 1) { lines.push(`${SEP}`); lines.push(...targetLines); lines.push(""); }
+    if (targetDisplay) targetLines.push(`持仓量  ${targetDisplay} 张`);
+    if (entry) targetLines.push(`开仓价  $${entry}`);
+    if (px) targetLines.push(`标记价  $${fmtDisplayUsd(px)}`);
+    if (targetMargin) targetLines.push(`保证金  $${targetMargin}`);
+    if (targetLines.length > 1) { lines.push(...targetLines); lines.push(""); }
 
     // 跟单仓位卡片（我方按 ratio 缩放后）
     const displaySize = fmtDisplaySize(absSize, szDec);
@@ -114,11 +113,11 @@ export function buildPositionCards(positions, skippedCoins) {
     const mirrorLines = [];
     const skipTag = skipSet.has(p.coin) ? " ⛔ 不跟" : "";
     mirrorLines.push(`📊 跟单仓位：${p.coin} ${levStr}${dirCN}${skipTag}`);
-    mirrorLines.push(`  持仓量  ${displaySize} 张`);
-    if (notional) mirrorLines.push(`  仓位价值  $${notional}`);
-    if (mirrorMargin) mirrorLines.push(`  保证金  $${mirrorMargin}`);
+    mirrorLines.push(`持仓量  ${displaySize} 张`);
+    if (notional) mirrorLines.push(`仓位价值  $${notional}`);
+    if (mirrorMargin) mirrorLines.push(`保证金  $${mirrorMargin}`);
     lines.push(...mirrorLines);
-    lines.push(`${SEP}`);
+    
   }
   return lines.join("\n");
 }
@@ -197,17 +196,15 @@ export function lineFor(a) {
       const tFeeSigned = tFee != null ? (tFee >= 0 ? `+$${fmtDisplayUsd(tFee)}` : `−$${fmtDisplayUsd(Math.abs(tFee))}`) : "—";
       const mPnlSigned = mPnl >= 0 ? `+$${fmtDisplayUsd(mPnl)}` : `−$${fmtDisplayUsd(Math.abs(mPnl))}`;
       return [
-        `━━━━━━━━━━`,
         `🎯 目标仓位：${coin}${levStr} ${dir}  已平仓`,
-        `  平仓前持仓  ${targetPrev} 张`,
-        `  目标盈亏  ${tPnlSigned}`,
-        `  费用  ${tFeeSigned}`,
+        `平仓前持仓  ${targetPrev} 张`,
+        `目标盈亏  ${tPnlSigned}`,
+        `费用  ${tFeeSigned}`,
         ``,
         `📊 跟单仓位：${coin}${levStr} ${dir}  已平仓`,
-        `  平仓前持仓  ${mirrorPrev} 张`,
-        `  跟单盈亏  ${mPnlSigned}`,
-        `  费用  $${fmtDisplayUsd(a.mirrorFee ?? "0")}`,
-        `━━━━━━━━━━`,
+        `平仓前持仓  ${mirrorPrev} 张`,
+        `跟单盈亏  ${mPnlSigned}`,
+        `费用  $${fmtDisplayUsd(a.mirrorFee ?? "0")}`,
       ].join("\n");
     }
     case "min-capital": {

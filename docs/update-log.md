@@ -4,6 +4,19 @@
 
 ---
 
+---
+
+## 2026-07-20 — feat(watch): 移除持仓量行 + 分隔线 + HYPE-copy 全文左对齐
+
+**改动**：
+
+- `service/{HYPE,sodex}-watch/process/render.mjs` — `pushPositionCard` 移除 `持仓量` 行和首尾 `━━━━━━━━━━` 分隔线（仓位价值已隐含规模，分隔线冗余）
+- `service/HYPE-copy/notify/templates.mjs` — `buildPositionCards` 移除 SEP 分隔线 + 左对齐；`close` case 移除内联分隔线 + 左对齐
+
+**影响**：OPEN/INCREASE/REDUCE/START/SNAPSHOT 消息减一行 + 去分隔线，copy 初始镜像/平仓卡片同步瘦身。
+
+---
+
 ## 2026-07-19 — feat(watch): 平仓消息瘦身 + 平仓历史富化 + 全文左对齐（两端）
 
 **背景**：HYPE 大户多仓滚仓导致刷屏；平仓历史缺杠杆/开仓价/ROE%；所有消息类型残留前导空格浪费 TG 横向空间。
