@@ -134,6 +134,7 @@ export function toPositionHistoryRecords(rows) {
       cumClosedSize: r.cum_closed_size,
       avgEntryPrice: r.avg_entry_price,
       avgClosePrice: r.avg_close_price,
+      leverage: Number(r.leverage ?? 0),
       realizedPnl: r.realized_pnl,
       fundingFee: r.funding_fee,
       updatedAt: Number(r.updated_at),
