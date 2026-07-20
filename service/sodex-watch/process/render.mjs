@@ -154,6 +154,7 @@ export function buildTgMessage(displayId, kind, clock, positions, reduceOnly, po
   const lines = [bannerHead(displayId, kind, clock)];
   const open = positions.filter((p) => Number(p.size) !== 0);
   if (open.length) {
+    lines.push("");
     for (let i = 0; i < open.length; i++) {
       if (i > 0) lines.push("");
       pushPositionCard(lines, open[i], { reduceOnly });

@@ -100,6 +100,7 @@ function pushPositionCard(lines, p, opts = {}) {
 export function buildTgMessage(displayId, kind, clock, positions, exitOrders, closeRecords, newOids, limit, prevPositions, marginSummary, withdrawable) {
   const lines = [bannerHead(displayId, kind, clock)];
   if (positions.length) {
+    lines.push("");
     for (let i = 0; i < positions.length; i++) {
       if (i > 0) lines.push("");
       pushPositionCard(lines, positions[i], { exitOrders });
