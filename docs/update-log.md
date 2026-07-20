@@ -6,14 +6,28 @@
 
 ---
 
-## 2026-07-20 — feat(watch): 移除持仓量行 + 分隔线 + HYPE-copy 全文左对齐
+## 2026-07-20 — feat(watch): 消息格式全面优化（两端 + copy）
 
 **改动**：
 
-- `service/{HYPE,sodex}-watch/process/render.mjs` — `pushPositionCard` 移除 `持仓量` 行和首尾 `━━━━━━━━━━` 分隔线（仓位价值已隐含规模，分隔线冗余）
-- `service/HYPE-copy/notify/templates.mjs` — `buildPositionCards` 移除 SEP 分隔线 + 左对齐；`close` case 移除内联分隔线 + 左对齐
+- `service/{HYPE,sodex}-watch/process/render.mjs`:
+  - 移除 `持仓量` 行 + `━━━━` 分隔线（`pushPositionCard`）
+  - 删除 `方向` 独立行，方向合入标题行（`做多 5x`）
+  - banner-卡片间、多仓位间补空行间隔
+  - `⭐️ 平仓：` 方向中文化（SHORT→做空）
+  - 平仓历史三段格式（币种+方向+杠杆+时间 / 开仓+平仓 / 盈亏+ROE%+手续费）
+  - 剩余仓位两行摘要（🔼🔽 emoji + 盈亏百分比）+ 零缩进
+  - HYPE: `renderCloseHistory` 从 `prevPositions` 反查 entry+leverage 计算 ROE%
+  - HYPE: `buildCloseMessage`/`buildTgMessage` 全链路透传 `prevPositions`
+  - sodex: `toPositionHistoryRecords` 补 `leverage` 字段（修复平仓历史缺杠杆）
+  - 全文零缩进左对齐
+- `service/{HYPE,sodex}-watch/process/watcher.mjs` — 调用链同步 + `historyLimit` 默认 `?? 1`
+- `service/{HYPE,sodex}-watch/process/dailySnapshot.mjs` — 兜底参数同步
+- `service/{HYPE,sodex}-watch/process/snapshot.mjs` — `historyLimit` 默认 `?? 1`
+- `service/HYPE-copy/notify/templates.mjs` — 移除 SEP 分隔线 + 左对齐
+- `service/sodex-watch/process/parse.mjs` — `toPositionHistoryRecords` +1 行 `leverage`
 
-**影响**：OPEN/INCREASE/REDUCE/START/SNAPSHOT 消息减一行 + 去分隔线，copy 初始镜像/平仓卡片同步瘦身。
+**影响**：全部消息类型零分隔线零缩进，CLOSE ~40→~12 行，平仓历史含杠杆+ROE%，sodex 平仓历史杠杆修复。
 
 ---
 

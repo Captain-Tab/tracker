@@ -124,8 +124,7 @@ export function classifyBanner(events, newClosedIds) {
 //   exitLines     直接给定离场挂单行（已含 ⭐️/标签）；缺省则按 reduceOnly 生成普通行
 function pushPositionCard(lines, p, opts = {}) {
   const v = derivePositionView(p);
-  lines.push(`${opts.star ? "⭐️ " : ""}📊 仓位：${v.coin} ${v.lev}x ${v.dir}`);
-  lines.push(`方向  ${v.dirCN}`);
+  lines.push(`${opts.star ? "⭐️ " : ""}📊 仓位：${v.coin} ${v.dirCN} ${v.lev}x`);
   if (opts.change) {
     const { verb, prevAbs, currAbs } = opts.change;
     const delta = currAbs - prevAbs;
@@ -155,7 +154,10 @@ export function buildTgMessage(displayId, kind, clock, positions, reduceOnly, po
   const lines = [bannerHead(displayId, kind, clock)];
   const open = positions.filter((p) => Number(p.size) !== 0);
   if (open.length) {
-    for (const p of open) pushPositionCard(lines, p, { reduceOnly });
+    for (let i = 0; i < open.length; i++) {
+      if (i > 0) lines.push("");
+      pushPositionCard(lines, open[i], { reduceOnly });
+    }
   } else {
     lines.push(`\n📊 仓位：无持仓`);
   }
@@ -168,6 +170,7 @@ export function buildTgMessage(displayId, kind, clock, positions, reduceOnly, po
 // INCREASE/REDUCE 需 prev 持仓算量级与保证金增量；OPEN 只在标题行前置 ⭐️。
 export function buildPositionChangeMessage(displayId, kind, clock, position, prevPosition) {
   const lines = [bannerHead(displayId, kind, clock)];
+  lines.push("");
   if (kind === "OPEN") {
     pushPositionCard(lines, position, { star: true });
   } else {
@@ -194,7 +197,7 @@ function remainingPositionLine(p) {
 // closedSummaries: [{ coin, dir }]；remaining: 剩余持仓数组。
 export function buildCloseMessage(displayId, clock, closedSummaries, remaining, histRecords, newPosIds) {
   const lines = [bannerHead(displayId, "CLOSE", clock)];
-  for (const s of closedSummaries) lines.push(`⭐️ 平仓：${s.coin} ${s.dir}`);
+  for (const s of closedSummaries) lines.push(`⭐️ 平仓：${s.coin} ${directionCN(s.dir)}`);
   const open = remaining.filter((p) => Number(p.size) !== 0);
   if (open.length) {
     lines.push("");
@@ -216,6 +219,7 @@ export function buildExitOrderMessage(displayId, action, clock, position, entrie
   const tag = { place: "设置", cancel: "撤销", modify: "调整" };
   const exitLines = entries.map((e) => `⭐️ ${e.line}${action === "mixed" ? `  [${tag[e.action]}]` : ""}`);
   if (position) {
+    lines.push("");
     pushPositionCard(lines, position, { exitLines });
   } else {
     lines.push(`\n📊 仓位已平仓`);
@@ -236,7 +240,7 @@ export function renderPositionHistory(records, newIds, limit, showCount = true) 
     const coin = meta.baseCoin || `#${r.symbolId}`;
     const star = newIds && newIds.has(r.positionId) ? "⭐️ " : "";
     const lev = Number(r.leverage);
-    const levStr = lev > 0 ? `${lev}x ` : "";
+    const levStr = lev > 0 ? `${lev}x` : "";
     // 第一行：币种 方向 杠杆 时间
     lines.push(`${star}${coin} ${positionSideCN(r.positionSide)} ${levStr} ${fmtTimeShort(r.updatedAt)}`);
     // 第二行：开仓价 平仓价
