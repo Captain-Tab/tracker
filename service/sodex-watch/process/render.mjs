@@ -128,30 +128,30 @@ function pushPositionCard(lines, p, opts = {}) {
   const v = derivePositionView(p);
   lines.push(`\n${SEP}`);
   lines.push(`${opts.star ? "⭐️ " : ""}📊 仓位：${v.coin} ${v.lev}x ${v.dir}`);
-  lines.push(`  方向  ${v.dirCN}`);
+  lines.push(`方向  ${v.dirCN}`);
   if (opts.change) {
     const { verb, prevAbs, currAbs } = opts.change;
     const delta = currAbs - prevAbs;
     const sign = delta >= 0 ? "+" : "-";
-    lines.push(`  ⭐️ ${verb}  ${fmtNum(prevAbs, v.qtyPrecision)} → ${fmtNum(currAbs, v.qtyPrecision)} ${v.coin} (${sign}${fmtNum(Math.abs(delta), v.qtyPrecision)})`);
+     lines.push(`⭐️ ${verb}  ${fmtNum(prevAbs, v.qtyPrecision)} → ${fmtNum(currAbs, v.qtyPrecision)} ${v.coin} (${sign}${fmtNum(Math.abs(delta), v.qtyPrecision)})`);
   }
-  lines.push(`  持仓量  ${fmtNum(v.absSize, v.qtyPrecision)}`);
-  lines.push(`  仓位价值  ${v.value !== null ? fmtUsd(v.value) : "-"}`);
-  lines.push(`  开仓价  ${fmtNum(v.entry, v.pricePrecision)}`);
-  lines.push(`  标记价  ${v.mark !== null ? fmtNum(v.mark, v.pricePrecision) : "-"}`);
-  lines.push(`  未结盈亏  ${fmtUsd(v.uPnl, true)}${v.roe !== null ? ` (${fmtPct(v.roe)})` : ""}`);
-  lines.push(`  强平价  ${fmtNum(v.liqPrice, v.pricePrecision)}`);
+  lines.push(`持仓量  ${fmtNum(v.absSize, v.qtyPrecision)}`);
+  lines.push(`仓位价值  ${v.value !== null ? fmtUsd(v.value) : "-"}`);
+  lines.push(`开仓价  ${fmtNum(v.entry, v.pricePrecision)}`);
+  lines.push(`标记价  ${v.mark !== null ? fmtNum(v.mark, v.pricePrecision) : "-"}`);
+  lines.push(`未结盈亏  ${fmtUsd(v.uPnl, true)}${v.roe !== null ? ` (${fmtPct(v.roe)})` : ""}`);
+  lines.push(`强平价  ${fmtNum(v.liqPrice, v.pricePrecision)}`);
   const mode = marginModeLabel(v.marginMode);
   if (opts.marginChange && opts.marginChange.prevMargin !== null && opts.marginChange.currMargin !== null) {
     const { prevMargin, currMargin } = opts.marginChange;
     const delta = currMargin - prevMargin;
     const sign = delta >= 0 ? "+" : "-";
-    lines.push(`  ⭐️ 保证金  ${fmtUsd(prevMargin)} → ${fmtUsd(currMargin)} (${sign}${fmtUsd(Math.abs(delta))}) ${mode}`);
+    lines.push(`⭐️ 保证金  ${fmtUsd(prevMargin)} → ${fmtUsd(currMargin)} (${sign}${fmtUsd(Math.abs(delta))}) ${mode}`);
   } else if (v.margin !== null) {
-    lines.push(`  保证金  ${fmtUsd(v.margin)} (${mode})`);
+    lines.push(`保证金  ${fmtUsd(v.margin)} (${mode})`);
   }
   const exitLines = opts.exitLines ?? exitOrderLines(p, v, opts.reduceOnly ?? []);
-  for (const line of exitLines) lines.push(`  ${line}`);
+  for (const line of exitLines) lines.push(`${line}`);
   lines.push(`${SEP}`);
 }
 
@@ -187,27 +187,30 @@ export function buildPositionChangeMessage(displayId, kind, clock, position, pre
   return lines.join("\n");
 }
 
-// 剩余仓位单行摘要：方向 emoji + 币种 + 杠杆 + 开仓→标记 + 浮盈（完整卡片由 START/每日镜像兜底）
+// 剩余仓位两行摘要：首行 emoji+币种+做多/做空+杠杆+开仓→标记；次行盈亏+百分比（完整卡片由 START/每日镜像兜底）
 function remainingPositionLine(p) {
   const v = derivePositionView(p);
-  const dirEmoji = v.dir === "LONG" ? "🟢" : "🔴";
-  return `  ${dirEmoji} ${v.coin} ${v.lev}x  ${fmtNum(v.entry, v.pricePrecision)} → ${fmtNum(v.mark, v.pricePrecision)}  ${fmtUsd(v.uPnl, true)}`;
+  const dirEmoji = v.dir === "LONG" ? "🔼" : "🔽";
+  const pct = v.roe != null && Number.isFinite(v.roe) ? ` (${fmtPct(v.roe)})` : "";
+  return `${dirEmoji} ${v.coin} ${v.dirCN} ${v.lev}x  ${fmtNum(v.entry, v.pricePrecision)} → ${fmtNum(v.mark, v.pricePrecision)}\n盈亏 ${fmtUsd(v.uPnl, true)}${pct}`;
 }
 
 // 平仓合并消息：顶部平仓摘要 + 剩余仓位单行摘要（无则无持仓）+ 底部平仓历史（每币 1 条，⭐️、无“最近N条”）。
 // closedSummaries: [{ coin, dir }]；remaining: 剩余持仓数组。
 export function buildCloseMessage(displayId, clock, closedSummaries, remaining, histRecords, newPosIds) {
-  const lines = [bannerHead(displayId, "CLOSE", clock), ""];
-  for (const s of closedSummaries) lines.push(`平仓：${s.coin} ${s.dir}`);
+  const lines = [bannerHead(displayId, "CLOSE", clock)];
+  for (const s of closedSummaries) lines.push(`⭐️ 平仓：${s.coin} ${s.dir}`);
   const open = remaining.filter((p) => Number(p.size) !== 0);
   if (open.length) {
-    lines.push(`\n剩余仓位 (${open.length})`);
+    lines.push("");
+    lines.push(`剩余仓位 (${open.length})`);
     for (const p of open) lines.push(remainingPositionLine(p));
   } else {
-    lines.push(`\n📊 仓位：无持仓`);
+    lines.push("");
+    lines.push("📊 仓位：无持仓");
   }
   const history = renderPositionHistory(histRecords, newPosIds, histRecords?.length ?? 0, false);
-  if (history) lines.push(`\n${history}`);
+  if (history) { lines.push(""); lines.push(history); }
   return lines.join("\n");
 }
 
@@ -221,27 +224,38 @@ export function buildExitOrderMessage(displayId, action, clock, position, entrie
     pushPositionCard(lines, position, { exitLines });
   } else {
     lines.push(`\n📊 仓位已平仓`);
-    for (const line of exitLines) lines.push(`  ${line}`);
+    for (const line of exitLines) lines.push(`${line}`);
   }
   return lines.join("\n");
 }
 
-// 平仓历史渲染（中文「平仓历史」，每条两行 + ⭐️ 标新）。无记录返回 null。
-// showCount：全景（START/SNAPSHOT）显示“(最近N条)”；事件平仓消息不显示。
+// 平仓历史渲染（三段格式：币种+方向+杠杆+时间 / 开仓+平仓 / 盈亏+百分比+资金费）。无记录返回 null。
+// showCount：全景（START/SNAPSHOT）显示"(最近N条)"；事件平仓消息不显示。
 export function renderPositionHistory(records, newIds, limit, showCount = true) {
   const list = (records ?? []).slice(0, limit);
   if (!list.length) return null;
-  const head = showCount ? `📜 平仓历史 (最近${list.length}条)\n` : `📜 平仓历史\n`;
+  const head = showCount ? `📜 平仓历史 (最近${list.length}条)` : "📜 平仓历史";
   const lines = [head];
   for (const r of list) {
     const meta = symbolMeta(r.symbolId);
     const coin = meta.baseCoin || `#${r.symbolId}`;
     const star = newIds && newIds.has(r.positionId) ? "⭐️ " : "";
-    const full = Math.abs(Number(r.cumClosedSize)) >= Math.abs(Number(r.maxSize)) - 1e-12;
-    lines.push(`  ${star}${coin} ${positionSideCN(r.positionSide)} ${full ? "全平" : "部分"}  ${fmtTimeShort(r.updatedAt)}`);
-    lines.push(`  开仓 ${fmtNum(r.avgEntryPrice, meta.pricePrecision)} → 平仓 ${fmtNum(r.avgClosePrice, meta.pricePrecision)}`);
-    lines.push(`  数量：${fmtNum(r.cumClosedSize, meta.quantityPrecision)}`);
-    lines.push(`  盈亏 ${fmtUsd(r.realizedPnl, true)}  资金费 ${fmtUsd(r.fundingFee, true)}`);
+    const lev = Number(r.leverage);
+    const levStr = lev > 0 ? `${lev}x ` : "";
+    // 第一行：币种 方向 杠杆 时间
+    lines.push(`${star}${coin} ${positionSideCN(r.positionSide)} ${levStr} ${fmtTimeShort(r.updatedAt)}`);
+    // 第二行：开仓价 平仓价
+    lines.push(`开仓 ${fmtNum(r.avgEntryPrice, meta.pricePrecision)}  平仓 ${fmtNum(r.avgClosePrice, meta.pricePrecision)}`);
+    // 第三行：盈亏(+百分比) 资金费（ROE% = realizedPnl / (entry * size / leverage)）
+    let roe = null;
+    const entry = Number(r.avgEntryPrice);
+    const size = Math.abs(Number(r.cumClosedSize));
+    if (lev > 0 && entry > 0 && size > 0) {
+      const margin = (entry * size) / lev;
+      if (margin > 0) roe = (Number(r.realizedPnl) / margin) * 100;
+    }
+    const pctStr = roe != null && Number.isFinite(roe) ? ` (${fmtPct(roe)})` : "";
+    lines.push(`盈亏 ${fmtUsd(r.realizedPnl, true)}${pctStr}  资金费 ${fmtUsd(r.fundingFee, true)}`);
     lines.push("");
   }
   return lines.join("\n");

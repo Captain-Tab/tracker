@@ -4,16 +4,23 @@
 
 ---
 
-## 2026-07-19 — feat(watch): 平仓消息剩余仓位摘要化 + 全景平仓历史默认 2→1（两端）
+## 2026-07-19 — feat(watch): 平仓消息瘦身 + 平仓历史富化 + 全文左对齐（两端）
 
-**背景**：HYPE 大户普遍同时持有 5-10 个仓位，平仓合并消息中「剩余仓位」逐仓渲染完整卡片（每仓 10+ 行），平 1 仓拖出 40+ 行消息，平仓关键信息被淹没。剩余仓位的核心价值仅是「清仓离场还是调仓」判断，完整卡片另有 START WATCH / 每日镜像两个兜底入口。
+**背景**：HYPE 大户多仓滚仓导致刷屏；平仓历史缺杠杆/开仓价/ROE%；所有消息类型残留前导空格浪费 TG 横向空间。
 
 **改动**：
 
-- `service/{HYPE,sodex}-watch/process/render.mjs` — `buildCloseMessage` 剩余仓位从逐仓 `pushPositionCard` 改为每仓一行摘要（新增 `remainingPositionLine`：🟢/🔴 方向 emoji + 币种 + 杠杆 + 开仓价 → 标记价 + 浮盈），标题「剩余仓位 (N)」；清仓分支「📊 仓位：无持仓」保留；签名移除闲置参数（HYPE `exitOrders` / sodex `reduceOnly`），watcher.mjs 调用处同步。sodex 保留 `size !== 0` 过滤
-- `service/{HYPE,sodex}-watch/process/watcher.mjs` + `sodex-watch/process/snapshot.mjs` + `{HYPE,sodex}-watch/process/dailySnapshot.mjs` — 全景（START / SNAPSHOT）平仓历史默认条数 `?? 2` → `?? 1`（`--history-limit` flag 覆盖机制保留）
+- `service/HYPE-watch/process/render.mjs` — `remainingPositionLine` 两行格式（🔼🔽 emoji + 币种+做多/做空+杠杆+开仓→标记 / 盈亏±金额±百分比）；空行优化（每段仅 1 空行）；`⭐️ 平仓：` 前缀；`remainingPositionLine` 零缩进
+- `service/HYPE-watch/process/render.mjs` — `renderCloseHistory` 三段格式（币种+方向+杠杆+时间 / 开仓+平仓 / 盈亏+ROE%+手续费），新增 `prevPositions` 参数从平仓前持仓反查 entry+leverage 计算 ROE%；零缩进
+- `service/HYPE-watch/process/render.mjs` — `pushPositionCard` / `buildExitOrderMessage` 全文零缩进
+- `service/HYPE-watch/process/watcher.mjs` — `buildCloseMessage`/`buildTgMessage`/`renderCloseHistory` 调用链全部透传 `prevPositions`；历史默认 `?? 1`
+- `service/HYPE-watch/process/dailySnapshot.mjs` — `buildTgMessage` 传 `[]` 作为 dailySnapshot 的 prevPositions（无 WS 状态）；兜底 `?? 1`
+- `service/sodex-watch/process/render.mjs` — `remainingPositionLine` / `buildCloseMessage` / 空行 / `⭐️` 同构；`renderPositionHistory` 三段格式（ROE% 由记录自带 `leverage` 字段计算，无需 prevPositions）；`pushPositionCard` / `buildExitOrderMessage` 零缩进
+- `service/sodex-watch/process/watcher.mjs` — `buildCloseMessage` 调用去掉 `reduceOnly`；历史默认 `?? 1`
+- `service/sodex-watch/process/snapshot.mjs` + `dailySnapshot.mjs` — 历史默认 `?? 1`
+- `docs/update-log.md` — 追加本条目
 
-**影响**：平仓消息（剩 3 仓场景）从 ~40 行降至 ~12 行；OPEN/INCREASE/REDUCE/离场单/START/SNAPSHOT 的仓位卡片渲染不变；平仓消息底部历史（每平仓币 1 条）不变。字段容错沿用 `fmtNum`/`fmtUsd`（entry/mark 缺失显示 "-"）。验证：`node --check` 7/7 + 全量 45/45 单测绿 + 冒烟 6 场景（多空混合/清仓/size=0 过滤/entry 缺失/limit 直通 1↔3）。
+**影响**：CLOSE 消息从 ~40 行降至 ~12 行；所有消息类型统一零缩进左对齐；平仓历史含杠杆+ROE%；字段容错沿用 `fmtNum`/`fmtUsd`/`fmtPct`（entry/mark/null 均兜底 "-"）。验证：`node --check` 全量通过 + 45/45 单测绿。
 
 ---
 

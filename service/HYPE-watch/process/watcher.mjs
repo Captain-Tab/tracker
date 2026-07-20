@@ -351,13 +351,13 @@ export class AccountWatcher {
       else log("无实质仓位/离场单变化（平仓历史窗口滚动），仅 console 留痕不推送");
       log(`address=${this.address}`);
       console.log("\n--- 当前仓位 Positions ---"); console.log(renderPositions(this.positions, exitOrders, this.marginSummary));
-      const histText = renderCloseHistory(histRecords, newOids, histLimit, isOverview);
+      const histText = renderCloseHistory(histRecords, newOids, histLimit, prevPositions, isOverview);
       console.log("\n--- 平仓历史 Position History ---"); console.log(histText ?? "  （无平仓记录）");
       console.log("=".repeat(60) + "\n");
 
       // TG：全景（START/SNAPSHOT）单条并走 reportGate；事件驱动按币种/动作拆多条，全空则不发
       if (isOverview) {
-        const tgText = buildTgMessage(displayId, kind, clock, this.positions, exitOrders, histRecords, newOids, histLimit, this.marginSummary, this.withdrawable);
+        const tgText = buildTgMessage(displayId, kind, clock, this.positions, exitOrders, histRecords, newOids, histLimit, prevPositions, this.marginSummary, this.withdrawable);
         const hasOpenPositions = this.positions.length > 0;
         const skipReason = reportSkipReason({ kind, hasOpenPositions, isNew: this.isNew });
         if (skipReason) log(skipReason);
@@ -410,7 +410,7 @@ export class AccountWatcher {
       }
     }
     if (closedSummaries.length) {
-      msgs.push(buildCloseMessage(displayId, clock, closedSummaries, this.positions, histRecords, newOids));
+      msgs.push(buildCloseMessage(displayId, clock, closedSummaries, this.positions, histRecords, newOids, prevPositions));
     }
 
     // 3) 离场单变化 → 按币分组，各一条（同币多动作回退 mixed）

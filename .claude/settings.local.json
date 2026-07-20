@@ -237,7 +237,14 @@
       "Bash(/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -dump)",
       "Bash(pip3 install *)",
       "Bash(scp root@107.172.90.184:/root/service/sodex-discovery/log/ledger.json /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/ledger.json)",
-      "Bash(scp root@107.172.90.184:/root/service/HYPE-discovery/log/ledger.json /Users/tabcaptain/Documents/code/tracker/service/HYPE-discovery/log/ledger.json)"
+      "Bash(scp root@107.172.90.184:/root/service/HYPE-discovery/log/ledger.json /Users/tabcaptain/Documents/code/tracker/service/HYPE-discovery/log/ledger.json)",
+      "Bash(scp root@107.172.90.184:/root/service/HYPE-watch/log/tg-2026-07-19.jsonl /tmp/)",
+      "Read(//tmp/**)",
+      "Bash(scp root@107.172.90.184:/root/service/HYPE-watch/log/tg-2026-07-20.jsonl /tmp/tg-hype-0720.jsonl)",
+      "Bash(sed -n '142,156p' /Users/tabcaptain/Documents/code/tracker/service/HYPE-watch/process/render.mjs)",
+      "Bash(sed -n '174,180p' /Users/tabcaptain/Documents/code/tracker/service/HYPE-watch/process/render.mjs)",
+      "Bash(sed -n '199,215p' /Users/tabcaptain/Documents/code/tracker/service/sodex-watch/process/render.mjs)",
+      "Bash(sed -n '232,240p' /Users/tabcaptain/Documents/code/tracker/service/sodex-watch/process/render.mjs)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",
