@@ -189,11 +189,15 @@ export function renderCloseHistory(records, newOids, limit, prevPositions, showC
     // 第二行：开仓价 平仓价（开仓价从 prevPositions 反查）
     const entry = prev?.entry;
     lines.push(`开仓 ${entry != null ? fmtNum(entry, 6) : "-"}  平仓 ${fmtNum(r.price, 6)}`);
-    // 第三行：盈亏(+百分比) 手续费（ROE% = closedPnl / (entry * size / leverage)）
+    // 第三行：盈亏(+百分比) 手续费
+    // 优先用保证金算 ROE%（有杠杆时）；否则用名义价值（dailySnapshot 无杠杆场景）
     let roe = null;
-    if (entry != null && lev != null && prev?.size) {
-      const margin = Math.abs(entry * Math.abs(prev.size) / lev);
-      if (margin > 0) roe = (r.closedPnl / margin) * 100;
+    if (entry != null && prev?.size) {
+      const notional = Math.abs(entry * Math.abs(prev.size));
+      if (notional > 0) {
+        const base = lev != null ? notional / lev : notional;
+        roe = (r.closedPnl / base) * 100;
+      }
     }
     const pctStr = roe != null && Number.isFinite(roe) ? ` (${fmtPct(roe)})` : "";
     lines.push(`盈亏 ${fmtUsd(r.closedPnl, true)}${pctStr}  手续费 ${fmtUsd(r.fee, true)}`);

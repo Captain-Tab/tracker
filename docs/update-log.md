@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-07-20 — feat(watch): dailySnapshot 平仓历史从 fills 反推开仓价 + 回报率
+
+- `dailySnapshot.mjs` 新增 `buildFillEntries` — 从 `userFills` 的 Open/Close 配对反推开仓价（同 coin+同 size+同向匹配）
+- `renderCloseHistory` ROE% 支持无杠杆场景（用名义价值 `entry × size` 算回报率）
+- 杠杆缺失时不显示 `10x`
+
+---
+
 ## 2026-07-20 — fix(watch): 方向中文合并到标题、banner-卡片补空行
 
 - `⭐️ 平仓：` 方向中文化（SHORT→做空）

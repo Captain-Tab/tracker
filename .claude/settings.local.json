@@ -244,7 +244,17 @@
       "Bash(sed -n '142,156p' /Users/tabcaptain/Documents/code/tracker/service/HYPE-watch/process/render.mjs)",
       "Bash(sed -n '174,180p' /Users/tabcaptain/Documents/code/tracker/service/HYPE-watch/process/render.mjs)",
       "Bash(sed -n '199,215p' /Users/tabcaptain/Documents/code/tracker/service/sodex-watch/process/render.mjs)",
-      "Bash(sed -n '232,240p' /Users/tabcaptain/Documents/code/tracker/service/sodex-watch/process/render.mjs)"
+      "Bash(sed -n '232,240p' /Users/tabcaptain/Documents/code/tracker/service/sodex-watch/process/render.mjs)",
+      "Bash(scp \"root@107.172.90.184:/root/service/sodex-discovery/log/discovery/discovery-2026-07-24-1301.json\" /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/discovery/)",
+      "Bash(scp \"root@107.172.90.184:/root/service/sodex-discovery/log/discovery/discovery-2026-07-24-1301.md\" /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/discovery/)",
+      "Bash(scp \"root@107.172.90.184:/root/service/sodex-discovery/log/discovery/discovery-2026-07-17-1300.json\" /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/discovery/)",
+      "Bash(scp \"root@107.172.90.184:/root/service/sodex-discovery/log/discovery/discovery-2026-07-17-1300.md\" /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/discovery/)",
+      "Bash(scp \"root@107.172.90.184:/root/service/sodex-discovery/log/ledger.json\" /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/)",
+      "Bash(scp -r \"root@107.172.90.184:/root/service/sodex-discovery/log/observing/\" /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/log/)",
+      "Bash(scp \"root@107.172.90.184:/root/service/HYPE-discovery/log/discovery/discovery-2026-07-24-1405.json\" /Users/tabcaptain/Documents/code/tracker/service/HYPE-discovery/log/discovery/)",
+      "Bash(scp \"root@107.172.90.184:/root/service/HYPE-discovery/log/discovery/discovery-2026-07-24-1405.md\" /Users/tabcaptain/Documents/code/tracker/service/HYPE-discovery/log/discovery/)",
+      "Bash(scp \"root@107.172.90.184:/root/service/sodex-watch/log/tg-2026-07-2*.jsonl\" /tmp/watch-logs/)",
+      "Bash(mkdir -p /tmp/watch-logs)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",
