@@ -6,6 +6,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { baseCoin, toPositionHistoryRecords } from "../process/parse.mjs";
 import { installFetchProxy } from "../../lib/WARP/index.mjs";
+import { sendWithRetry } from "../../lib/notify.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TG_LOG_DIR = join(__dirname, "..", "log");
@@ -30,7 +31,6 @@ export const THROTTLE_STATUSES = new Set([429, 409]);
 
 const REQUEST_TIMEOUT_MS = 10_000;
 export const SYMBOLS_REFRESH_MS = 6 * 60 * 60 * 1_000;
-const TG_TIMEOUT_MS = 8_000;
 export const SEEN_IDS_CAP = 2000; // seenPositionIds 上限，超出用当前数据重建防长跑泄漏
 
 // ---------- 日志 ----------
@@ -107,36 +107,25 @@ export function enterSharedRateLimit(waitMs) {
 // ---------- Telegram 推送 ----------
 export async function sendTelegram(token, chatId, text) {
   if (!token || !chatId) return;
+  const r = await sendWithRetry(token, chatId, text);
+  if (r.ok) {
+    log(`TG 推送成功 msg_id=${r.messageId}`);
+  } else {
+    log(`TG 推送失败：${r.error}`);
+    return;
+  }
+  // 写入本地消息日志（审计轨迹）
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TG_TIMEOUT_MS);
-    try {
-      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true }),
-        signal: controller.signal,
-      });
-      const body = await res.json();
-      if (body.ok) {
-        log(`TG 推送成功 msg_id=${body.result?.message_id}`);
-      } else {
-        log(`TG API 返回错误：${body.description ?? JSON.stringify(body)} (code=${body.error_code}, status=${res.status})`);
-      }
-      // 写入本地消息日志（审计轨迹）
-      try {
-        const date = new Date().toISOString().slice(0, 10);
-        await mkdir(TG_LOG_DIR, { recursive: true });
-        await appendFile(join(TG_LOG_DIR, `tg-${date}.jsonl`), JSON.stringify({
-          ts: new Date().toISOString(),
-          chat_id: chatId,
-          message_id: body.result?.message_id ?? null,
-          ok: body.ok,
-          error: body.ok ? undefined : (body.description ?? null),
-          text_preview: String(text).slice(0, 200),
-        }) + "\n", "utf8");
-      } catch {} // 日志写入失败不影响主流程
-    } finally { clearTimeout(timer); }
-  } catch (e) { log(`TG 推送失败：${e.message}`); }
+    const date = new Date().toISOString().slice(0, 10);
+    await mkdir(TG_LOG_DIR, { recursive: true });
+    await appendFile(join(TG_LOG_DIR, `tg-${date}.jsonl`), JSON.stringify({
+      ts: new Date().toISOString(),
+      chat_id: chatId,
+      message_id: r.messageId ?? null,
+      ok: true,
+      text_preview: String(text).slice(0, 200),
+    }) + "\n", "utf8");
+  } catch {} // 日志写入失败不影响主流程
 }
 
 // ---------- 符号元数据缓存（id / symbol 双索引；含精度，用于按币种格式化）----------

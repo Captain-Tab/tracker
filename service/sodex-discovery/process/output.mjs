@@ -1,8 +1,8 @@
 // ⑤ 输出 Output：log/ 结果文件(json+md) + TG 推送。绝不写 watch.config。
-import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
-import { join, basename } from "node:path";
+import { writeFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { sendWithRetry, sendDocumentWithRetry } from "../../lib/notify.mjs";
 
-const TG_TIMEOUT_MS = 8_000;
 const DETAIL_CARDS = 5; // 前 5 名详展卡片，超出部分不展示（TG 手机端紧凑格式易混淆）
 
 // ---------- 格式化（discovery 自包含，不依赖 watch-account.mjs）----------
@@ -52,49 +52,14 @@ function windowsStr(hitWindows) {
 // ---------- Telegram ----------
 export async function sendTelegram(token, chatId, text) {
   if (!token || !chatId) return;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TG_TIMEOUT_MS);
-    try {
-      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-  } catch (e) {
-    console.error(`TG 推送失败：${e.message}`);
-  }
+  const r = await sendWithRetry(token, chatId, text);
+  if (!r.ok) console.error(`TG 推送失败：${r.error}`);
 }
 
-// 上传 .md 文件到 Telegram（点击即下载）
 async function sendTelegramDocument(token, chatId, filePath, caption) {
   if (!token || !chatId) return;
-  try {
-    const buffer = readFileSync(filePath);
-    const blob = new Blob([buffer], { type: "text/markdown" });
-    const form = new FormData();
-    form.append("chat_id", chatId);
-    form.append("document", blob, basename(filePath));
-    form.append("caption", caption);
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TG_TIMEOUT_MS);
-    try {
-      await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
-        method: "POST",
-        body: form,
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-  } catch (e) {
-    console.error(`TG 文件推送失败：${e.message}`);
-  }
+  const r = await sendDocumentWithRetry(token, chatId, filePath, caption);
+  if (!r.ok) console.error(`TG 文件推送失败：${r.error}`);
 }
 
 // 手机友好排版：逐行短文本，每指标独占一行，避免窄屏折行

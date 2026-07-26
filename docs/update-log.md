@@ -4,6 +4,12 @@
 
 ---
 
+## 2026-07-24 — feat(lib): 新建 notify.mjs 统一 TG 推送 retry
+
+- `service/lib/notify.mjs` 新增 `sendWithRetry()` / `sendDocumentWithRetry()` — 15s 超时 + 2 次 retry（3s/6s backoff），4xx 不重试
+- 四个服务（sodex-watch / HYPE-watch / sodex-discovery / HYPE-discovery）统一改用 notify.mjs，消除 4 份重复实现
+- 不影响调用方接口（`sendTelegram` 签名不变），watch 审计日志格式保持
+
 ## 2026-07-24 — feat(discovery): observing 新增 filterWatchReady 质量复核层
 
 - `HYPE-discovery/process/observing.mjs` + `sodex-discovery/process/observing.mjs` 新增 `filterWatchReady()` — 对首次通过 2 周持续性审核的地址按更严格阈值二次过滤，分流 `watchReady`（建议立即添加）和 `needsMoreObservation`（需进一步观察）
