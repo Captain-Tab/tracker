@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-07-24 — feat(discovery): observing 新增 filterWatchReady 质量复核层
+
+- `HYPE-discovery/process/observing.mjs` + `sodex-discovery/process/observing.mjs` 新增 `filterWatchReady()` — 对首次通过 2 周持续性审核的地址按更严格阈值二次过滤，分流 `watchReady`（建议立即添加）和 `needsMoreObservation`（需进一步观察）
+- 新增 `generateLabel()` — 从 top-2 盈利币种自动生成 label（如 `BTC+ETH赚`）
+- HYPE 阈值：评分≥55 · 活跃≥21天 · ≥8笔 · PF≥2.0 · RF≥2.0 · 本周PnL不深亏
+- sodex 阈值：评分≥55 · 活跃≥21天 · ≥20笔 · PF≥2.0 · maxLoss/netProfit≤0.5
+- 支持 re-evaluation：上次未通过的地址下次 promote 时自动重评（`entry.watchReady=false`）
+- TG 观察态消息新增 `✅ 建议立即添加` / `⚠️ 已 promote 但未通过复核` 段
+- 首次判断修正：用 `weeksSeen.length === PROMOTE_WEEKS` 替代 `!entry.recommended`
+
 ## 2026-07-20 — feat(watch): dailySnapshot 平仓历史从 fills 反推开仓价 + 回报率
 
 - `dailySnapshot.mjs` 新增 `buildFillEntries` — 从 `userFills` 的 Open/Close 配对反推开仓价（同 coin+同 size+同向匹配）

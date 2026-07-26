@@ -23,6 +23,15 @@ function isTransientApiError(reason) {
 const HIGHLIGHT_MAX = 2; // 🟢 近期精彩笔数
 const MS_PER_DAY = 86_400_000;
 
+// watch-ready 复核阈值：promote（2周持续性）之后，更严格的质量门槛
+const WATCH_READY_SODEX = {
+  scoreMin: 55,
+  activeDaysMin: 21,
+  nTradesMin: 20,
+  pfMin: 2.0,
+  maxLossRatio: 0.5, // maxLoss / netProfit
+};
+
 // ISO 周 id：YYYY-Www
 function isoWeekId(d) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -66,6 +75,18 @@ function fmtPct(r) {
   return Number.isFinite(x) ? `${(x * 100).toFixed(0)}%` : "-";
 }
 
+// 自动生成 label：top-2 盈利币种去重拼接（sodex 用 symbolMap 解析 symbol_id→币名，空 map 回退 #<id>）
+function generateLabel(topTrades, symbolMap) {
+  const coins = (topTrades ?? [])
+    .map((t) => {
+      const name = (symbolMap && symbolMap.get(Number(t.symbol_id))) || `#${t.symbol_id}`;
+      return name;
+    })
+    .filter((c, i, arr) => arr.indexOf(c) === i) // 去重
+    .slice(0, 2);
+  return coins.length ? `${coins.join("+")}赚` : "未知";
+}
+
 // observing 文件自带读写（不经 watchCandidates 的 {date,reason} schema）
 function loadObserving(path) {
   try {
@@ -90,19 +111,91 @@ function resolveHighlights(topTrades, symbolMap, now) {
     });
 }
 
+/**
+ * ⑧ watch-ready 质量复核：对首次 promote 地址按更严标准二次过滤（sodex 版阈值）。
+ * @param {Array} scored - ④ 全量带分列表（含 walletAddress/activeDays/nTrades/maxLoss）
+ * @param {Array} promoted - 本周首次 promote 的地址列表
+ * @param {Map} symbolMap - symbol_id→币名映射
+ * @returns {{watchReady:Array, needsMore:Array}}
+ */
+function filterWatchReady(scored, promoted, symbolMap) {
+  const scoredMap = new Map(
+    (scored ?? []).map((s) => [String(s.walletAddress ?? "").toLowerCase(), s]),
+  );
+  const g = WATCH_READY_SODEX;
+
+  const watchReady = [];
+  const needsMore = [];
+
+  for (const p of promoted) {
+    const full = scoredMap.get(p.address.toLowerCase());
+    if (!full) {
+      needsMore.push({ ...p, label: generateLabel([], symbolMap), reason: "缺少完整数据" });
+      continue;
+    }
+
+    const failures = [];
+    if (p.score < g.scoreMin) failures.push(`评分${p.score}<${g.scoreMin}`);
+    if ((full.activeDays || 0) < g.activeDaysMin) failures.push(`活跃${full.activeDays}天<${g.activeDaysMin}`);
+    if ((full.nTrades || 0) < g.nTradesMin) failures.push(`交易${full.nTrades}笔<${g.nTradesMin}`);
+    if ((p.profitFactor || 0) < g.pfMin && p.profitFactor !== Infinity) failures.push(`PF${fmtRatio(p.profitFactor)}<${g.pfMin}`);
+
+    // 单笔尾部风险：最大亏损不超过净利的 50%
+    if ((full.maxLoss || 0) > (p.netProfit || 1) * g.maxLossRatio) {
+      failures.push(`最大亏损占比过高`);
+    }
+
+    const label = generateLabel(p.topTrades, symbolMap);
+
+    if (failures.length === 0) {
+      watchReady.push({
+        address: p.address,
+        score: p.score,
+        label,
+        reason: `评分${p.score}·活跃${full.activeDays}天·${full.nTrades}笔·PF ${fmtRatio(p.profitFactor)}`,
+      });
+    } else {
+      needsMore.push({
+        address: p.address,
+        score: p.score,
+        label,
+        reason: failures.join("; "),
+        failures,
+      });
+    }
+  }
+
+  return { watchReady, needsMore };
+}
+
 // 构造 TG「观察态」消息（顺序 🟢→🔴→⚠️→🟡）。四段全空 → 返回 null（静默不推）
 export function buildObservingTgMessage(decisions, dayLabel) {
-  const { promoted, removed, retained = [], watching } = decisions;
+  const { promoted, removed, retained = [], watching, watchReady = [], needsMoreObservation = [] } = decisions;
   if (!promoted.length && !removed.length && !retained.length && !watching.length) return null;
   const L = [`🔬 sodex 观察态 · ${dayLabel}`];
 
   if (promoted.length) {
     L.push("");
     L.push(`🟢 结算·升 watch（连续 ${PROMOTE_WEEKS} 周达标）`);
-    promoted.forEach((p, i) => {
-      L.push(`  #${i + 1} 📡 ${shortAddr(p.address)} 评分${p.score} · 盈亏比${fmtRatio(p.profitFactor)} · 胜率${fmtPct(p.winRate)} · 净额${compactUsd(p.netProfit)} · 观察${p.weeks}周`);
-      if (p.highlights.length) L.push(`     近期精彩：${p.highlights.join(" · ")}`);
-    });
+
+    if (watchReady.length) {
+      L.push("");
+      L.push("  ✅ 建议立即添加");
+      watchReady.slice(0, MAX_LIST).forEach((p, i) => {
+        L.push(`    #${i + 1} 📡 ${shortAddr(p.address)} 🏷️ ${p.label}`);
+        L.push(`       ${p.reason}`);
+      });
+      if (watchReady.length > MAX_LIST) L.push(`    …另有 ${watchReady.length - MAX_LIST} 个建议添加`);
+    }
+    if (needsMoreObservation.length) {
+      L.push("");
+      L.push("  ⚠️ 已 promote 但未通过复核");
+      needsMoreObservation.slice(0, MAX_LIST).forEach((p, i) => {
+        L.push(`    #${i + 1} 📡 ${shortAddr(p.address)} 🏷️ ${p.label}`);
+        L.push(`       原因: ${p.reason}`);
+      });
+      if (needsMoreObservation.length > MAX_LIST) L.push(`    …另有 ${needsMoreObservation.length - MAX_LIST} 个未通过`);
+    }
   }
   if (removed.length) {
     L.push("");
@@ -164,12 +257,21 @@ export async function observing(scored, evalElim, ctx) {
         entry.lastScore = s.score;
         entry.apiRetries = 0; // 本周正常通过 → 清零 API 失败计数
         if (!entry.accountId) entry.accountId = s.accountId; // seed/迁移条目补 accountId
-        if (entry.weeksSeen.length >= PROMOTE_WEEKS && !entry.recommended) {
-          entry.recommended = true;
-          promoted.push({
-            address: addr, score: s.score, profitFactor: s.profitFactor, winRate: s.winRate,
-            netProfit: s.netProfit, weeks: entry.weeksSeen.length, topTrades: s.topTrades,
-          });
+        if (entry.weeksSeen.length >= PROMOTE_WEEKS) {
+          const isFirstPromotion = !entry.recommended;
+          if (isFirstPromotion) {
+            entry.recommended = true;
+            promoted.push({
+              address: addr, score: s.score, profitFactor: s.profitFactor, winRate: s.winRate,
+              netProfit: s.netProfit, weeks: entry.weeksSeen.length, topTrades: s.topTrades,
+            });
+          } else if (entry.watchReady === false) {
+            // 上次未通过复核，本周重新评估
+            promoted.push({
+              address: addr, score: s.score, profitFactor: s.profitFactor, winRate: s.winRate,
+              netProfit: s.netProfit, weeks: entry.weeksSeen.length, topTrades: s.topTrades,
+            });
+          }
         }
       } else {
         obs[addr] = { since: weekId, weeksSeen: [weekId], recommended: false, lastScore: s.score, accountId: s.accountId, reason: "" };
@@ -216,6 +318,23 @@ export async function observing(scored, evalElim, ctx) {
     for (const p of promoted) p.highlights = resolveHighlights(p.topTrades, symbolMap, now);
 
     const decisions = { promoted, removed, retained, watching };
+
+    // ⑧ watch-ready 质量复核：对 promote 地址二次过滤
+    if (promoted.length) {
+      const { watchReady, needsMore } = filterWatchReady(scored, promoted, symbolMap);
+      decisions.watchReady = watchReady;
+      decisions.needsMoreObservation = needsMore;
+
+      // 回写 entry.watchReady 供后续周重新评估
+      for (const wr of watchReady) {
+        const entry = obs[wr.address.toLowerCase()];
+        if (entry) entry.watchReady = true;
+      }
+      for (const nm of needsMore) {
+        const entry = obs[nm.address.toLowerCase()];
+        if (entry) entry.watchReady = false;
+      }
+    }
     const msg = buildObservingTgMessage(decisions, beijingDay(genDate));
 
     // dry-run：打印消息到 stdout，不写文件、不发 TG
@@ -242,4 +361,4 @@ export async function observing(scored, evalElim, ctx) {
   }
 }
 
-export const __internals = { isoWeekId, buildObservingTgMessage, resolveHighlights, compactUsd, loadObserving, isTransientApiError };
+export const __internals = { isoWeekId, buildObservingTgMessage, resolveHighlights, compactUsd, loadObserving, isTransientApiError, filterWatchReady, generateLabel };

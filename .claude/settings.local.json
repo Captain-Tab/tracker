@@ -254,7 +254,8 @@
       "Bash(scp \"root@107.172.90.184:/root/service/HYPE-discovery/log/discovery/discovery-2026-07-24-1405.json\" /Users/tabcaptain/Documents/code/tracker/service/HYPE-discovery/log/discovery/)",
       "Bash(scp \"root@107.172.90.184:/root/service/HYPE-discovery/log/discovery/discovery-2026-07-24-1405.md\" /Users/tabcaptain/Documents/code/tracker/service/HYPE-discovery/log/discovery/)",
       "Bash(scp \"root@107.172.90.184:/root/service/sodex-watch/log/tg-2026-07-2*.jsonl\" /tmp/watch-logs/)",
-      "Bash(mkdir -p /tmp/watch-logs)"
+      "Bash(mkdir -p /tmp/watch-logs)",
+      "WebFetch(domain:share-chatgpt-work.openai.chatgpt.site)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",
