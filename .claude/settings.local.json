@@ -256,7 +256,12 @@
       "Bash(scp \"root@107.172.90.184:/root/service/sodex-watch/log/tg-2026-07-2*.jsonl\" /tmp/watch-logs/)",
       "Bash(mkdir -p /tmp/watch-logs)",
       "WebFetch(domain:share-chatgpt-work.openai.chatgpt.site)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/lib/notify.mjs root@107.172.90.184:/root/service/lib/notify.mjs)",
+      "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/process/output.mjs root@107.172.90.184:/root/service/sodex-discovery/process/output.mjs)",
+      "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/HYPE-discovery/process/output.mjs root@107.172.90.184:/root/service/HYPE-discovery/process/output.mjs)",
+      "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/sodex-watch/api/index.mjs root@107.172.90.184:/root/service/sodex-watch/api/index.mjs)",
+      "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/HYPE-watch/api/index.mjs root@107.172.90.184:/root/service/HYPE-watch/api/index.mjs)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",
