@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-08-22 — feat(watch): config.json 新增 startTime 观察起点字段（两端）
+
+**背景**：为每个 watch 地址记录「加入观察」的起始时刻，作为元数据保存在 config.json，便于后续追溯观察起点。
+
+**改动**（仅配置数据 + 文档，无代码改动）：
+
+- `service/{HYPE,sodex}-watch/config.json` — 每个 watch 地址新增 `startTime` 字段（Unix 毫秒），记录首次 START WATCH 时刻
+- `docs/watch/{hype,sodex}.md` — §十一 配置项补 startTime 字段说明
+
+**startTime 取值**：首次 START WATCH 时刻。旧地址 journalctl 仅留 7/28 后日志、无法精确推算 → 统一 7/28 00:00 UTC 作保守下界（7 HYPE + 5 sodex）；8/13、8/14、8/22 新增的 5 个 HYPE 地址按日志精确回填。
+
+> 注：`startTime` 目前仅作元数据记录，不参与平仓历史展示过滤。config.json 含 TG 凭据已 gitignore，仅通过 `make sync-config` 部署到 VPS。
+
+---
+
 ## 2026-08-22 — feat(discovery): filterWatchReady 新增当前持仓过滤（账户清空 + 濒爆仓）
 
 **背景**：HYPE watch-ready 复核只看历史已实现 PnL，忽略当前 live 持仓状态 → 假阳性。HYPE 本周 21 个 watchReady 复核：11 通过 / 8 假阳性（5 账户清空、2 浮亏爆仓、1 做市商）/ 2 存疑，假阳性率 ≈38%。

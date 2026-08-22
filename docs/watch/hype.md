@@ -243,7 +243,7 @@ node service/HYPE-watch/main.mjs --config=service/HYPE-watch/config.json
 ```
 
 - 进程内循环 `new AccountWatcher(env, addr, flags)`，各自独立 WS（物理隔离），共享模块级限流器 `watcherRegistry`（api/index.mjs:74）。
-- 配置：**全局一个 bot（`tgToken`）+ 每地址独立 `tgChat`**；地址项可选 `tgToken` 覆盖、`label` 别名、`at` 镜像时刻（main.mjs:59-66）。
+- 配置：**全局一个 bot（`tgToken`）+ 每地址独立 `tgChat`**；地址项可选 `tgToken` 覆盖、`label` 别名、`at` 镜像时刻、`startTime` 观察起点（Unix 毫秒，记录该地址首次加入 watch 的时刻，仅作元数据）。
 - **每地址独立镜像时刻**：取值优先级 **地址项 `at` > 全局 `--at` > 默认 20:00**，错峰避免并发拉取。
 - 配置含 TG 凭据 → 不入 git（`.gitignore`），仅服务器本地填写。
 - 瓶颈是 info 端点 IP 限流，由共享限流器兜（一处 429 全员退避）。

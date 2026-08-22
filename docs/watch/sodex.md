@@ -213,7 +213,7 @@ node service/sodex-watch/main.mjs --config=service/sodex-watch/config.json
 ```
 
 - 进程内循环 `new AccountWatcher(addr)`，各自独立 WS（物理隔离：一地址断不影响其他），共享模块级限流器。
-- 配置：**全局一个 bot（`tgToken`）+ 每地址独立 `tgChat`**；地址项可选 `tgToken` 覆盖、可选 `label` 别名、可选 `at` 镜像时刻。
+- 配置：**全局一个 bot（`tgToken`）+ 每地址独立 `tgChat`**；地址项可选 `tgToken` 覆盖、可选 `label` 别名、可选 `at` 镜像时刻、可选 `startTime` 观察起点（Unix 毫秒，记录该地址首次加入 watch 的时刻，仅作元数据）。
 - **每地址独立每日镜像时刻 `at`（可选）**：每个地址各自在自己的 `at`（上海时间 `HH:MM`）触发一次 SNAPSHOT，可错峰避免 N 地址同一时刻并发拉取。取值优先级 **地址项 `at` > 全局 `--at` > 默认 `20:00`**；非法值（非 `HH:MM`）告警并回退默认。
 - 错误处理（G8）：文件缺失 / JSON 解析失败 / `watches` 空 → 退出；非法 `address` 跳过告警；重复 address 去重保首个；非法 `at` 告警回退默认。
 - 配置含 TG 凭据 → **不入 git**（`.gitignore`），仅服务器本地填写 `service/sodex-watch/config.json`。
