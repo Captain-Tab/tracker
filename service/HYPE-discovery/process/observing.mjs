@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sendTelegram } from "./output.mjs";
+import { fetchClearinghouseState } from "../api/index.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -21,6 +22,11 @@ const WATCH_READY = {
   pfMin: 2.0,
   rfMin: 2.0,
 };
+
+// 当前持仓濒爆仓红线：任一仓位距强平价 < 10% 直接拦。
+// 为什么不用浮亏/净值：实测浮亏/净值 与 距强平价无稳定映射（浮亏大≠濒爆），
+// liquidationPx 才是 Hyperliquid 直接给出的强平信号。
+const LIQ_DIST_MIN = 0.10;
 
 // ISO 周 id：YYYY-Www（周去重 / 展示口径）
 function isoWeekId(d) {
@@ -107,13 +113,55 @@ function topHighlights(trades, now) {
     .map((t) => `${t.coin} ${compactUsd(t.pnl, true)}（${Math.max(0, Math.round((now - t.closeMs) / MS_PER_DAY))}天前）`);
 }
 
+// 账户最危险仓位的距强平百分比（0.065 = 距强平 6.5%）；空仓或无有效强平价 → null。
+// 空单（szi<0）涨到 liquidationPx 爆，多单（szi>0）跌到 liquidationPx 爆。
+function minLiquidationDistance(state) {
+  const positions = (state?.assetPositions ?? []).map((ap) => ap.position).filter(Boolean);
+  if (!positions.length) return null;
+  let min = Infinity;
+  for (const p of positions) {
+    const szi = Number(p.szi ?? 0);
+    const liq = Number(p.liquidationPx ?? 0);
+    const value = Number(p.positionValue ?? 0);
+    const cur = Math.abs(szi) > 0 ? Math.abs(value) / Math.abs(szi) : 0; // 当前价 = |名义| / |数量|
+    if (liq <= 0 || cur <= 0) continue;
+    const dist = szi < 0 ? (liq - cur) / cur : (cur - liq) / cur;
+    if (dist < min) min = dist;
+  }
+  return min === Infinity ? null : min;
+}
+
+// 账户是否已清空离场：无持仓 且 净值 ≤ 0（av=$0 或负值）。
+function isAccountEmpty(state) {
+  const positions = state?.assetPositions ?? [];
+  const accountValue = Number(state?.marginSummary?.accountValue ?? 0);
+  return positions.length === 0 && accountValue <= 0;
+}
+
+// 对 promote 地址拉当前持仓，返回 Map<小写地址, { liqDist, isEmpty }>。
+// 拉取失败不写入（未知视为放行，不误杀）；单地址失败不阻断其余。
+async function fetchClearingRisk(promoted) {
+  const map = new Map();
+  await Promise.all((promoted ?? []).map(async (p) => {
+    try {
+      const state = await fetchClearinghouseState(p.address);
+      map.set(String(p.address).toLowerCase(), {
+        liqDist: minLiquidationDistance(state),
+        isEmpty: isAccountEmpty(state),
+      });
+    } catch { /* 拉取失败 → 放行 */ }
+  }));
+  return map;
+}
+
 /**
  * ⑧ watch-ready 质量复核：对首次 promote 地址按更严标准二次过滤。
  * @param {Array} scored - ④ 全量带分列表（含 activeDays/nTrades/recoveryFactor/perf）
  * @param {Array} promoted - 本周首次 promote 的地址列表
+ * @param {Map} [clearingRisk] - 小写地址 → { liqDist, isEmpty }（fetchClearingRisk 结果）
  * @returns {{watchReady:Array, needsMore:Array}}
  */
-function filterWatchReady(scored, promoted) {
+function filterWatchReady(scored, promoted, clearingRisk = new Map()) {
   const scoredMap = new Map(
     (scored ?? []).map((s) => [String(s.address ?? "").toLowerCase(), s]),
   );
@@ -140,6 +188,15 @@ function filterWatchReady(scored, promoted) {
     const weekPnl = full.perf?.week?.pnl ?? 0;
     if (weekPnl < 0 && Math.abs(weekPnl) > (p.netProfit || 1) * 0.3) {
       failures.push(`本周亏损${compactUsd(weekPnl)}`);
+    }
+
+    // 当前状态过滤：账户清空（无持仓+净值≤0）直接剔除；濒爆（任一仓位距强平 < LIQ_DIST_MIN）剔除。
+    // 拿不到数据 = 放行（未知不误杀）。
+    const risk = clearingRisk.get(p.address.toLowerCase());
+    if (risk?.isEmpty) {
+      failures.push("账户已清空（净值$0且无持仓）");
+    } else if (risk?.liqDist != null && risk.liqDist < LIQ_DIST_MIN) {
+      failures.push(`距强平${(risk.liqDist * 100).toFixed(1)}%<${Math.round(LIQ_DIST_MIN * 100)}%（濒爆仓）`);
     }
 
     const label = generateLabel(full.trades);
@@ -303,7 +360,8 @@ export async function observing(scored, evalEliminated, ctx) {
 
     // ⑧ watch-ready 质量复核：对 promote 地址二次过滤
     if (promoted.length) {
-      const { watchReady, needsMore } = filterWatchReady(scored, promoted);
+      const clearingRisk = await fetchClearingRisk(promoted);
+      const { watchReady, needsMore } = filterWatchReady(scored, promoted, clearingRisk);
       decisions.watchReady = watchReady;
       decisions.needsMoreObservation = needsMore;
 
@@ -344,4 +402,4 @@ export async function observing(scored, evalEliminated, ctx) {
   }
 }
 
-export const __internals = { isoWeekId, buildObservingTgMessage, topHighlights, compactUsd, loadObserving, isTransientApiError, filterWatchReady, generateLabel };
+export const __internals = { isoWeekId, buildObservingTgMessage, topHighlights, compactUsd, loadObserving, isTransientApiError, filterWatchReady, generateLabel, minLiquidationDistance, isAccountEmpty };

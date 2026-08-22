@@ -5,6 +5,7 @@ import { flattenRow } from "./collect.mjs";
 import { passesThreshold, rankTopK, windowMetric } from "./filter.mjs";
 import { createRowScanner } from "../api/index.mjs";
 import { __internals as evalInternals } from "./evaluate.mjs";
+import { __internals as obsInternals } from "./observing.mjs";
 
 // ---------- 流式 scanner ----------
 const LB = '{"leaderboardRows":[' +
@@ -99,4 +100,64 @@ test("aggregateTrades: 一个完整周期 pnl = closedPnl 累加 − fee 累加"
 test("aggregateTrades: 未平仓周期不计入", () => {
   const fills = [{ coin: "BTC", side: "B", sz: "1", px: "60000", startPosition: "0", closedPnl: "0", fee: "5", time: 1 }];
   assert.equal(evalInternals.aggregateTrades(fills).length, 0); // endPos=1≠0，未结束
+});
+
+// ---------- minLiquidationDistance 距强平价 ----------
+test("minLiquidationDistance: 空单距强平 = (liq-cur)/cur", () => {
+  const state = { assetPositions: [{ position: { szi: "-10", liquidationPx: "110", positionValue: "1000" } }] };
+  // 当前价 = |value|/|szi| = 100；空单涨到 110 爆 → (110-100)/100 = 0.1
+  assert.ok(Math.abs(obsInternals.minLiquidationDistance(state) - 0.1) < 1e-9);
+});
+
+test("minLiquidationDistance: 多单距强平 = (cur-liq)/cur", () => {
+  const state = { assetPositions: [{ position: { szi: "10", liquidationPx: "90", positionValue: "1000" } }] };
+  // 当前价 = 100；多单跌到 90 爆 → (100-90)/100 = 0.1
+  assert.ok(Math.abs(obsInternals.minLiquidationDistance(state) - 0.1) < 1e-9);
+});
+
+test("minLiquidationDistance: 多仓位取最危险（最小距强平）", () => {
+  const state = { assetPositions: [
+    { position: { szi: "-10", liquidationPx: "110", positionValue: "1000" } }, // 空单 dist 0.1
+    { position: { szi: "10", liquidationPx: "95", positionValue: "1000" } },   // 多单 dist 0.05
+  ] };
+  assert.ok(Math.abs(obsInternals.minLiquidationDistance(state) - 0.05) < 1e-9);
+});
+
+test("minLiquidationDistance: 空仓 / 无有效强平价 → null", () => {
+  assert.equal(obsInternals.minLiquidationDistance({ assetPositions: [] }), null);
+  assert.equal(obsInternals.minLiquidationDistance({}), null);
+  const bad = { assetPositions: [{ position: { szi: "10", liquidationPx: "0", positionValue: "1000" } }] };
+  assert.equal(obsInternals.minLiquidationDistance(bad), null); // liq=0 跳过 → 无有效值
+});
+
+test("minLiquidationDistance: 真实样本回归（0xc6877a HYPE 空单 5x）", () => {
+  const state = { assetPositions: [{ position: { szi: "-9400.18", liquidationPx: "361.9334211885", positionValue: "709440.9847800001" } }] };
+  const dist = obsInternals.minLiquidationDistance(state);
+  assert.ok(dist > 3.7 && dist < 3.9, `期望 ~3.796，实际 ${dist}`); // 距强平 ~379.6%，非濒爆
+});
+
+// ---------- isAccountEmpty 账户清空 ----------
+test("isAccountEmpty: 无持仓 + 净值 0 → true", () => {
+  const state = { assetPositions: [], marginSummary: { accountValue: "0" } };
+  assert.equal(obsInternals.isAccountEmpty(state), true);
+});
+
+test("isAccountEmpty: 无持仓 + 净值负 → true", () => {
+  const state = { assetPositions: [], marginSummary: { accountValue: "-12.5" } };
+  assert.equal(obsInternals.isAccountEmpty(state), true);
+});
+
+test("isAccountEmpty: 无持仓 + 净值正 → false（只是空仓，未清空）", () => {
+  const state = { assetPositions: [], marginSummary: { accountValue: "5000" } };
+  assert.equal(obsInternals.isAccountEmpty(state), false);
+});
+
+test("isAccountEmpty: 有持仓 + 净值 0 → false（持仓未清）", () => {
+  const state = { assetPositions: [{ position: { szi: "10" } }], marginSummary: { accountValue: "0" } };
+  assert.equal(obsInternals.isAccountEmpty(state), false);
+});
+
+test("isAccountEmpty: 缺 marginSummary / assetPositions → 空账 true", () => {
+  assert.equal(obsInternals.isAccountEmpty({}), true); // 无持仓无净值 → 清空
+  assert.equal(obsInternals.isAccountEmpty({ marginSummary: { accountValue: "0" } }), true);
 });

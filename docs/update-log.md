@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-08-22 — feat(discovery): filterWatchReady 新增当前持仓过滤（账户清空 + 濒爆仓）
+
+**背景**：HYPE watch-ready 复核只看历史已实现 PnL，忽略当前 live 持仓状态 → 假阳性。HYPE 本周 21 个 watchReady 复核：11 通过 / 8 假阳性（5 账户清空、2 浮亏爆仓、1 做市商）/ 2 存疑，假阳性率 ≈38%。
+
+**改动**（`service/HYPE-discovery/process/observing.mjs`）：
+
+- 新增 `minLiquidationDistance(state)` — 账户最危险仓位距强平价百分比（空单 `(liq−cur)/cur`、多单 `(cur−liq)/cur`，`cur=|positionValue|/|szi|`）；空仓/无有效强平价 → null
+- 新增 `isAccountEmpty(state)` — 无持仓 且 净值≤0 判清空离场
+- 新增 `fetchClearingRisk(promoted)` — 对 promote 地址并行拉 `clearinghouseState`，返回 `Map<小写地址,{liqDist,isEmpty}>`；拉取失败不写入（未知放行不误杀）
+- `filterWatchReady` 加当前持仓检查：账户清空 → 剔除；濒爆（距强平 < 10%）→ 剔除
+- `LIQ_DIST_MIN = 0.10`（阈值依据：W4=6.5% 唯一真濒爆、W2=17.3% 好账户，干净分离）
+
+**关键决策**：不用「浮亏/净值」——实测它与距强平无稳定映射（浮亏大≠濒爆），`liquidationPx` 才是 HL 直接给出的强平信号。
+
+**边界**：只改 discovery 的 `filterWatchReady`，**不动 HYPE-watch config.json 及任何已监听地址**。
+
+**验证**：`node --test process/domain.test.mjs` 21/21 全绿（新增 minLiquidationDistance 5 + isAccountEmpty 5）。
+
+---
+
 ## 2026-07-24 — feat(lib): 新建 notify.mjs 统一 TG 推送 retry
 
 - `service/lib/notify.mjs` 新增 `sendWithRetry()` / `sendDocumentWithRetry()` — 15s 超时 + 2 次 retry（3s/6s backoff），4xx 不重试
