@@ -19,11 +19,10 @@ sync-config:
 pull:
 	rsync -avz --exclude='*/config.json' --exclude='*-discovery/log/' $(HOST):$(REMOTE_DIR)/ $(SERVICE_DIR)/
 
-# 下载 discovery 日志到本地（sodex + HYPE）
+# 下载 discovery 日志到本地（sodex + HYPE；含 discovery/ observing/ 子目录 + ledger.json）
 pull-logs:
-	mkdir -p $(SERVICE_DIR)/sodex-discovery/log $(SERVICE_DIR)/HYPE-discovery/log
-	scp $(HOST):$(REMOTE_DIR)/sodex-discovery/log/discovery-*.{json,md} $(SERVICE_DIR)/sodex-discovery/log/
-	scp $(HOST):$(REMOTE_DIR)/HYPE-discovery/log/discovery-*.{json,md} $(SERVICE_DIR)/HYPE-discovery/log/
+	rsync -avz --exclude='.DS_Store' $(HOST):$(REMOTE_DIR)/sodex-discovery/log/ $(SERVICE_DIR)/sodex-discovery/log/
+	rsync -avz --exclude='.DS_Store' $(HOST):$(REMOTE_DIR)/HYPE-discovery/log/ $(SERVICE_DIR)/HYPE-discovery/log/
 
 # 一键部署：推代码 + 服务器装依赖并 app apply（自动迁移旧单元）
 deploy: sync

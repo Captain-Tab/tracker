@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-08-30 — chore(discovery): 清理 log 根目录历史遗留 discovery-* 文件
+
+**背景**：6/23~7/10 旧版代码把 discovery 结果直接写 `log/` 根目录；7/12 重构后统一改到 `log/discovery/` 子目录，但旧文件一直残留在根目录，与现行目录结构（`discovery/` + `observing/` + `ledger.json`）不一致。
+
+**改动**：
+
+- 补全子目录缺失的早期文件 — 本地 sodex 缺 `06-26-1454`、`07-10-1310` 两组；VPS 子目录早期文件（6/23~7/10）全部缺失，已从本地同步补齐
+- 删除本地 + VPS 根目录全部 `discovery-*.{json,md}`（删除前已逐一验证子目录存在同内容副本）
+- 根目录现在仅保留 `discovery/`、`observing/`、`ledger.json` 三件套，与 `docs/discovery/{sodex,hype}.md` §6.2 描述一致
+- `setup/Makefile` `pull-logs` 从 scp 根目录旧文件改为 rsync 整个 log 目录（含子目录 + ledger.json），跟随目录结构变化
+- `docs/deploy-commands.md` `pull-logs` 注释同步为准确路径
+
+**代码确认**：`output.mjs`→`log/discovery/`、`observing.mjs`→`log/observing/`、`shadow.mjs`→`log/ledger.json` 已正确写子目录，非代码 bug，纯历史遗留清理；discovery 业务代码零改动，仅 `setup/Makefile` 配套。
+
+---
+
 ## 2026-08-22 — feat(watch): config.json 新增 startTime 观察起点字段（两端）
 
 **背景**：为每个 watch 地址记录「加入观察」的起始时刻，作为元数据保存在 config.json，便于后续追溯观察起点。
