@@ -115,8 +115,12 @@ function topHighlights(trades, now) {
 
 // 账户最危险仓位的距强平百分比（0.065 = 距强平 6.5%）；空仓或无有效强平价 → null。
 // 空单（szi<0）涨到 liquidationPx 爆，多单（szi>0）跌到 liquidationPx 爆。
-function minLiquidationDistance(state) {
-  const positions = (state?.assetPositions ?? []).map((ap) => ap.position).filter(Boolean);
+// state=native perps，xyzState=HIP-3 index perps（股票代币），两者持仓独立，须合并判断濒爆仓。
+function minLiquidationDistance(state, xyzState) {
+  const positions = [
+    ...(state?.assetPositions ?? []),
+    ...(xyzState?.assetPositions ?? []),
+  ].map((ap) => ap.position).filter(Boolean);
   if (!positions.length) return null;
   let min = Infinity;
   for (const p of positions) {
@@ -131,13 +135,15 @@ function minLiquidationDistance(state) {
   return min === Infinity ? null : min;
 }
 
-// 账户是否已清空离场：合约无持仓 + 合约净值 ≤ 0 + 现货余额总和 ≈ 0。
-// 只判合约会把「合约平仓转现货」误判成清仓离场（资金仍在现货钱包），必须结合 spot 余额。
-function isAccountEmpty(state, spotState) {
-  const positions = state?.assetPositions ?? [];
+// 账户是否已清空离场：native 无持仓 + xyz 无持仓 + 合约净值 ≤ 0 + 现货余额总和 ≈ 0。
+// 只判 native 会把「股票代币持仓」和「合约平仓转现货」都误判成清仓离场，须三路并查。
+function isAccountEmpty(state, xyzState, spotState) {
+  const nativePositions = state?.assetPositions ?? [];
+  const xyzPositions = xyzState?.assetPositions ?? [];
   const accountValue = Number(state?.marginSummary?.accountValue ?? 0);
+  const xyzAccountValue = Number(xyzState?.marginSummary?.accountValue ?? 0);
   const spotTotal = (spotState?.balances ?? []).reduce((sum, b) => sum + Number(b.total ?? 0), 0);
-  return positions.length === 0 && accountValue <= 0 && spotTotal <= 0.01;
+  return nativePositions.length === 0 && xyzPositions.length === 0 && accountValue <= 0 && xyzAccountValue <= 0 && spotTotal <= 0.01;
 }
 
 // 对 promote 地址拉当前持仓，返回 Map<小写地址, { liqDist, isEmpty }>。
@@ -146,13 +152,14 @@ async function fetchClearingRisk(promoted) {
   const map = new Map();
   await Promise.all((promoted ?? []).map(async (p) => {
     try {
-      const [state, spotState] = await Promise.all([
+      const [state, xyzState, spotState] = await Promise.all([
         fetchClearinghouseState(p.address),
+        fetchClearinghouseState(p.address, "xyz"),
         fetchSpotState(p.address),
       ]);
       map.set(String(p.address).toLowerCase(), {
-        liqDist: minLiquidationDistance(state),
-        isEmpty: isAccountEmpty(state, spotState),
+        liqDist: minLiquidationDistance(state, xyzState),
+        isEmpty: isAccountEmpty(state, xyzState, spotState),
       });
     } catch { /* 拉取失败 → 放行 */ }
   }));
@@ -195,11 +202,11 @@ function filterWatchReady(scored, promoted, clearingRisk = new Map()) {
       failures.push(`本周亏损${compactUsd(weekPnl)}`);
     }
 
-    // 当前状态过滤：账户清空（无持仓+净值≤0）直接剔除；濒爆（任一仓位距强平 < LIQ_DIST_MIN）剔除。
+    // 当前状态过滤：账户清空（native+xyz 无持仓 + 合约净值≤0 + 现货余额≈0）直接剔除；濒爆（任一仓位距强平 < LIQ_DIST_MIN）剔除。
     // 拿不到数据 = 放行（未知不误杀）。
     const risk = clearingRisk.get(p.address.toLowerCase());
     if (risk?.isEmpty) {
-      failures.push("账户已清空（净值$0且无持仓）");
+      failures.push("账户已清空（无持仓且无余额）");
     } else if (risk?.liqDist != null && risk.liqDist < LIQ_DIST_MIN) {
       failures.push(`距强平${(risk.liqDist * 100).toFixed(1)}%<${Math.round(LIQ_DIST_MIN * 100)}%（濒爆仓）`);
     }

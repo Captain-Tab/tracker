@@ -73,7 +73,12 @@ async function postInfo(body) {
 }
 
 // 当前持仓 + 账户保证金（marginSummary.totalMarginUsed / assetPositions[].position.marginUsed/unrealizedPnl）
-export const fetchClearinghouseState = (address) => postInfo({ type: "clearinghouseState", user: address });
+// dex 参数区分 native perps (dex="") 和 HIP-3 index perps (dex="xyz"，股票代币)；两者持仓独立存储，须分别查
+export const fetchClearinghouseState = (address, dex = "") => {
+  const body = { type: "clearinghouseState", user: address };
+  if (dex) body.dex = dex;
+  return postInfo(body);
+};
 // 现货余额（balances[].total/hold）；判断「账户是否清空」必须结合它，否则「合约平仓转现货」会被误判成清仓离场
 export const fetchSpotState = (address) => postInfo({ type: "spotClearinghouseState", user: address });
 // 逐笔成交（含 closedPnl / fee / dir / time），单次上限 2000 笔

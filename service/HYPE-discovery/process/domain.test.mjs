@@ -136,6 +136,12 @@ test("minLiquidationDistance: 真实样本回归（0xc6877a HYPE 空单 5x）", 
   assert.ok(dist > 3.7 && dist < 3.9, `期望 ~3.796，实际 ${dist}`); // 距强平 ~379.6%，非濒爆
 });
 
+test("minLiquidationDistance: 合并 native + xyz 取最危险", () => {
+  const native = { assetPositions: [] }; // native 空
+  const xyz = { assetPositions: [{ position: { szi: "10", liquidationPx: "95", positionValue: "1000" } }] }; // xyz 多单 dist 0.05
+  assert.ok(Math.abs(obsInternals.minLiquidationDistance(native, xyz) - 0.05) < 1e-9);
+});
+
 // ---------- isAccountEmpty 账户清空 ----------
 test("isAccountEmpty: 无持仓 + 净值 0 → true", () => {
   const state = { assetPositions: [], marginSummary: { accountValue: "0" } };
@@ -166,17 +172,31 @@ test("isAccountEmpty: 缺 marginSummary / assetPositions → 空账 true", () =>
 test("isAccountEmpty: 合约空 + 现货有余额 → false（资金转现货，未清空）", () => {
   const state = { assetPositions: [], marginSummary: { accountValue: "0" } };
   const spotState = { balances: [{ coin: "USDC", total: "4410553.57" }] };
-  assert.equal(obsInternals.isAccountEmpty(state, spotState), false);
+  assert.equal(obsInternals.isAccountEmpty(state, undefined, spotState), false);
 });
 
 test("isAccountEmpty: 合约空 + 现货粉尘余额 → true（≤0.01 视为空）", () => {
   const state = { assetPositions: [], marginSummary: { accountValue: "0" } };
   const spotState = { balances: [{ coin: "USDC", total: "0.005" }] };
-  assert.equal(obsInternals.isAccountEmpty(state, spotState), true);
+  assert.equal(obsInternals.isAccountEmpty(state, undefined, spotState), true);
 });
 
 test("isAccountEmpty: 合约空 + 现货余额 0 → true（真清空）", () => {
   const state = { assetPositions: [], marginSummary: { accountValue: "0" } };
   const spotState = { balances: [{ coin: "USDC", total: "0" }] };
-  assert.equal(obsInternals.isAccountEmpty(state, spotState), true);
+  assert.equal(obsInternals.isAccountEmpty(state, undefined, spotState), true);
+});
+
+// xyz 股票代币持仓修正：native 空但 xyz 有持仓 ≠ 清空（回归 bug：漏 dex 参数误杀股票代币地址）
+test("isAccountEmpty: 仅 xyz 股票代币持仓 → false（不误判清空）", () => {
+  const state = { assetPositions: [], marginSummary: { accountValue: "0" } };
+  const xyzState = { assetPositions: [{ position: { szi: "4103.967", coin: "xyz:NVDA" } }], marginSummary: { accountValue: "755869" } };
+  assert.equal(obsInternals.isAccountEmpty(state, xyzState, undefined), false);
+});
+
+test("isAccountEmpty: native 空 + xyz 空 + 现货空 → true（真清空）", () => {
+  const state = { assetPositions: [], marginSummary: { accountValue: "0" } };
+  const xyzState = { assetPositions: [], marginSummary: { accountValue: "0" } };
+  const spotState = { balances: [] };
+  assert.equal(obsInternals.isAccountEmpty(state, xyzState, spotState), true);
 });
