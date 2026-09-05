@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-09-05 — fix(discovery): isAccountEmpty 补现货余额判断，修复合约转现货误判清空
+
+**背景**：`filterWatchReady` 的 `isAccountEmpty` 只查 `clearinghouseState`（合约账户），把「合约平仓转现货」误判成「账户清空离场」。9/4 复核里 4 个「账户已清空」地址有 3 个实际持有大量现货余额（`0x8bae` $441 万、`0x78dc` $91.5 万、`0xa0b3` $114 万），误判率 75%；8/28 起即存在（`cd64f29` 引入 current-position filter 当天），同轮 discovery 显示 `0x8bae` 净值 $442 万而 observing 判其清空，内部矛盾即铁证。
+
+**改动**：
+
+- `api/index.mjs` 新增 `fetchSpotState`（`spotClearinghouseState`）
+- `observing.mjs` `fetchClearingRisk` 并行拉 `clearinghouseState` + `spotClearinghouseState`
+- `isAccountEmpty(state, spotState)` 加现货判断：合约无持仓 + 净值≤0 + 现货余额总和≤$0.01 才判空
+- `domain.test.mjs` 补 3 个现货用例（合约空+现货有余额 → 不判空；粉尘≤0.01 → 判空；余额 0 → 判空）
+
+**影响**：9/4 被「清空」拦截的 `0x8bae`（85.1，RSR+S赚）修正后应升 watchReady；`0x6aaa` 真清空不受影响。
+
+---
+
 ## 2026-08-30 — chore(discovery): 清理 log 根目录历史遗留 discovery-* 文件
 
 **背景**：6/23~7/10 旧版代码把 discovery 结果直接写 `log/` 根目录；7/12 重构后统一改到 `log/discovery/` 子目录，但旧文件一直残留在根目录，与现行目录结构（`discovery/` + `observing/` + `ledger.json`）不一致。

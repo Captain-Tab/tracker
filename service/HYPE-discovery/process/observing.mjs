@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sendTelegram } from "./output.mjs";
-import { fetchClearinghouseState } from "../api/index.mjs";
+import { fetchClearinghouseState, fetchSpotState } from "../api/index.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -131,11 +131,13 @@ function minLiquidationDistance(state) {
   return min === Infinity ? null : min;
 }
 
-// 账户是否已清空离场：无持仓 且 净值 ≤ 0（av=$0 或负值）。
-function isAccountEmpty(state) {
+// 账户是否已清空离场：合约无持仓 + 合约净值 ≤ 0 + 现货余额总和 ≈ 0。
+// 只判合约会把「合约平仓转现货」误判成清仓离场（资金仍在现货钱包），必须结合 spot 余额。
+function isAccountEmpty(state, spotState) {
   const positions = state?.assetPositions ?? [];
   const accountValue = Number(state?.marginSummary?.accountValue ?? 0);
-  return positions.length === 0 && accountValue <= 0;
+  const spotTotal = (spotState?.balances ?? []).reduce((sum, b) => sum + Number(b.total ?? 0), 0);
+  return positions.length === 0 && accountValue <= 0 && spotTotal <= 0.01;
 }
 
 // 对 promote 地址拉当前持仓，返回 Map<小写地址, { liqDist, isEmpty }>。
@@ -144,10 +146,13 @@ async function fetchClearingRisk(promoted) {
   const map = new Map();
   await Promise.all((promoted ?? []).map(async (p) => {
     try {
-      const state = await fetchClearinghouseState(p.address);
+      const [state, spotState] = await Promise.all([
+        fetchClearinghouseState(p.address),
+        fetchSpotState(p.address),
+      ]);
       map.set(String(p.address).toLowerCase(), {
         liqDist: minLiquidationDistance(state),
-        isEmpty: isAccountEmpty(state),
+        isEmpty: isAccountEmpty(state, spotState),
       });
     } catch { /* 拉取失败 → 放行 */ }
   }));

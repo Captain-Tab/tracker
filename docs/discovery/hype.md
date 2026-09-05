@@ -126,11 +126,11 @@ service/HYPE-discovery/
 
 **filterWatchReady 质量复核**（`observing.mjs`，仅对本周首次 promote 地址走）：🟢 结算前按更严阈值二次过滤——评分≥55 · 活跃≥21天 · ≥8笔 · PF≥2.0 · RF≥2.0 · 本周 PnL 不深亏。未过者分流 `needsMore`（⚠️ 段），通过者才进 🟢 `watchReady`。
 
-**当前持仓过滤**（复核的一部分，只拦 discovery 新推荐、**不碰 watch 已监听地址**）：对 promote 地址拉 `clearinghouseState`，两类剔除——
+**当前持仓过滤**（复核的一部分，只拦 discovery 新推荐、**不碰 watch 已监听地址**）：对 promote 地址并行拉 `clearinghouseState`（合约）+ `spotClearinghouseState`（现货），两类剔除——
 
 | 剔除 | 判据 | 依据 |
 | --- | --- | --- |
-| 账户清空 | 无持仓 且 净值≤0（`marginSummary.accountValue`≤0） | 假阳性最大来源（HYPE 8 个假阳性里 5 个是清空离场户） |
+| 账户清空 | 合约无持仓 + 净值≤0（`marginSummary.accountValue`≤0）+ 现货余额总和≈0（`balances[].total` ≤$0.01） | 假阳性最大来源；只判合约会把「合约平仓转现货」误判成清仓离场 |
 | 濒爆仓 | 任一仓位距强平价 < 10%（`liquidationPx` 口径） | 用 `liquidationPx` 而非浮亏/净值——实测浮亏/净值与距强平无稳定映射（浮亏大≠濒爆） |
 
 拉取失败 = 放行（未知不误杀，不因接口抖动误淘汰）。距强平口径：空单 `(liq−cur)/cur`、多单 `(cur−liq)/cur`，`cur = |positionValue|/|szi|`。

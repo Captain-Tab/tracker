@@ -74,6 +74,8 @@ async function postInfo(body) {
 
 // 当前持仓 + 账户保证金（marginSummary.totalMarginUsed / assetPositions[].position.marginUsed/unrealizedPnl）
 export const fetchClearinghouseState = (address) => postInfo({ type: "clearinghouseState", user: address });
+// 现货余额（balances[].total/hold）；判断「账户是否清空」必须结合它，否则「合约平仓转现货」会被误判成清仓离场
+export const fetchSpotState = (address) => postInfo({ type: "spotClearinghouseState", user: address });
 // 逐笔成交（含 closedPnl / fee / dir / time），单次上限 2000 笔
 export const fetchUserFills = (address) => postInfo({ type: "userFills", user: address });
 // 按时间翻页拿历史成交（单次仍 2000 上限，startTime 递增翻页）。

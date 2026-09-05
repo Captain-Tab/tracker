@@ -161,3 +161,22 @@ test("isAccountEmpty: 缺 marginSummary / assetPositions → 空账 true", () =>
   assert.equal(obsInternals.isAccountEmpty({}), true); // 无持仓无净值 → 清空
   assert.equal(obsInternals.isAccountEmpty({ marginSummary: { accountValue: "0" } }), true);
 });
+
+// 现货余额修正：合约平仓转现货 ≠ 清空（回归 bug：只判合约误杀 $441 万现货地址）
+test("isAccountEmpty: 合约空 + 现货有余额 → false（资金转现货，未清空）", () => {
+  const state = { assetPositions: [], marginSummary: { accountValue: "0" } };
+  const spotState = { balances: [{ coin: "USDC", total: "4410553.57" }] };
+  assert.equal(obsInternals.isAccountEmpty(state, spotState), false);
+});
+
+test("isAccountEmpty: 合约空 + 现货粉尘余额 → true（≤0.01 视为空）", () => {
+  const state = { assetPositions: [], marginSummary: { accountValue: "0" } };
+  const spotState = { balances: [{ coin: "USDC", total: "0.005" }] };
+  assert.equal(obsInternals.isAccountEmpty(state, spotState), true);
+});
+
+test("isAccountEmpty: 合约空 + 现货余额 0 → true（真清空）", () => {
+  const state = { assetPositions: [], marginSummary: { accountValue: "0" } };
+  const spotState = { balances: [{ coin: "USDC", total: "0" }] };
+  assert.equal(obsInternals.isAccountEmpty(state, spotState), true);
+});

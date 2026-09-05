@@ -261,7 +261,8 @@
       "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/sodex-discovery/process/output.mjs root@107.172.90.184:/root/service/sodex-discovery/process/output.mjs)",
       "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/HYPE-discovery/process/output.mjs root@107.172.90.184:/root/service/HYPE-discovery/process/output.mjs)",
       "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/sodex-watch/api/index.mjs root@107.172.90.184:/root/service/sodex-watch/api/index.mjs)",
-      "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/HYPE-watch/api/index.mjs root@107.172.90.184:/root/service/HYPE-watch/api/index.mjs)"
+      "Bash(scp /Users/tabcaptain/Documents/code/tracker/service/HYPE-watch/api/index.mjs root@107.172.90.184:/root/service/HYPE-watch/api/index.mjs)",
+      "WebFetch(domain:fomo.family)"
     ],
     "additionalDirectories": [
       "/Users/soso/Documents/context",
