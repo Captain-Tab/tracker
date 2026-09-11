@@ -131,9 +131,9 @@ service/HYPE-discovery/
 | 剔除 | 判据 | 依据 |
 | --- | --- | --- |
 | 账户清空 | native 无持仓 + xyz 无持仓 + 合约净值≤0（`marginSummary.accountValue`≤0）+ 现货余额总和≈0（`balances[].total` ≤$0.01） | 假阳性最大来源；只判 native 会漏掉「股票代币持仓」和「合约平仓转现货」两处 |
-| 濒爆仓 | 任一仓位距强平价 < 10%（`liquidationPx` 口径） | 用 `liquidationPx` 而非浮亏/净值——实测浮亏/净值与距强平无稳定映射（浮亏大≠濒爆） |
+| 濒爆仓 | 维持保证金占用率 ≥ 90%（`crossMaintenanceMarginUsed`/`accountValue`，native+xyz 合并） | 不用 `liquidationPx` 距强平——它反映杠杆水平而非濒爆程度，高杠杆浮盈户（如 0xe282 10 仓全浮盈 +$120万）会被误判濒爆 |
 
-拉取失败 = 放行（未知不误杀，不因接口抖动误淘汰）。距强平口径：空单 `(liq−cur)/cur`、多单 `(cur−liq)/cur`，`cur = |positionValue|/|szi|`。
+拉取失败 = 放行（未知不误杀，不因接口抖动误淘汰）。占用率口径：`crossMaintenanceMarginUsed / accountValue`，两者均取 native+xyz 合并值；无净值（`accountValue`≤0）返回 null（归清空判断，不算濒爆）。
 
 ---
 

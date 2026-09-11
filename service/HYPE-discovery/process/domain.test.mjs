@@ -102,44 +102,33 @@ test("aggregateTrades: 未平仓周期不计入", () => {
   assert.equal(evalInternals.aggregateTrades(fills).length, 0); // endPos=1≠0，未结束
 });
 
-// ---------- minLiquidationDistance 距强平价 ----------
-test("minLiquidationDistance: 空单距强平 = (liq-cur)/cur", () => {
-  const state = { assetPositions: [{ position: { szi: "-10", liquidationPx: "110", positionValue: "1000" } }] };
-  // 当前价 = |value|/|szi| = 100；空单涨到 110 爆 → (110-100)/100 = 0.1
-  assert.ok(Math.abs(obsInternals.minLiquidationDistance(state) - 0.1) < 1e-9);
+// ---------- maintenanceMarginRatio 维持保证金占用率 ----------
+test("maintenanceMarginRatio: 占用率 = crossMaintenanceMarginUsed / accountValue", () => {
+  const state = { crossMaintenanceMarginUsed: "50000", marginSummary: { accountValue: "200000" } };
+  assert.ok(Math.abs(obsInternals.maintenanceMarginRatio(state) - 0.25) < 1e-9);
 });
 
-test("minLiquidationDistance: 多单距强平 = (cur-liq)/cur", () => {
-  const state = { assetPositions: [{ position: { szi: "10", liquidationPx: "90", positionValue: "1000" } }] };
-  // 当前价 = 100；多单跌到 90 爆 → (100-90)/100 = 0.1
-  assert.ok(Math.abs(obsInternals.minLiquidationDistance(state) - 0.1) < 1e-9);
+test("maintenanceMarginRatio: native + xyz 合并计算", () => {
+  const native = { crossMaintenanceMarginUsed: "30000", marginSummary: { accountValue: "100000" } };
+  const xyz = { crossMaintenanceMarginUsed: "20000", marginSummary: { accountValue: "100000" } };
+  // (30000+20000) / (100000+100000) = 0.25
+  assert.ok(Math.abs(obsInternals.maintenanceMarginRatio(native, xyz) - 0.25) < 1e-9);
 });
 
-test("minLiquidationDistance: 多仓位取最危险（最小距强平）", () => {
-  const state = { assetPositions: [
-    { position: { szi: "-10", liquidationPx: "110", positionValue: "1000" } }, // 空单 dist 0.1
-    { position: { szi: "10", liquidationPx: "95", positionValue: "1000" } },   // 多单 dist 0.05
-  ] };
-  assert.ok(Math.abs(obsInternals.minLiquidationDistance(state) - 0.05) < 1e-9);
+test("maintenanceMarginRatio: 无净值 → null（清空，不归濒爆）", () => {
+  assert.equal(obsInternals.maintenanceMarginRatio({ crossMaintenanceMarginUsed: "100", marginSummary: { accountValue: "0" } }), null);
+  assert.equal(obsInternals.maintenanceMarginRatio({}), null);
 });
 
-test("minLiquidationDistance: 空仓 / 无有效强平价 → null", () => {
-  assert.equal(obsInternals.minLiquidationDistance({ assetPositions: [] }), null);
-  assert.equal(obsInternals.minLiquidationDistance({}), null);
-  const bad = { assetPositions: [{ position: { szi: "10", liquidationPx: "0", positionValue: "1000" } }] };
-  assert.equal(obsInternals.minLiquidationDistance(bad), null); // liq=0 跳过 → 无有效值
+test("maintenanceMarginRatio: 无维持保证金 → 0（空仓不濒爆）", () => {
+  const state = { crossMaintenanceMarginUsed: "0", marginSummary: { accountValue: "200000" } };
+  assert.equal(obsInternals.maintenanceMarginRatio(state), 0);
 });
 
-test("minLiquidationDistance: 真实样本回归（0xc6877a HYPE 空单 5x）", () => {
-  const state = { assetPositions: [{ position: { szi: "-9400.18", liquidationPx: "361.9334211885", positionValue: "709440.9847800001" } }] };
-  const dist = obsInternals.minLiquidationDistance(state);
-  assert.ok(dist > 3.7 && dist < 3.9, `期望 ~3.796，实际 ${dist}`); // 距强平 ~379.6%，非濒爆
-});
-
-test("minLiquidationDistance: 合并 native + xyz 取最危险", () => {
-  const native = { assetPositions: [] }; // native 空
-  const xyz = { assetPositions: [{ position: { szi: "10", liquidationPx: "95", positionValue: "1000" } }] }; // xyz 多单 dist 0.05
-  assert.ok(Math.abs(obsInternals.minLiquidationDistance(native, xyz) - 0.05) < 1e-9);
+test("maintenanceMarginRatio: 真实样本回归（0x6aaa 高杠杆但离爆远）", () => {
+  const state = { crossMaintenanceMarginUsed: "39508.5", marginSummary: { accountValue: "269806.93" } };
+  const ratio = obsInternals.maintenanceMarginRatio(state);
+  assert.ok(ratio > 0.14 && ratio < 0.15, `期望 ~14.6%，实际 ${ratio}`); // 维持保证金占用 14.6%，非濒爆
 });
 
 // ---------- isAccountEmpty 账户清空 ----------

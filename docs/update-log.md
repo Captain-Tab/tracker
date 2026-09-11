@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-09-11 — fix(discovery): 濒爆判断改用维持保证金占用率，替代距强平百分比
+
+**背景**：`minLiquidationDistance` 用 `liquidationPx` 距强平百分比判断濒爆，但该指标反映**杠杆水平**（杠杆越高距强平越近）而非**濒爆程度**。实测 0xe282（评分 88.4）10 仓全浮盈 +$120万，仅 BTC 一个仓位距强平 9.8% 被误判濒爆；0x6aaa 高杠杆但维持保证金占用率仅 14.6% 也被误判。真正濒爆 = 维持保证金快吃掉全部净值（`crossMaintenanceMarginUsed`/`accountValue` 接近 100%）。
+
+**改动**：
+
+- `minLiquidationDistance` → `maintenanceMarginRatio`：改用 `crossMaintenanceMarginUsed / accountValue`（native+xyz 合并），无净值返回 null（归清空判断）
+- 阈值 `LIQ_DIST_MIN=0.10` → `MAINTENANCE_RATIO_MAX=0.90`
+- `fetchClearingRisk` 返回 `maintRatio` 替代 `liqDist`
+- `domain.test.mjs` 重写 5 个用例（26/26 过）
+
+**影响**：0xe282（占用率 37.4%）、0x6aaa（占用率 14.6%）均不再被误判濒爆，正确进入/保留 watchReady 评估。
+
+---
+
 ## 2026-09-05 — fix(discovery): isAccountEmpty 覆盖 native+xyz+spot 三维度，修复合约转现货/股票代币误判清空
 
 **背景**：`filterWatchReady` 的 `isAccountEmpty` 只查 `clearinghouseState`（未传 dex，仅 native perps），把「合约平仓转现货」和「仅持股票代币（xyz:*）」两类账户都误判成「账户清空离场」。9/4 复核 4 个「账户已清空」地址里 3 个实际有大量资产（`0x8bae` 现货 $441 万 + xyz 持仓 3 个、`0x78dc` $91.5 万、`0xa0b3` $114 万），误判率 75%。根因：Hyperliquid 的 `clearinghouseState` 用 `dex` 参数区分 native（""）与股票代币（"xyz"）两类持仓，两者独立存储须分别查。
