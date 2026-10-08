@@ -146,8 +146,10 @@ export class AccountWatcher {
   }
 
   scheduleDaily() {
+    if (this.dailyTimer) clearTimeout(this.dailyTimer); // 幂等：清掉上一个，防僵尸定时器累积
     const ms = msUntilNextShanghai(this.at);
     this.dailyTimer = setTimeout(async () => {
+      this.dailyTimer = null; // 触发后置空，避免递归误清
       const result = await dailySnapshot({
         env: this.env, address: this.address, accountId: this.accountId,
         tgToken: this.tgToken, tgChat: this.tgChat,
